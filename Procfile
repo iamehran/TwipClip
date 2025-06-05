@@ -1,1 +1,1 @@
-web: pip install yt-dlp && npm start 
+web: export PATH=$PATH:$HOME/.local/bin && npm start 

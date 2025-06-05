@@ -35,6 +35,8 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
     'yt-dlp',                // System command (works on Railway after nixpacks)
     '/usr/local/bin/yt-dlp', // Common Linux location
     '/opt/venv/bin/yt-dlp',  // Railway virtual env
+    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
+    '/home/.local/bin/yt-dlp', // Alternative user local
     'python -m yt_dlp',      // Python module (most reliable on Windows)
     'python3 -m yt_dlp',     // Python3 variant
     'yt-dlp.exe',            // Windows executable
@@ -46,6 +48,8 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
   if (process.env.YTDLP_PATH) {
     commands.unshift(process.env.YTDLP_PATH);
   }
+
+  console.log('Searching for yt-dlp in:', commands.slice(0, 5).join(', '), '...');
 
   for (const cmd of commands) {
     try {
@@ -66,16 +70,19 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
   // Try to install yt-dlp if not found
   console.log('⚠️ yt-dlp not found, attempting to install...');
   try {
-    const pipCmd = isRailway() ? 'pip3' : 'pip';
-    await execAsync(`${pipCmd} install -U yt-dlp`, { timeout: 30000 });
-    // Try again after installation
-    const { stdout } = await execAsync('yt-dlp --version', { timeout: 5000 });
+    // Install to user directory on Railway
+    const pipCmd = isRailway() ? 'pip install --user yt-dlp' : 'pip install yt-dlp';
+    await execAsync(pipCmd, { timeout: 30000 });
+    
+    // Try the user local bin path
+    const userBinPath = `${process.env.HOME}/.local/bin/yt-dlp`;
+    const { stdout } = await execAsync(`${userBinPath} --version`, { timeout: 5000 });
     if (stdout) {
       console.log('✅ Successfully installed yt-dlp');
-      return { command: 'yt-dlp', version: stdout.trim() };
+      return { command: userBinPath, version: stdout.trim() };
     }
   } catch (e) {
-    console.error('Failed to install yt-dlp');
+    console.error('Failed to install yt-dlp:', e.message);
   }
 
   return null;

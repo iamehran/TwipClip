@@ -7,23 +7,25 @@ export async function performStartupCheck(): Promise<boolean> {
   const tools = await checkSystemTools();
   
   // Check environment variables
-  console.log('\n📋 Environment Check:');
   const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  
+  console.log('\n📋 Environment Check:');
   console.log(`OpenAI API Key: ${hasOpenAI ? '✅' : '❌'}`);
   
+  // Only block if OpenAI is missing
   if (!hasOpenAI) {
-    console.error('❌ OPENAI_API_KEY is required but not set!');
-    console.error('📝 Add to .env.local: OPENAI_API_KEY=your_key_here');
+    console.error('\n❌ OpenAI API key is required but not found!');
+    console.error('Please set OPENAI_API_KEY environment variable.');
+    return false;
   }
   
-  // Overall status
-  const allGood = tools.ytdlp.available && tools.ffmpeg.available && hasOpenAI;
-  
-  if (allGood) {
-    console.log('\n✅ All systems ready! TwipClip is good to go.\n');
+  // Warn about missing tools but don't block
+  if (!tools.ytdlp.available || !tools.ffmpeg.available) {
+    console.warn('\n⚠️  Some tools are missing but core functionality may still work.');
+    console.warn('Video processing features may be limited.');
   } else {
-    console.log('\n⚠️  Some requirements are missing. Please fix the issues above.\n');
+    console.log('\n✅ All systems ready!');
   }
   
-  return allGood;
+  return true;
 } 

@@ -181,8 +181,24 @@ async function extractWithWhisper(videoUrl: string, audioPath: string): Promise<
 export async function getVideoTranscript(videoUrl: string, platform: string): Promise<ProcessedTranscript | null> {
   console.log(`Getting transcript for ${platform} video...`);
   
-  // WHISPER-FIRST APPROACH
-  // Try Whisper first for all platforms - it's more reliable
+  // For YouTube, try transcript API first if yt-dlp is not available
+  if (platform === 'youtube') {
+    // Check if yt-dlp is available
+    try {
+      const ytdlpCmd = await getYtDlpCommand();
+      console.log('yt-dlp available, using Whisper-first approach');
+    } catch (e) {
+      // yt-dlp not available, use YouTube transcript first
+      console.log('yt-dlp not available, trying YouTube transcript API first');
+      const ytResult = await extractWithYouTubeTranscript(videoUrl);
+      if (ytResult) {
+        console.log('✅ YouTube transcript successful');
+        return ytResult;
+      }
+    }
+  }
+  
+  // WHISPER-FIRST APPROACH (if yt-dlp is available)
   try {
     console.log('🎤 Attempting Whisper transcription (primary method)...');
     

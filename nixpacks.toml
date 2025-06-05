@@ -1,25 +1,30 @@
 [phases.setup]
 # Install system packages needed for video processing
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg-full", "python311Packages.yt-dlp"]
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg-full"]
 
 [phases.install]
-# Install Node dependencies
+# Install Node dependencies and Python packages
 cmds = [
-  "npm ci --production=false"
+  "npm ci --production=false",
+  "pip install --user yt-dlp",
+  "export PATH=$PATH:$HOME/.local/bin"
 ]
 
 [phases.build]
 # Build the Next.js app
 cmds = [
+  "export PATH=$PATH:$HOME/.local/bin",
   "npm run build"
 ]
 
 [start]
-# Start directly with npm start (tools are already installed)
-cmd = "npm start"
+# Start with PATH including user-installed packages
+cmd = "export PATH=$PATH:$HOME/.local/bin && npm start"
 
 [variables]
 # Ensure Python uses UTF-8
 PYTHONIOENCODING = "utf-8"
 # Node environment
-NODE_ENV = "production" 
+NODE_ENV = "production"
+# Add user bin to PATH
+PATH = "$PATH:$HOME/.local/bin" 
