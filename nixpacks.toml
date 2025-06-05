@@ -6,13 +6,17 @@
 nixPkgs = ["nodejs-18_x", "python311", "ffmpeg"]
 
 [phases.install]
-# Install Node dependencies
-cmds = ["npm install --legacy-peer-deps"]
+# Install Node dependencies and yt-dlp
+cmds = [
+  "npm install --legacy-peer-deps",
+  "python3 -m pip install --upgrade pip",
+  "python3 -m pip install yt-dlp"
+]
 
 [phases.build]
-# Build Next.js (yt-dlp will be installed at runtime)
+# Build Next.js
 cmds = ["npm run build"]
 
 [start]
-# Start the application using the script that installs yt-dlp
+# Start the application
 cmd = "npm start" 
