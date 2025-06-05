@@ -10,17 +10,11 @@ nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg", "curl"
 cmds = ["npm install --legacy-peer-deps"]
 
 [phases.build]
-# Install yt-dlp using multiple methods and build Next.js
+# Build Next.js (yt-dlp will be installed at runtime)
 cmds = [
-  "chmod +x scripts/install-yt-dlp.sh",
-  "./scripts/install-yt-dlp.sh || python3 -m pip install --break-system-packages -U yt-dlp",
-  "export PATH=$HOME/.local/bin:/usr/local/bin:$PATH",
-  "python3 -m yt_dlp --version || echo 'yt-dlp module not found'",
-  "which yt-dlp && yt-dlp --version || echo 'yt-dlp binary not found in PATH'",
-  "which ffmpeg && ffmpeg -version || echo 'ffmpeg not found in PATH'",
   "npm run build"
 ]
 
 [start]
-# Start the application with proper PATH
-cmd = "export PATH=$HOME/.local/bin:/usr/local/bin:$PATH && npm start" 
+# Start the application using the script that installs yt-dlp
+cmd = "npm run start:railway" 
