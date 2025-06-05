@@ -31,15 +31,18 @@ function isRailway(): boolean {
  * Try multiple commands to find working yt-dlp
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
-  const commands = [
-    'yt-dlp',                // System command (works on Railway after nixpacks)
-    '/usr/local/bin/yt-dlp', // Common Linux location
-    '/opt/venv/bin/yt-dlp',  // Railway virtual env
-    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
-    '/home/.local/bin/yt-dlp', // Alternative user local
+  const commands = isRailway() ? [
+    'yt-dlp',                // Should work after nixpacks install
+    '/nix/var/nix/profiles/default/bin/yt-dlp', // Nix profile path
+    `${process.env.HOME}/.nix-profile/bin/yt-dlp`, // User nix profile
+    '/usr/bin/yt-dlp',       // Standard Linux location
+    '/usr/local/bin/yt-dlp', // Alternative Linux location
+  ] : [
+    'yt-dlp',                // System command
     'python -m yt_dlp',      // Python module (most reliable on Windows)
     'python3 -m yt_dlp',     // Python3 variant
     'yt-dlp.exe',            // Windows executable
+    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
     './yt-dlp',              // Local directory
     './yt-dlp.exe'           // Local Windows executable
   ];
@@ -68,21 +71,21 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
   }
 
   // Try to install yt-dlp if not found
-  console.log('⚠️ yt-dlp not found, attempting to install...');
-  try {
-    // Install to user directory on Railway
-    const pipCmd = isRailway() ? 'pip install --user yt-dlp' : 'pip install yt-dlp';
-    await execAsync(pipCmd, { timeout: 30000 });
-    
-    // Try the user local bin path
-    const userBinPath = `${process.env.HOME}/.local/bin/yt-dlp`;
-    const { stdout } = await execAsync(`${userBinPath} --version`, { timeout: 5000 });
-    if (stdout) {
-      console.log('✅ Successfully installed yt-dlp');
-      return { command: userBinPath, version: stdout.trim() };
+  if (!isRailway()) {
+    // Only try to install on non-Railway environments
+    console.log('⚠️ yt-dlp not found, attempting to install...');
+    try {
+      await execAsync('pip install yt-dlp', { timeout: 30000 });
+      
+      // Try the standard command after installation
+      const { stdout } = await execAsync('yt-dlp --version', { timeout: 5000 });
+      if (stdout) {
+        console.log('✅ Successfully installed yt-dlp');
+        return { command: 'yt-dlp', version: stdout.trim() };
+      }
+    } catch (e) {
+      console.error('Failed to install yt-dlp:', e.message);
     }
-  } catch (e) {
-    console.error('Failed to install yt-dlp:', e.message);
   }
 
   return null;
@@ -175,8 +178,9 @@ export async function checkSystemTools(): Promise<SystemTools> {
   if (!cachedTools.ytdlp.available) {
     console.error('❌ yt-dlp is required but not found!');
     if (isRailway()) {
-      console.error('📝 Add to nixpacks.toml: [phases.setup] aptPkgs = ["python3-pip"]');
-      console.error('📝 Add to package.json scripts: "postinstall": "pip3 install yt-dlp"');
+      console.error('📝 yt-dlp should be installed via nixpacks.');
+      console.error('📝 Check nixpacks.toml includes: python311Packages.yt-dlp');
+      console.error('📝 You may need to redeploy for changes to take effect.');
     } else {
       console.error('📝 To install: pip install yt-dlp');
     }
@@ -185,7 +189,8 @@ export async function checkSystemTools(): Promise<SystemTools> {
   if (!cachedTools.ffmpeg.available) {
     console.error('❌ FFmpeg is required but not found!');
     if (isRailway()) {
-      console.error('📝 Add to nixpacks.toml: [phases.setup] aptPkgs = ["ffmpeg"]');
+      console.error('📝 FFmpeg should be installed via nixpacks.');
+      console.error('📝 Check nixpacks.toml includes: ffmpeg');
     } else {
       console.error('📝 Download from: https://ffmpeg.org/download.html');
     }
