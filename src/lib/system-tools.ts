@@ -22,7 +22,9 @@ let cachedTools: SystemTools | null = null;
  * Detect if running on Railway
  */
 function isRailway(): boolean {
-  return process.env.RAILWAY_ENVIRONMENT === 'production';
+  return process.env.RAILWAY_ENVIRONMENT === 'production' || 
+         process.env.RAILWAY_PROJECT_ID !== undefined ||
+         process.env.RAILWAY_DEPLOYMENT_ID !== undefined;
 }
 
 /**
@@ -31,12 +33,19 @@ function isRailway(): boolean {
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
   const commands = [
     'yt-dlp',                // System command (works on Railway after nixpacks)
+    '/usr/local/bin/yt-dlp', // Common Linux location
+    '/opt/venv/bin/yt-dlp',  // Railway virtual env
     'python -m yt_dlp',      // Python module (most reliable on Windows)
     'python3 -m yt_dlp',     // Python3 variant
     'yt-dlp.exe',            // Windows executable
     './yt-dlp',              // Local directory
     './yt-dlp.exe'           // Local Windows executable
   ];
+
+  // Check environment variable first
+  if (process.env.YTDLP_PATH) {
+    commands.unshift(process.env.YTDLP_PATH);
+  }
 
   for (const cmd of commands) {
     try {
@@ -79,7 +88,8 @@ async function findFFmpeg(): Promise<{ command: string; version: string } | null
   const commands = isRailway() ? [
     'ffmpeg',                // Railway should have this after nixpacks
     '/usr/bin/ffmpeg',       // Common Linux location
-    '/usr/local/bin/ffmpeg'
+    '/usr/local/bin/ffmpeg', // Alternative Linux location
+    '/opt/venv/bin/ffmpeg'   // Railway virtual env
   ] : [
     'ffmpeg',                // System PATH
     'ffmpeg.exe',            // Windows
@@ -89,6 +99,11 @@ async function findFFmpeg(): Promise<{ command: string; version: string } | null
     './ffmpeg',              // Local directory
     './ffmpeg.exe'           // Local Windows
   ];
+
+  // Check environment variable first
+  if (process.env.FFMPEG_PATH) {
+    commands.unshift(process.env.FFMPEG_PATH);
+  }
 
   for (const cmd of commands) {
     try {

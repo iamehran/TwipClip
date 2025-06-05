@@ -6,10 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:railway": "node scripts/start-production.js",
     "lint": "next lint",
     "setup": "node setup.js",
-    "check-deps": "node scripts/check-dependencies.js",
-    "postinstall": "pip3 install yt-dlp || pip install yt-dlp || echo 'yt-dlp installation skipped'"
+    "check-deps": "node scripts/check-dependencies.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

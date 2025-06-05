@@ -1,17 +1,27 @@
 [phases.setup]
 # Install system packages needed for video processing
-nixPkgs = ["nodejs-18_x", "python311", "ffmpeg"]
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg-full"]
 
 [phases.install]
+# Install Node dependencies first
 cmds = [
-  "npm ci",
-  "pip install yt-dlp"
+  "npm ci --production=false"
 ]
 
 [phases.build]
-# Build commands will run automatically
-cmds = ["npm run build"]
+# Build the Next.js app and install yt-dlp
+cmds = [
+  "npm run build",
+  "python3 -m pip install --upgrade pip",
+  "python3 -m pip install yt-dlp"
+]
 
 [start]
-# Start command
-cmd = "npm start" 
+# Use the railway start script
+cmd = "npm run start:railway"
+
+[variables]
+# Ensure Python uses UTF-8
+PYTHONIOENCODING = "utf-8"
+# Node environment
+NODE_ENV = "production" 
