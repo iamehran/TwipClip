@@ -6,22 +6,37 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup": "node setup.js",
+    "check-deps": "node scripts/check-dependencies.js",
+    "postinstall": "pip3 install yt-dlp || pip install yt-dlp || echo 'yt-dlp installation skipped'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "googleapis": "^149.0.0",
+    "jsdom": "^26.1.0",
+    "next": "15.3.3",
+    "next-connect": "^1.0.0",
+    "openai": "^5.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.3.3"
+    "youtube-transcript": "^1.2.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
-    "@eslint/eslintrc": "^3"
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

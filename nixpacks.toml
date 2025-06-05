@@ -1,0 +1,17 @@
+[phases.setup]
+# Install system packages needed for video processing
+nixPkgs = ["nodejs-18_x", "python311", "ffmpeg"]
+
+[phases.install]
+cmds = [
+  "npm ci",
+  "pip install yt-dlp"
+]
+
+[phases.build]
+# Build commands will run automatically
+cmds = ["npm run build"]
+
+[start]
+# Start command
+cmd = "npm start" 

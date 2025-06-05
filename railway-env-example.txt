@@ -1,0 +1,13 @@
+# Railway Environment Variables
+# Copy these to your Railway dashboard
+
+# Required: OpenAI API Key for Whisper transcription and AI matching
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Railway automatically sets this
+RAILWAY_ENVIRONMENT=production
+
+# Optional: Port (Railway provides this automatically)
+# PORT=3000
+
+# Note: FFmpeg and yt-dlp will be installed automatically via nixpacks.toml 

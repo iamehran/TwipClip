@@ -1,103 +1,291 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import SearchForm from './components/SearchForm';
+import VideoResult from './components/VideoResult';
+import LoadingState from './components/LoadingState';
+import ErrorDisplay from './components/ErrorDisplay';
+import ExportButton from './components/ExportButton';
+
+interface VideoClip {
+  videoId: string;
+  title: string;
+  thumbnail: string;
+  startTime: number;
+  endTime: number;
+  matchScore: number;
+  transcriptText: string;
+  channelTitle: string;
+  clipDuration: string;
+  matchMethod: 'semantic' | 'keyword' | 'phrase';
+  confidence: number;
+  transcriptQuality: 'high' | 'medium' | 'low';
+  transcriptSource: string;
+  downloadPath: string;
+  downloadSuccess: boolean;
+}
+
+interface SearchResults {
+  [key: string]: {
+    tweet: string;
+    clips: VideoClip[];
+  };
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [results, setResults] = useState<SearchResults>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStatus, setLoadingStatus] = useState('');
+  const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[] } | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false) => {
+    setLoading(true);
+    setError(null);
+    setResults({});
+    setStats(null);
+    setLoadingProgress(0);
+    setLoadingStatus('Initializing...');
+    setLastSearch({ threadContent, videoUrls });
+
+    try {
+      // No need to parse - send the full thread content
+      if (!threadContent.trim()) {
+        throw new Error('Please enter some content');
+      }
+
+      if (videoUrls.length === 0) {
+        throw new Error('Please provide at least one video URL');
+      }
+
+      console.log('Sending to process API:', { thread: threadContent, videos: videoUrls });
+
+      // Simulate progress updates
+      setLoadingStatus('Starting intelligent processing...');
+      setLoadingProgress(10);
+
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          thread: threadContent,  // Full thread content with dashes
+          videos: videoUrls       // Array of video URLs
+        }),
+      });
+
+      setLoadingProgress(30);
+      setLoadingStatus('Processing videos with AI...');
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Processing failed');
+      }
+
+      setLoadingProgress(90);
+      setLoadingStatus('Finalizing results...');
+
+      // Convert the new format to match the UI expectations
+      const formattedResults: SearchResults = {};
+      if (data.matches && data.matches.length > 0) {
+        data.matches.forEach((match: any, index: number) => {
+          const tweetKey = `tweet-${index + 1}`;
+          if (!formattedResults[tweetKey]) {
+            formattedResults[tweetKey] = {
+              tweet: match.tweet || '',
+              clips: []
+            };
+          }
+          
+          formattedResults[tweetKey].clips.push({
+            videoId: match.videoUrl,
+            title: 'AI Matched Clip',
+            thumbnail: '/default-thumbnail.jpg',
+            startTime: match.startTime,
+            endTime: match.endTime,
+            matchScore: match.confidence || 0,
+            transcriptText: match.text || '',
+            channelTitle: 'Video',
+            clipDuration: `${match.endTime - match.startTime}s`,
+            matchMethod: 'semantic' as const,
+            confidence: match.confidence || 0,
+            transcriptQuality: 'high' as const,
+            transcriptSource: 'whisper',
+            downloadPath: match.downloadPath,
+            downloadSuccess: match.downloadSuccess
+          });
+        });
+      }
+
+      setResults(formattedResults);
+      setStats(data.summary || null);
+      
+      setLoadingProgress(100);
+      setLoadingStatus('Complete!');
+      
+      // Reset progress after a short delay
+      setTimeout(() => {
+        setLoadingProgress(0);
+        setLoadingStatus('');
+      }, 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Processing error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalClips = Object.values(results).reduce((sum, r) => sum + r.clips.length, 0);
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-10">
+            <h1 className="text-5xl font-bold text-white mb-4">
+              TwipClip
+            </h1>
+            <p className="text-xl text-gray-300">
+              Get perfect video Clips for your thread.
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-4 text-sm text-gray-400">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Enhanced AI Matching
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                Custom Video Input
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
+                Precise Clip Extraction
+              </span>
+            </div>
+          </div>
+
+          {/* Search Form */}
+          <SearchForm onSearch={handleSearch} loading={loading} />
+
+          {/* Error Display */}
+          {error && (
+            <ErrorDisplay 
+              error={error} 
+              onRetry={lastSearch ? () => handleSearch(lastSearch.threadContent, lastSearch.videoUrls) : undefined} 
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          )}
+
+          {/* Loading State */}
+          {loading && (
+            <LoadingState 
+              status={loadingStatus}
+              progress={loadingProgress}
+              currentVideo={loadingProgress > 30 ? 1 : undefined}
+              totalVideos={loadingProgress > 30 ? 3 : undefined}
+            />
+          )}
+
+          {/* Results Summary */}
+          {!loading && totalClips > 0 && (
+            <div className="mt-8 p-6 bg-gray-800/50 rounded-lg border border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Results Summary</h3>
+                <ExportButton data={results} />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                <div>
+                  <p className="text-3xl font-bold text-white">{Object.keys(results).length}</p>
+                  <p className="text-sm text-gray-400">Tweets Processed</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-white">{totalClips}</p>
+                  <p className="text-sm text-gray-400">Clips Found</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-white">{stats?.videosProcessed || 0}</p>
+                  <p className="text-sm text-gray-400">Videos Analyzed</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-white">
+                    {stats?.avgConfidence ? `${(stats.avgConfidence * 100).toFixed(0)}%` : '0%'}
+                  </p>
+                  <p className="text-sm text-gray-400">Avg Confidence</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Results Display */}
+          {!loading && Object.entries(results).map(([tweetKey, tweetData]) => (
+            <div key={tweetKey} className="mt-8">
+              <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
+                {/* Tweet Header */}
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                    {tweetKey.replace('tweet-', '')}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-white text-lg leading-relaxed">{tweetData.tweet}</p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      {tweetData.clips.length} matching {tweetData.clips.length === 1 ? 'clip' : 'clips'} found
+                    </p>
+                  </div>
+                </div>
+
+                {/* Video Clips */}
+                {tweetData.clips.length > 0 ? (
+                  <div className="grid gap-4">
+                    {tweetData.clips.map((clip, index) => (
+                      <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-8">
+                    No matching clips found for this tweet
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Performance Stats */}
+          {stats && !loading && (
+            <div className="mt-12 p-6 bg-gray-800/30 rounded-lg border border-gray-700">
+              <h3 className="text-lg font-semibold text-white mb-4">Performance Statistics</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-400">Processing Time</p>
+                  <p className="text-white font-mono">{(stats.processingTimeMs / 1000).toFixed(2)}s</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Videos Transcribed</p>
+                  <p className="text-white font-mono">{stats.videosTranscribed || 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Total Segments Analyzed</p>
+                  <p className="text-white font-mono">{stats.totalSegments || 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">AI Model Used</p>
+                  <p className="text-white font-mono">{stats.aiModel || 'GPT-4'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Transcription Quality</p>
+                  <p className="text-white font-mono">{stats.transcriptionQuality || 'High'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Cache Hit Rate</p>
+                  <p className="text-white font-mono">{stats.cacheHitRate || '0%'}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      </div>
+    </main>
   );
 }
