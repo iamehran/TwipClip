@@ -44,7 +44,7 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
   console.log(`Running: ${command}`);
   
   try {
-    const { stdout, stderr } = await execAsync(command);
+    const { stderr } = await execAsync(command);
     if (stderr && !stderr.includes('WARNING')) {
       console.error('yt-dlp stderr:', stderr);
     }
@@ -89,7 +89,7 @@ async function cutVideoSegment(
   console.log(`Cutting segment: ${startTime}s - ${endTime}s`);
   
   try {
-    const { stderr } = await execAsync(command);
+    await execAsync(command);
     // FFmpeg outputs to stderr even on success
     if (!existsSync(outputPath)) {
       throw new Error('Output file not created');
@@ -103,13 +103,19 @@ async function cutVideoSegment(
 /**
  * Downloads and cuts video clips based on match results
  */
-export async function downloadClips(matches: any[]): Promise<ClipDownloadResult[]> {
+export async function downloadClips(matches: Array<{
+  match: boolean;
+  videoUrl: string;
+  startTime: number;
+  endTime: number;
+  tweet?: string;
+}>): Promise<ClipDownloadResult[]> {
   await ensureTempDir();
   
   const results: ClipDownloadResult[] = [];
   
   // Group matches by video URL for efficiency
-  const matchesByVideo = new Map<string, any[]>();
+  const matchesByVideo = new Map<string, typeof matches>();
   
   for (const match of matches) {
     if (!match.match || !match.videoUrl) continue;
@@ -130,14 +136,13 @@ export async function downloadClips(matches: any[]): Promise<ClipDownloadResult[
       
       // Cut clips for each match
       for (let i = 0; i < videoMatches.length; i++) {
-        const match = videoMatches[i];
         const clipPath = path.join(TEMP_DIR, `clip_tweet${i + 1}_${timestamp}.mp4`);
         
         try {
           await cutVideoSegment(
             fullVideoPath,
-            match.startTime,
-            match.endTime,
+            videoMatches[i].startTime,
+            videoMatches[i].endTime,
             clipPath
           );
           

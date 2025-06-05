@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { downloadClips } from '../../../src/lib/video-downloader';
 import fs from 'fs';
-import path from 'path';
 
 export async function POST(request) {
   try {

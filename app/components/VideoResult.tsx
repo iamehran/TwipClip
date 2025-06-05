@@ -135,6 +135,7 @@ export default function VideoResult({ clip }: VideoResultProps) {
       <div className="flex gap-4">
         {/* Thumbnail with Preview Toggle */}
         <div className="relative flex-shrink-0 group/thumb">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
             alt={clip.title}
@@ -183,7 +184,7 @@ export default function VideoResult({ clip }: VideoResultProps) {
           {/* Transcript Preview */}
           <div className="mt-3 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
             <p className="text-xs text-gray-300 line-clamp-2 italic">
-              "{clip.transcriptText}"
+              &quot;{clip.transcriptText}&quot;
             </p>
           </div>
 

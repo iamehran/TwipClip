@@ -48,7 +48,7 @@ function extractYouTubeVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-async function extractAudioFromVideo(videoUrl: string, platform: string): Promise<string | null> {
+async function extractAudioFromVideo(videoUrl: string): Promise<string | null> {
   const tempDir = path.join(process.cwd(), 'temp');
   const timestamp = Date.now();
   const audioPath = path.join(tempDir, `audio_${timestamp}.mp3`);
@@ -113,7 +113,11 @@ async function extractWithYouTubeTranscript(videoUrl: string): Promise<Processed
       throw new Error('No transcript found');
     }
 
-    const segments: TranscriptSegment[] = transcript.map((item: any, index: number) => ({
+    const segments: TranscriptSegment[] = transcript.map((item: {
+      offset: number;
+      duration: number;
+      text: string;
+    }, index: number) => ({
       index,
       startTime: item.offset / 1000,
       endTime: (item.offset + item.duration) / 1000,
@@ -183,7 +187,7 @@ export async function getVideoTranscript(videoUrl: string, platform: string): Pr
     console.log('🎤 Attempting Whisper transcription (primary method)...');
     
     // Extract audio for Whisper
-    const audioPath = await extractAudioFromVideo(videoUrl, platform);
+    const audioPath = await extractAudioFromVideo(videoUrl);
     if (audioPath) {
       const whisperResult = await extractWithWhisper(videoUrl, audioPath);
       

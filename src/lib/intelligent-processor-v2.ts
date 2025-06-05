@@ -1,7 +1,6 @@
 import { OpenAI } from 'openai';
 import { 
   ProcessedTranscript, 
-  TranscriptSegment,
   getVideoTranscript,
   detectVideoPlatform
 } from './transcription';
@@ -76,7 +75,7 @@ export async function processVideosIntelligently(thread: string, videos: string[
 
       console.log(`✓ Transcript: ${transcript.segments.length} segments`);
 
-      // Skip quality enhancement for speed (only enhance if really poor)
+      // Enhance transcript quality if needed
       const qualityMetrics = await assessTranscriptQuality(transcript);
       console.log(`Quality score: ${qualityMetrics.overallScore.toFixed(0)}%`);
 

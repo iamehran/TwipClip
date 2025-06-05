@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai';
-import { ProcessedTranscript, TranscriptSegment } from './transcription';
+import { ProcessedTranscript } from './transcription';
 
 export interface QualityMetrics {
   punctuation: number;
@@ -12,40 +12,51 @@ export interface QualityMetrics {
 }
 
 export async function assessTranscriptQuality(transcript: ProcessedTranscript): Promise<QualityMetrics> {
-  // Simple quality assessment based on transcript characteristics
-  let punctuationScore = 0;
-  let totalChars = 0;
-  let totalWords = 0;
+  const segments = transcript.segments;
   
-  for (const segment of transcript.segments) {
-    const text = segment.text || '';
-    totalChars += text.length;
-    totalWords += text.split(/\s+/).length;
+  // Calculate metrics
+  let punctuationCount = 0;
+  let capitalizedCount = 0;
+  let sentenceCount = 0;
+  let wordCount = 0;
+  
+  for (const segment of segments) {
+    const text = segment.text;
     
-    // Count punctuation marks
-    const punctuationCount = (text.match(/[.!?,;:]/g) || []).length;
-    punctuationScore += punctuationCount;
+    // Count punctuation
+    punctuationCount += (text.match(/[.!?,;:]/g) || []).length;
+    
+    // Count capitalized words (beginning of sentences)
+    capitalizedCount += (text.match(/\b[A-Z][a-z]+/g) || []).length;
+    
+    // Count sentences
+    sentenceCount += (text.match(/[.!?]+/g) || []).length;
+    
+    // Count words
+    wordCount += text.split(/\s+/).filter(w => w.length > 0).length;
   }
   
-  // Calculate basic metrics
-  const avgWordsPerSegment = totalWords / transcript.segments.length;
-  const punctuationRatio = punctuationScore / totalWords;
+  // Calculate scores
+  const punctuationScore = Math.min(punctuationCount / (wordCount * 0.15), 1); // Expect ~15% punctuation
+  const grammarScore = Math.min(capitalizedCount / (sentenceCount || 1), 1);
+  const coherenceScore = sentenceCount > 0 ? Math.min(sentenceCount / (segments.length * 0.5), 1) : 0;
+  const confidenceScore = 0.8; // Default high confidence for Whisper
+  const readabilityScore = (punctuationScore + grammarScore + coherenceScore) / 3;
   
-  // Simple scoring
-  const punctuation = Math.min(punctuationRatio * 10, 1);
-  const grammar = avgWordsPerSegment > 5 ? 0.7 : 0.5;
-  const coherence = transcript.segments.length > 10 ? 0.6 : 0.4;
-  const confidence = 0.75; // Default confidence
-  const readability = avgWordsPerSegment > 10 ? 0.7 : 0.5;
-  
-  const overallScore = (punctuation + grammar + coherence + confidence + readability) / 5;
+  const overallScore = (
+    punctuationScore * 0.25 +
+    grammarScore * 0.2 +
+    coherenceScore * 0.2 +
+    confidenceScore * 0.2 +
+    readabilityScore * 0.15
+  );
   
   return {
-    punctuation,
-    grammar,
-    coherence,
-    confidence,
-    readability,
+    punctuation: punctuationScore,
+    grammar: grammarScore,
+    coherence: coherenceScore,
+    confidence: confidenceScore,
+    readability: readabilityScore,
     overallScore,
     needsEnhancement: overallScore < 0.7
   };
@@ -56,8 +67,7 @@ export async function enhanceTranscriptWithAI(
   openaiClient: OpenAI,
   metrics: QualityMetrics
 ): Promise<ProcessedTranscript> {
-  // For now, just return the original transcript
-  // In a full implementation, this would use GPT to improve punctuation and grammar
-  console.log('AI enhancement requested but using original transcript');
+  // For now, return the original transcript
+  // Enhancement can be implemented later if needed
   return transcript;
 } 
