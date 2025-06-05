@@ -3,7 +3,7 @@
 
 [phases.setup]
 # Install system packages
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg", "curl"]
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg"]
 
 [phases.install]
 # Install Node dependencies
@@ -12,9 +12,10 @@ cmds = ["npm install --legacy-peer-deps"]
 [phases.build]
 # Build Next.js (yt-dlp will be installed at runtime)
 cmds = [
+  "pip install --break-system-packages yt-dlp",
   "npm run build"
 ]
 
 [start]
 # Start the application using the script that installs yt-dlp
-cmd = "npm run start:railway" 
+cmd = "npm start" 
