@@ -1,1 +1,0 @@
-web: export PATH=$PATH:$HOME/.local/bin && npm start 

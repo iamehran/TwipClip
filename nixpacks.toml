@@ -1,12 +1,11 @@
 [phases.setup]
 # Install system packages needed for video processing
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg-full", "gcc"]
-aptPkgs = ["build-essential"]
+nixPkgs = ["nodejs_18", "python311", "python311Packages.pip", "ffmpeg-full", "gcc", "libc6-compat"]
 
 [phases.install]
-# Install dependencies
+# Install dependencies with legacy peer deps to avoid conflicts
 cmds = [
-  "npm install --production=false"
+  "npm ci --legacy-peer-deps || npm install --legacy-peer-deps"
 ]
 
 [phases.build]
