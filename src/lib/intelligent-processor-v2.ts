@@ -1,4 +1,4 @@
-import { OpenAI } from 'openai';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { 
   ProcessedTranscript, 
   getVideoTranscript,
@@ -37,10 +37,8 @@ export async function processVideosIntelligently(thread: string, videos: string[
   console.log(`Thread: ${thread.substring(0, 100)}...`);
   console.log(`Videos: ${videos.length}`);
 
-  const openaiClient = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    timeout: 30000, // 30 second timeout
-    maxRetries: 3
+  const anthropicClient = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
   });
 
   // Parse tweets from thread
@@ -75,7 +73,7 @@ export async function processVideosIntelligently(thread: string, videos: string[
 
       console.log(`✓ Transcript: ${transcript.segments.length} segments`);
 
-      // Enhance transcript quality if needed
+      // Skip quality enhancement for speed (only enhance if really poor)
       const qualityMetrics = await assessTranscriptQuality(transcript);
       console.log(`Quality score: ${qualityMetrics.overallScore.toFixed(0)}%`);
 
@@ -83,8 +81,9 @@ export async function processVideosIntelligently(thread: string, videos: string[
       // Only enhance if quality is very poor
       if (qualityMetrics.needsEnhancement && qualityMetrics.overallScore < 0.5) {
         console.log('Enhancing transcript quality...');
-        enhancedTranscript = await enhanceTranscriptWithAI(transcript, openaiClient, qualityMetrics);
-        console.log('✓ Enhancement complete');
+        // For now, skip enhancement since we're not using OpenAI
+        // enhancedTranscript = await enhanceTranscriptWithAI(transcript, openaiClient, qualityMetrics);
+        console.log('✓ Enhancement skipped (using Claude for matching instead)');
       }
 
       return {
@@ -118,10 +117,10 @@ export async function processVideosIntelligently(thread: string, videos: string[
     }
   }
 
-  // Match tweets to transcripts
+  // Match tweets to transcripts using Claude
   if (allTranscripts.length > 0) {
-    console.log('\n=== Starting AI Matching ===');
-    const matches = await matchTweetsToTranscripts(tweets, allTranscripts, openaiClient);
+    console.log('\n=== Starting AI Matching with Claude Opus 4 (Max Thinking) ===');
+    const matches = await matchTweetsToTranscripts(tweets, allTranscripts, anthropicClient);
     
     // Add matches to results
     for (const match of matches) {
