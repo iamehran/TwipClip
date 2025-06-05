@@ -32,11 +32,12 @@ function isRailway(): boolean {
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
   const commands = isRailway() ? [
-    'yt-dlp',                // Should work after nixpacks install
-    '/nix/var/nix/profiles/default/bin/yt-dlp', // Nix profile path
-    `${process.env.HOME}/.nix-profile/bin/yt-dlp`, // User nix profile
-    '/usr/bin/yt-dlp',       // Standard Linux location
-    '/usr/local/bin/yt-dlp', // Alternative Linux location
+    'yt-dlp',                // Should work after pip install
+    '/usr/local/bin/yt-dlp', // Common pip install location
+    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin (pip --user)
+    '/opt/venv/bin/yt-dlp',  // Virtual env location
+    '/usr/bin/yt-dlp',       // System location
+    'python3 -m yt_dlp',     // Python module fallback
   ] : [
     'yt-dlp',                // System command
     'python -m yt_dlp',      // Python module (most reliable on Windows)

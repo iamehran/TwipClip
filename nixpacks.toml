@@ -1,15 +1,16 @@
 [phases.setup]
-# Install system packages including yt-dlp
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "yt-dlp", "ffmpeg"]
+# Install system packages
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg"]
 
 [phases.install]
 # Install Node dependencies
 cmds = ["npm install --legacy-peer-deps"]
 
 [phases.build]
-# Build Next.js and verify tools
+# Install yt-dlp and build Next.js
 cmds = [
-  "export PATH=/nix/var/nix/profiles/default/bin:$PATH",
+  "pip install --break-system-packages yt-dlp",
+  "export PATH=$HOME/.local/bin:/usr/local/bin:$PATH",
   "which yt-dlp && yt-dlp --version || echo 'yt-dlp not found in PATH'",
   "which ffmpeg && ffmpeg -version || echo 'ffmpeg not found in PATH'",
   "npm run build"
@@ -17,4 +18,4 @@ cmds = [
 
 [start]
 # Start the application with proper PATH
-cmd = "export PATH=/nix/var/nix/profiles/default/bin:$PATH && npm start" 
+cmd = "export PATH=$HOME/.local/bin:/usr/local/bin:$PATH && npm start" 
