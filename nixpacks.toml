@@ -1,28 +1,21 @@
 [phases.setup]
-# Install system packages needed for video processing
-nixPkgs = ["nodejs_18", "python311", "python311Packages.pip", "ffmpeg-full", "gcc", "libc6-compat"]
+# Install system packages
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg"]
 
 [phases.install]
-# Install dependencies with legacy peer deps to avoid conflicts
-cmds = [
-  "npm ci --legacy-peer-deps || npm install --legacy-peer-deps"
-]
+# Install Node dependencies
+cmds = ["npm install --legacy-peer-deps"]
 
 [phases.build]
-# Install yt-dlp and build Next.js
+# Install Python packages and build
 cmds = [
-  "pip install --user yt-dlp",
-  "export PATH=$HOME/.local/bin:$PATH",
+  "pip install --upgrade pip",
+  "pip install yt-dlp",
+  "yt-dlp --version",
+  "ffmpeg -version",
   "npm run build"
 ]
 
 [start]
-# Start with PATH including user-installed packages
-cmd = "export PATH=$HOME/.local/bin:$PATH && npm start"
-
-[variables]
-# Environment variables
-PYTHONIOENCODING = "utf-8"
-NODE_ENV = "production"
-# Add user bin to PATH
-PATH = "$PATH:$HOME/.local/bin" 
+# Start the application
+cmd = "npm start" 
