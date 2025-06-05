@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { processVideosIntelligently } from '../../../src/lib/intelligent-processor-v2';
 import { performStartupCheck } from '../../../src/lib/startup-check';
+import { handleError, logError } from '../../../src/lib/error-handler';
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -16,6 +17,25 @@ async function ensureToolsAvailable() {
 
 export async function POST(request) {
   try {
+    const { thread, videos } = await request.json();
+
+    if (!thread || !videos || videos.length === 0) {
+      return NextResponse.json(
+        { error: 'Thread and videos are required' },
+        { status: 400 }
+      );
+    }
+
+    // Add request validation
+    if (videos.length > 5) {
+      return NextResponse.json(
+        { error: 'Maximum 5 videos allowed per request' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Processing request:', { thread: thread.substring(0, 50), videoCount: videos.length });
+
     // Ensure tools are available
     const ready = await ensureToolsAvailable();
     if (!ready) {
@@ -25,16 +45,6 @@ export async function POST(request) {
           details: 'Please check the server console for missing dependencies (yt-dlp, FFmpeg, or API keys)'
         },
         { status: 503 }
-      );
-    }
-
-    const { thread, videos } = await request.json();
-
-    // Validate input
-    if (!thread || !videos || !Array.isArray(videos) || videos.length === 0) {
-      return NextResponse.json(
-        { error: 'Invalid input: thread and videos array required' },
-        { status: 400 }
       );
     }
 
@@ -74,10 +84,12 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Processing error:', error);
+    logError(error, 'process-endpoint');
+    const { message, statusCode } = handleError(error);
+    
     return NextResponse.json(
-      { error: error.message, stack: error.stack },
-      { status: 500 }
+      { error: message },
+      { status: statusCode }
     );
   }
 } 
