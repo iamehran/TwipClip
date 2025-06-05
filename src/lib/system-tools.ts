@@ -32,10 +32,11 @@ function isRailway(): boolean {
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
   const commands = isRailway() ? [
-    'python3 -m yt_dlp',     // Most reliable method according to yt-dlp docs
-    'yt-dlp',                // Binary if installed
+    '/nix/var/nix/profiles/default/bin/yt-dlp', // Same path as ffmpeg
+    'yt-dlp',                // PATH
+    'python3 -m yt_dlp',     // Python module
     '/usr/local/bin/yt-dlp', // Common pip install location
-    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin (pip --user)
+    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
     '/opt/venv/bin/yt-dlp',  // Virtual env location
     '/usr/bin/yt-dlp',       // System location
   ] : [
