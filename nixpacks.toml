@@ -3,7 +3,7 @@
 
 [phases.setup]
 # Install system packages
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "python311Packages.yt-dlp", "ffmpeg"]
+nixPkgs = ["nodejs-18_x", "python311", "ffmpeg"]
 
 [phases.install]
 # Install Node dependencies
@@ -11,11 +11,7 @@ cmds = ["npm install --legacy-peer-deps"]
 
 [phases.build]
 # Build Next.js (yt-dlp will be installed at runtime)
-cmds = [
-  "which yt-dlp || echo 'yt-dlp not in PATH'",
-  "ls -la /nix/var/nix/profiles/default/bin/ | grep -E 'yt-dlp|ffmpeg' || echo 'Checking nix bin directory'",
-  "npm run build"
-]
+cmds = ["npm run build"]
 
 [start]
 # Start the application using the script that installs yt-dlp
