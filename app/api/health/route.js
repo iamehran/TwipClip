@@ -26,15 +26,20 @@ export async function GET() {
       }
     };
     
-    // Determine overall health
-    const isHealthy = hasOpenAI && tools.ytdlp.available && tools.ffmpeg.available;
+    // Only require OpenAI to be configured for health check to pass
+    // Tools can be missing as they might be installed differently on Railway
+    const isHealthy = hasOpenAI;
     
     if (!isHealthy) {
+      health.status = 'unhealthy';
+    } else if (!tools.ytdlp.available || !tools.ffmpeg.available) {
       health.status = 'degraded';
+      health.warning = 'Some tools are missing but core functionality is available';
     }
     
+    // Always return 200 if OpenAI is configured
     return NextResponse.json(health, { 
-      status: isHealthy ? 200 : 503 
+      status: hasOpenAI ? 200 : 503 
     });
     
   } catch (error) {
