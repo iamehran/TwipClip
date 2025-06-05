@@ -246,4 +246,4 @@ For issues and questions:
 
 ---
 
-**Built with ❤️ using Claude Opus 4, Next.js, and modern web technologies.**
+**Built with ❤️ .**
