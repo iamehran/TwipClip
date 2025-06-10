@@ -72,6 +72,11 @@ export async function POST(request) {
       }
     }
 
+    // Calculate average confidence
+    const avgConfidence = matches.length > 0 
+      ? matches.reduce((sum, m) => sum + (m.confidence || 0), 0) / matches.length
+      : 0;
+
     return NextResponse.json({
       success: true,
       matches: matches,
@@ -79,7 +84,9 @@ export async function POST(request) {
         videosProcessed: results.length,
         videosSuccessful: results.filter(r => r.success).length,
         clipsFound: matches.length,
-        clipsDownloaded: matches.filter(m => m.downloadSuccess).length
+        clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
+        avgConfidence: avgConfidence,
+        aiModel: 'Claude Opus 4'
       }
     });
 

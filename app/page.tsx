@@ -271,7 +271,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-gray-400">AI Model Used</p>
-                  <p className="text-white font-mono">{stats.aiModel || 'GPT-4'}</p>
+                  <p className="text-white font-mono">{stats.aiModel || 'Claude Opus 4'}</p>
                 </div>
                 <div>
                   <p className="text-gray-400">Transcription Quality</p>
