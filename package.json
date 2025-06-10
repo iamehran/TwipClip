@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prestart": "node scripts/test-ytdlp.js",
     "start": "next start",
     "start:railway": "node scripts/start-production.js",
     "lint": "next lint",

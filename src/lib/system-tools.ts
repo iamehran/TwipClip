@@ -32,9 +32,10 @@ function isRailway(): boolean {
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
   const commands = isRailway() ? [
+    '/opt/venv/bin/yt-dlp',      // Virtual environment (most reliable)
     'yt-dlp',                    // Direct command (works in Docker)
     'python3 -m yt_dlp',         // Python module (also works in Docker)
-    '/usr/local/bin/yt-dlp',     // Common pip install location
+    '/usr/local/bin/yt-dlp',     // Binary fallback location
     '/usr/local/bin/yt-dlp-binary', // Our binary fallback
     '/app/bin/yt-dlp',           // Our custom installation path
     '/opt/venv/bin/yt-dlp',      // Virtual env location
