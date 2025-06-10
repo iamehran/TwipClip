@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -31,18 +32,35 @@ function isRailway(): boolean {
  * Try multiple commands to find working yt-dlp
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
+  // First, check if specific paths exist
+  const directPaths = [
+    '/opt/venv/bin/yt-dlp',
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+    '/app/yt-dlp'
+  ];
+  
+  console.log('Checking for yt-dlp binary files...');
+  for (const path of directPaths) {
+    if (existsSync(path)) {
+      console.log(`Found binary at: ${path}`);
+      try {
+        const { stdout } = await execAsync(`${path} --version`);
+        if (stdout) {
+          console.log(`✅ Binary works: ${path} (version: ${stdout.trim()})`);
+          return { command: path, version: stdout.trim() };
+        }
+      } catch (e) {
+        console.log(`Binary exists but failed to execute: ${path}`);
+      }
+    }
+  }
+  
+  // Then try command-based approaches
   const commands = isRailway() ? [
-    '/opt/venv/bin/yt-dlp',      // Virtual environment (most reliable)
-    'yt-dlp',                    // Direct command (works in Docker)
-    'python3 -m yt_dlp',         // Python module (also works in Docker)
-    '/usr/local/bin/yt-dlp',     // Binary fallback location
-    '/usr/local/bin/yt-dlp-binary', // Our binary fallback
-    '/app/bin/yt-dlp',           // Our custom installation path
-    '/opt/venv/bin/yt-dlp',      // Virtual env location
-    `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
-    '/app/.local/bin/yt-dlp',    // Railway app directory
-    '/root/.local/bin/yt-dlp',   // Root user local
-    '/usr/bin/yt-dlp',           // System location
+    'python3 -m yt_dlp',         // Python module (most reliable)
+    'yt-dlp',                    // PATH
+    '/opt/venv/bin/python3 -m yt_dlp', // Direct venv python
   ] : [
     'yt-dlp',                // System command
     '.\\yt-dlp.exe',         // Windows current directory with proper prefix
@@ -67,7 +85,7 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
     commands.unshift(process.env.YTDLP_PATH);
   }
 
-  console.log('Searching for yt-dlp in:', commands.slice(0, 5).join(', '), '...');
+  console.log('Trying command-based approaches...');
 
   for (const cmd of commands) {
     try {
@@ -76,12 +94,34 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
         windowsHide: true
       });
       
-      if (stdout && stdout.includes('yt-dlp')) {
+      if (stdout && stdout.includes('20')) { // Check for year in version
         console.log(`✅ Found working yt-dlp: ${cmd}`);
         return { command: cmd, version: stdout.trim() };
       }
     } catch (e) {
       // Continue to next command
+    }
+  }
+
+  // Last resort: try to find yt-dlp anywhere in the system
+  if (isRailway()) {
+    try {
+      console.log('Searching for yt-dlp in filesystem...');
+      const { stdout } = await execAsync('find / -name yt-dlp -type f 2>/dev/null | head -5');
+      const paths = stdout.trim().split('\n').filter(p => p);
+      for (const path of paths) {
+        try {
+          const { stdout: version } = await execAsync(`${path} --version`);
+          if (version) {
+            console.log(`✅ Found yt-dlp at: ${path}`);
+            return { command: path, version: version.trim() };
+          }
+        } catch (e) {
+          // Continue
+        }
+      }
+    } catch (e) {
+      console.log('Find command failed');
     }
   }
 

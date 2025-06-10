@@ -63,8 +63,30 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   
   console.log('Extracting audio from video...');
   
-  // Get the working yt-dlp command
-  const ytdlpCmd = await getYtDlpCommand();
+  // Try to get the working yt-dlp command
+  let ytdlpCmd: string;
+  try {
+    ytdlpCmd = await getYtDlpCommand();
+  } catch (error) {
+    console.log('getYtDlpCommand failed, trying direct paths...');
+    // Fallback to direct paths
+    const fallbackPaths = ['/app/yt-dlp', '/usr/local/bin/yt-dlp', 'python3 -m yt_dlp'];
+    let found = false;
+    for (const path of fallbackPaths) {
+      try {
+        await execAsync(`${path} --version`);
+        ytdlpCmd = path;
+        found = true;
+        console.log(`Using fallback: ${path}`);
+        break;
+      } catch (e) {
+        // Continue
+      }
+    }
+    if (!found) {
+      throw new Error('yt-dlp not found even with fallbacks');
+    }
+  }
   
   // Get FFmpeg path
   const ffmpegPath = getFFmpegPath();
