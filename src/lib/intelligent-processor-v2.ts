@@ -41,8 +41,8 @@ export async function processVideosIntelligently(thread: string, videos: string[
     apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
   });
 
-  // Parse tweets from thread
-  const tweets = thread.split('-').map(t => t.trim()).filter(t => t.length > 0);
+  // Parse tweets from thread using triple dashes as separator
+  const tweets = thread.split('---').map(t => t.trim()).filter(t => t.length > 0);
   console.log(`Parsed ${tweets.length} tweets from thread`);
 
   const results: VideoProcessingResult[] = [];

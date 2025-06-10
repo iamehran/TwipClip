@@ -68,7 +68,7 @@ TwipClip is an intelligent web application that matches social media thread cont
 ## 🎯 How to Use
 
 1. **Prepare your content**:
-   - Write your social media thread with tweets separated by dashes (`-`)
+   - Write your social media thread with tweets separated by triple dashes (`---`)
    - Collect video URLs (YouTube, Vimeo, etc.)
 
 2. **Input your data**:
@@ -83,9 +83,9 @@ TwipClip is an intelligent web application that matches social media thread cont
 ### Example Thread Format
 ```
 Zuckerberg just threatened to shut down Instagram in Europe.
--
+---
 After the EU hit him with a $1.3 BILLION fine…
--
+---
 He gave them 2 options: Drop the case—or lose access for 400M users.
 ```
 

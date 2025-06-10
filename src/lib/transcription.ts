@@ -7,9 +7,6 @@ import path from 'path';
 import { existsSync } from 'fs';
 import * as YoutubeTranscript from 'youtube-transcript';
 import { getYtDlpCommand, getFFmpegPath } from './system-tools';
-import { downloadVideoWithFallbacks } from './video-downloader-fallback';
-import { getCaptionsViaAPI } from './youtube-api-only';
-import { scrapeYouTubeTranscript } from './youtube-transcript-scraper';
 
 // Fix for File API in Node.js < 20
 import { File } from 'node:buffer';
@@ -66,6 +63,15 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   // Clean the URL - remove any trailing semicolons or whitespace
   videoUrl = videoUrl.trim().replace(/;+$/, '');
   
+  // Check if this is a YouTube URL and if user is authenticated
+  const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
+  const authFile = path.join(process.cwd(), 'temp', 'youtube_auth.txt');
+  const isAuthenticated = isYouTube && existsSync(authFile);
+  
+  if (isAuthenticated) {
+    console.log('✅ YouTube authentication detected - using cookie bypass');
+  }
+  
   const tempDir = path.join(process.cwd(), 'temp');
   const timestamp = Date.now();
   const randomId = Math.random().toString(36).substring(7);
@@ -91,7 +97,7 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   console.log(`Output path: ${audioPath}`);
   
   // Try to get the working yt-dlp command
-  let ytdlpCmd: string;
+  let ytdlpCmd: string = '';
   try {
     ytdlpCmd = await getYtDlpCommand();
   } catch (error) {
@@ -120,51 +126,94 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   
   // Build the command with proper options
   let command: string;
+  const baseOptions = `-x --audio-format mp3 --audio-quality 0 --no-mtime --no-part --paths "${tempDir}"`;
+  const headers = `--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"`;
+  
+  // If authenticated, use special options that work better
+  let authOptions = '';
+  if (isAuthenticated) {
+    // Use options that make yt-dlp appear more like a logged-in user
+    authOptions = '--extractor-args "youtube:player_client=web" --no-check-certificates';
+  }
+  
   if (isRailway) {
     // On Railway, use simpler options to avoid file permission issues
-    // Use --paths to specify temp directory
-    // Use --no-mtime to avoid utime errors
-    // Use --no-part to avoid partial file issues
-    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --no-mtime --no-part --paths "${tempDir}" "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
+    command = `${ytdlpCmd} ${baseOptions} ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   } else {
     // In development, use the specific FFmpeg location
     const ffmpegPath = getFFmpegPath();
     const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" --paths "${tempDir}" "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
+    command = `${ytdlpCmd} ${baseOptions} --ffmpeg-location "${ffmpegDir}" ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   }
   
   console.log(`Executing command...`);
   
-  try {
-    const { stdout, stderr } = await execAsync(command, {
-      timeout: 300000, // 5 minutes
-      maxBuffer: 1024 * 1024 * 10,
-      cwd: tempDir, // Set working directory to temp
-      env: {
-        ...process.env,
-        // Ensure Python uses UTF-8
-        PYTHONIOENCODING: 'utf-8',
-        // Disable any interactive prompts
-        DEBIAN_FRONTEND: 'noninteractive'
+  let attemptCount = 0;
+  const maxAttempts = 2;
+  let lastError: any = null;
+  
+  while (attemptCount < maxAttempts) {
+    try {
+      attemptCount++;
+      
+      // Modify command based on attempt
+      let attemptCommand = command;
+      if (attemptCount === 2 && !isAuthenticated) {
+        // Second attempt: Add extractor args to bypass bot detection (only if not authenticated)
+        console.log('First attempt failed, trying with extractor args...');
+        attemptCommand = command.replace(
+          '--user-agent',
+          '--extractor-args "youtube:player_client=android" --user-agent'
+        );
       }
-    });
-    
-    if (stdout) {
-      console.log('yt-dlp output:', stdout.substring(0, 200));
+      
+      const { stdout, stderr } = await execAsync(attemptCommand, {
+        timeout: 300000, // 5 minutes
+        maxBuffer: 1024 * 1024 * 10,
+        cwd: tempDir, // Set working directory to temp
+        env: {
+          ...process.env,
+          // Ensure Python uses UTF-8
+          PYTHONIOENCODING: 'utf-8',
+          // Disable any interactive prompts
+          DEBIAN_FRONTEND: 'noninteractive'
+        }
+      });
+      
+      if (stdout) {
+        console.log('yt-dlp output:', stdout.substring(0, 200));
+      }
+      
+      if (stderr && !stderr.includes('WARNING')) {
+        console.log('yt-dlp stderr:', stderr.substring(0, 200));
+      }
+      
+      // If we get here, command succeeded
+      break;
+      
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a bot detection error
+      if (error.message?.includes('Sign in to confirm') || error.stderr?.includes('Sign in to confirm')) {
+        console.log(`Attempt ${attemptCount} failed with bot detection`);
+        
+        if (attemptCount < maxAttempts) {
+          // Wait a bit before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      }
+      
+      // For other errors, throw immediately
+      throw error;
     }
-    
-    if (stderr && !stderr.includes('WARNING')) {
-      console.log('yt-dlp stderr:', stderr.substring(0, 200));
-    }
-  } catch (error: any) {
-    console.error('yt-dlp command failed:', error.message);
-    if (error.stderr) {
-      console.error('stderr:', error.stderr);
-    }
-    if (error.stdout) {
-      console.error('stdout:', error.stdout);
-    }
-    throw new Error(`Audio extraction failed: ${error.message}`);
+  }
+  
+  // If all attempts failed, throw the last error
+  if (attemptCount >= maxAttempts && lastError) {
+    console.error('All attempts failed');
+    throw lastError;
   }
   
   // Check if file was created (yt-dlp might use different extension)

@@ -27,11 +27,11 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
   // Example content for easy testing
   const loadExample = () => {
     setThreadContent(`The AI revolution isn't coming - it's already here, reshaping how we work and create
--
+---
 This wasn't just another CEO interview. Sundar Pichai uncovered that the businesses winning today aren't just building new products... they've built a brand new playbook
--
+---
 And tech companies are using it to dominate. Here are his 8 revelations on the shift happening right now
--
+---
 The $2 trillion opportunity that most are missing completely`);
     
     setVideoUrlsText(`https://www.youtube.com/watch?v=abc123
@@ -48,7 +48,7 @@ https://www.youtube.com/watch?v=xyz789`);
               Thread Content
             </label>
             <p className="text-sm text-gray-400">
-              Enter your hook first, then separate each tweet with a dash (-)
+              Enter your hook first, then separate each tweet with triple dashes (---)
             </p>
           </div>
           <button
@@ -66,11 +66,11 @@ https://www.youtube.com/watch?v=xyz789`);
           onChange={(e) => setThreadContent(e.target.value)}
           className="w-full h-48 px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
           placeholder={`Your thread hook goes here...
--
+---
 First tweet content
--
+---
 Second tweet content
--
+---
 Third tweet content`}
           required
           spellCheck={false}
@@ -83,7 +83,7 @@ Third tweet content`}
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span>Tip: Each section separated by a dash (-) will be treated as a separate piece of content</span>
+          <span>Tip: Each section separated by triple dashes (---) will be treated as a separate piece of content</span>
         </div>
       </div>
 

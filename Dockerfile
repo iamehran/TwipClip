@@ -4,7 +4,7 @@ FROM node:18-alpine
 RUN apk add --no-cache python3 py3-pip ffmpeg curl bash
 
 # Install yt-dlp using pip with no-cache-dir flag
-RUN pip3 install --break-system-packages --no-cache-dir yt-dlp
+RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp
 
 # Also download the standalone binary to /usr/local/bin
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \

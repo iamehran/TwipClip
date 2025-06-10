@@ -6,6 +6,7 @@ import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
 import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
+import YouTubeConnect from './components/YouTubeConnect';
 
 interface VideoClip {
   videoId: string;
@@ -167,6 +168,9 @@ export default function Home() {
               </span>
             </div>
           </div>
+
+          {/* YouTube Connection */}
+          <YouTubeConnect />
 
           {/* Search Form */}
           <SearchForm onSearch={handleSearch} loading={loading} />

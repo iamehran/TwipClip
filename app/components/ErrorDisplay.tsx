@@ -6,6 +6,9 @@ interface ErrorDisplayProps {
 }
 
 export default function ErrorDisplay({ error, onRetry }: ErrorDisplayProps) {
+  // Check if it's a YouTube bot detection error
+  const isBotDetectionError = error.includes('Sign in to confirm') || error.includes('bot');
+  
   const getErrorInfo = () => {
     if (error.includes('401') || error.includes('authentication')) {
       return {
@@ -68,68 +71,38 @@ export default function ErrorDisplay({ error, onRetry }: ErrorDisplayProps) {
   const errorInfo = getErrorInfo();
 
   return (
-    <div className="mt-6 max-w-2xl mx-auto">
-      <div className="bg-red-900/20 backdrop-blur-sm border border-red-500/30 rounded-xl p-6">
-        {/* Header */}
-        <div className="flex items-start gap-4">
-          <div className="text-4xl">{errorInfo.icon}</div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-red-300 mb-1">
-              {errorInfo.title}
-            </h3>
-            <p className="text-red-200/80 text-sm">
-              {errorInfo.message}
-            </p>
-          </div>
-        </div>
-
-        {/* Suggestions */}
-        {errorInfo.suggestions.length > 0 && (
-          <div className="mt-4 bg-gray-800/30 rounded-lg p-4">
-            <p className="text-xs font-medium text-gray-400 mb-2">Suggestions:</p>
-            <ul className="space-y-1">
-              {errorInfo.suggestions.map((suggestion, index) => (
-                <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
-                  <span className="text-gray-500 mt-0.5">•</span>
-                  <span>{suggestion}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="mt-4 flex items-center gap-3">
+    <div className="mt-8 p-6 bg-red-900/20 border border-red-700/50 rounded-lg">
+      <div className="flex items-start gap-3">
+        <svg className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-red-400 mb-1">
+            {isBotDetectionError ? 'YouTube Access Issue' : 'Processing Error'}
+          </h3>
+          <p className="text-red-300/90 mb-3">{error}</p>
+          
+          {isBotDetectionError && (
+            <div className="mt-3 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded text-sm text-yellow-300">
+              <p className="font-semibold mb-1">YouTube is blocking automated access. Try:</p>
+              <ul className="list-disc list-inside space-y-1 text-yellow-300/90">
+                <li>Wait a few minutes and retry</li>
+                <li>Use different video URLs</li>
+                <li>Try videos from other platforms (Vimeo, etc.)</li>
+                <li>Contact support if the issue persists</li>
+              </ul>
+            </div>
+          )}
+          
           {onRetry && (
             <button
               onClick={onRetry}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm font-medium"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
               Try Again
             </button>
           )}
-          
-          <button
-            onClick={() => navigator.clipboard.writeText(error)}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm font-medium transition-colors"
-          >
-            Copy Error
-          </button>
         </div>
-
-        {/* Technical Details */}
-        <details className="mt-4">
-          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
-            Technical details
-          </summary>
-          <pre className="mt-2 p-3 bg-gray-900/50 rounded text-xs text-gray-400 overflow-x-auto">
-            {error}
-          </pre>
-        </details>
       </div>
     </div>
   );

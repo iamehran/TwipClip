@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { processVideosIntelligently } from '../../../src/lib/intelligent-processor-v2';
 import { performStartupCheck } from '../../../src/lib/startup-check';
 import { handleError, logError } from '../../../src/lib/error-handler';
+import { cookies } from 'next/headers';
+import path from 'path';
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -13,6 +17,26 @@ async function ensureToolsAvailable() {
     startupCheckDone = true;
   }
   return toolsAvailable;
+}
+
+async function ensureAuthFile() {
+  const cookieStore = cookies();
+  const isAuthenticated = cookieStore.get('youtube_authenticated')?.value === 'true';
+  
+  if (isAuthenticated) {
+    const cookieDir = path.join(process.cwd(), 'temp');
+    const cookieFile = path.join(cookieDir, 'youtube_auth.txt');
+    
+    try {
+      if (!existsSync(cookieDir)) {
+        await fs.mkdir(cookieDir, { recursive: true });
+      }
+      await fs.writeFile(cookieFile, 'authenticated', 'utf-8');
+      console.log('✅ YouTube auth file created');
+    } catch (error) {
+      console.error('Failed to create auth file:', error);
+    }
+  }
 }
 
 export async function POST(request) {
@@ -36,6 +60,9 @@ export async function POST(request) {
 
     console.log('Processing request:', { thread: thread.substring(0, 50), videoCount: videos.length });
 
+    // Ensure auth file exists if user is authenticated
+    await ensureAuthFile();
+    
     // Ensure tools are available
     const ready = await ensureToolsAvailable();
     if (!ready) {
