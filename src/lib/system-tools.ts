@@ -32,15 +32,16 @@ function isRailway(): boolean {
  */
 async function findYtDlp(): Promise<{ command: string; version: string } | null> {
   const commands = isRailway() ? [
-    'python3 -m yt_dlp',     // Python module (most reliable after pip install)
-    'yt-dlp',                // PATH
-    '/opt/venv/bin/yt-dlp',  // Virtual env location
+    '/app/bin/yt-dlp',           // Our custom installation path
+    'python3 -m yt_dlp',         // Python module (most reliable after pip install)
+    'yt-dlp',                    // PATH
+    '/opt/venv/bin/yt-dlp',      // Virtual env location
     `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
-    '/usr/local/bin/yt-dlp', // Common pip install location
-    '/app/.local/bin/yt-dlp', // Railway app directory
-    '/root/.local/bin/yt-dlp', // Root user local
+    '/usr/local/bin/yt-dlp',     // Common pip install location
+    '/app/.local/bin/yt-dlp',    // Railway app directory
+    '/root/.local/bin/yt-dlp',   // Root user local
     '/nix/var/nix/profiles/default/bin/yt-dlp', // Nix profile
-    '/usr/bin/yt-dlp',       // System location
+    '/usr/bin/yt-dlp',           // System location
   ] : [
     'yt-dlp',                // System command
     '.\\yt-dlp.exe',         // Windows current directory with proper prefix

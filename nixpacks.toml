@@ -3,7 +3,7 @@
 
 [phases.setup]
 # Install system packages including curl for downloading
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg", "curl", "bash"]
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg", "curl", "bash", "git"]
 
 [phases.install]
 # Install Node dependencies and set up yt-dlp
@@ -11,6 +11,7 @@ cmds = [
   "npm install --legacy-peer-deps",
   "python3 -m pip install --upgrade pip",
   "python3 -m pip install -r requirements.txt || true",
+  "python3 -m pip install yt-dlp || true",
   "chmod +x scripts/railway-setup.sh",
   "bash scripts/railway-setup.sh"
 ]
@@ -20,5 +21,9 @@ cmds = [
 cmds = ["npm run build"]
 
 [start]
-# Start the application
-cmd = "npm start" 
+# Start the application with environment setup
+cmd = "export PATH=/app/bin:$PATH && export YTDLP_PATH=/app/bin/yt-dlp && npm start"
+
+[variables]
+PATH = "/app/bin:/app/.local/bin:$PATH"
+PYTHONPATH = "/app/.local/lib/python3.11/site-packages:$PYTHONPATH" 

@@ -2,12 +2,15 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm install --legacy-peer-deps && pip3 install --user yt-dlp && npm run build"
+    "buildCommand": "npm install --legacy-peer-deps && pip3 install --user yt-dlp && npm run build",
+    "nixpacksConfigPath": "nixpacks.toml"
   },
   "deploy": {
-    "startCommand": "npm start",
+    "startCommand": "export PATH=/app/bin:/app/.local/bin:$PATH && export YTDLP_PATH=/app/bin/yt-dlp && npm start",
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 300
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
   },
   "variables": {
     "PYTHONPATH": "$PYTHONPATH:/app/.local/lib/python3.11/site-packages",

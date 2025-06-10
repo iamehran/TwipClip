@@ -7,6 +7,9 @@ import path from 'path';
 import { existsSync } from 'fs';
 import * as YoutubeTranscript from 'youtube-transcript';
 import { getYtDlpCommand, getFFmpegPath } from './system-tools';
+import { downloadVideoWithFallbacks } from './video-downloader-fallback';
+import { getCaptionsViaAPI } from './youtube-api-only';
+import { scrapeYouTubeTranscript } from './youtube-transcript-scraper';
 
 const execAsync = promisify(exec);
 
@@ -61,37 +64,49 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string | null> {
   try {
     console.log('Extracting audio from video...');
     
-    // Get the working yt-dlp command
-    const ytdlpCmd = await getYtDlpCommand();
-    
-    // Get FFmpeg path
-    const ffmpegPath = getFFmpegPath();
-    const ffmpegDir = path.dirname(ffmpegPath);
-    
-    // Use the detected command with FFmpeg location
-    const command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${audioPath}"`;
-    
-    console.log(`Running: ${command}`);
-    
-    await execAsync(command, {
-      timeout: 300000, // 5 minutes
-      maxBuffer: 1024 * 1024 * 10
-    });
-    
-    // Check if file was created
-    if (existsSync(audioPath)) {
-      console.log('✓ Audio extracted successfully');
-      return audioPath;
+    // First try with yt-dlp if available
+    try {
+      const ytdlpCmd = await getYtDlpCommand();
+      
+      // Get FFmpeg path
+      const ffmpegPath = getFFmpegPath();
+      const ffmpegDir = path.dirname(ffmpegPath);
+      
+      // Use the detected command with FFmpeg location
+      const command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${audioPath}"`;
+      
+      console.log(`Running: ${command}`);
+      
+      await execAsync(command, {
+        timeout: 300000, // 5 minutes
+        maxBuffer: 1024 * 1024 * 10
+      });
+      
+      // Check if file was created
+      if (existsSync(audioPath)) {
+        console.log('✓ Audio extracted successfully with yt-dlp');
+        return audioPath;
+      }
+      
+      // Sometimes yt-dlp adds extension, check for that
+      const audioPathWithExt = `${audioPath}.mp3`;
+      if (existsSync(audioPathWithExt)) {
+        console.log('✓ Audio extracted successfully with yt-dlp');
+        return audioPathWithExt;
+      }
+    } catch (ytdlpError) {
+      console.log('yt-dlp not available, trying fallback methods...');
+      
+      // Use our fallback download methods
+      const result = await downloadVideoWithFallbacks(videoUrl, audioPath);
+      
+      if (result.success && existsSync(audioPath)) {
+        console.log(`✓ Audio extracted successfully using ${result.method} method`);
+        return audioPath;
+      }
     }
     
-    // Sometimes yt-dlp adds extension, check for that
-    const audioPathWithExt = `${audioPath}.mp3`;
-    if (existsSync(audioPathWithExt)) {
-      console.log('✓ Audio extracted successfully');
-      return audioPathWithExt;
-    }
-    
-    throw new Error('Audio file not created');
+    throw new Error('All audio extraction methods failed');
   } catch (error) {
     console.error('Audio extraction failed:', error);
     return null;
@@ -105,9 +120,37 @@ async function extractWithYouTubeTranscript(videoUrl: string): Promise<Processed
       throw new Error('Invalid YouTube URL');
     }
 
-    // Use the correct method name from youtube-transcript
-    const YoutubeTranscriptApi = (YoutubeTranscript as any).YoutubeTranscript;
-    const transcript = await YoutubeTranscriptApi.fetchTranscript(videoId);
+    console.log(`Fetching transcript for video ID: ${videoId}`);
+
+    // Try multiple methods to get transcript
+    let transcript = null;
+    
+    // Method 1: Use the YoutubeTranscript library
+    try {
+      const YoutubeTranscriptApi = (YoutubeTranscript as any).YoutubeTranscript;
+      transcript = await YoutubeTranscriptApi.fetchTranscript(videoId);
+    } catch (e) {
+      console.log('YoutubeTranscript.fetchTranscript failed, trying alternative...');
+    }
+    
+    // Method 2: Try with different import style
+    if (!transcript) {
+      try {
+        transcript = await YoutubeTranscript.fetchTranscript(videoId);
+      } catch (e) {
+        console.log('Direct fetchTranscript failed');
+      }
+    }
+    
+    // Method 3: Try with URL instead of ID
+    if (!transcript) {
+      try {
+        const YoutubeTranscriptApi = (YoutubeTranscript as any).YoutubeTranscript;
+        transcript = await YoutubeTranscriptApi.fetchTranscript(videoUrl);
+      } catch (e) {
+        console.log('Transcript fetch with URL failed');
+      }
+    }
     
     if (!transcript || transcript.length === 0) {
       throw new Error('No transcript found');
@@ -125,6 +168,8 @@ async function extractWithYouTubeTranscript(videoUrl: string): Promise<Processed
       text: item.text
     }));
 
+    console.log(`✅ Retrieved ${segments.length} transcript segments`);
+
     return {
       videoUrl,
       videoId,
@@ -132,6 +177,7 @@ async function extractWithYouTubeTranscript(videoUrl: string): Promise<Processed
       totalDuration: segments[segments.length - 1]?.endTime || 0
     };
   } catch (error) {
+    console.error('YouTube transcript extraction failed:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -181,26 +227,69 @@ async function extractWithWhisper(videoUrl: string, audioPath: string): Promise<
 export async function getVideoTranscript(videoUrl: string, platform: string): Promise<ProcessedTranscript | null> {
   console.log(`Getting transcript for ${platform} video...`);
   
-  // For YouTube, try transcript API first if yt-dlp is not available
+  // For YouTube, try multiple transcript methods
   if (platform === 'youtube') {
-    // Check if yt-dlp is available
-    try {
-      const ytdlpCmd = await getYtDlpCommand();
-      console.log('yt-dlp available, using Whisper-first approach');
-    } catch (e) {
-      // yt-dlp not available, use YouTube transcript first
-      console.log('yt-dlp not available, trying YouTube transcript API first');
-      const ytResult = await extractWithYouTubeTranscript(videoUrl);
-      if (ytResult) {
-        console.log('✅ YouTube transcript successful');
-        return ytResult;
+    const videoId = extractYouTubeVideoId(videoUrl);
+    if (!videoId) {
+      console.error('Invalid YouTube URL');
+      return null;
+    }
+    
+    // Method 1: Try our web scraper first (most reliable, no dependencies)
+    console.log('📝 Trying web scraper method...');
+    const scrapedTranscript = await scrapeYouTubeTranscript(videoId);
+    if (scrapedTranscript && scrapedTranscript.length > 0) {
+      const segments: TranscriptSegment[] = scrapedTranscript.map((item, index) => ({
+        index,
+        startTime: item.start,
+        endTime: item.start + item.duration,
+        duration: item.duration,
+        text: item.text
+      }));
+      
+      console.log(`✅ Web scraper successful - ${segments.length} segments`);
+      return {
+        videoUrl,
+        videoId,
+        segments,
+        totalDuration: segments[segments.length - 1]?.endTime || 0
+      };
+    }
+    
+    // Method 2: Try YouTube transcript library
+    console.log('📝 Trying YouTube transcript library...');
+    const ytResult = await extractWithYouTubeTranscript(videoUrl);
+    if (ytResult) {
+      console.log('✅ YouTube transcript library successful');
+      return ytResult;
+    }
+    
+    // Method 3: Try our API-only method (requires YouTube API key)
+    if (process.env.YOUTUBE_API_KEY) {
+      console.log('📝 Trying YouTube API method...');
+      const apiTranscript = await getCaptionsViaAPI(videoId);
+      if (apiTranscript && apiTranscript.length > 0) {
+        const segments: TranscriptSegment[] = apiTranscript.map((item: any, index: number) => ({
+          index,
+          startTime: item.start || 0,
+          endTime: (item.start || 0) + 5, // Estimate if no end time
+          duration: 5,
+          text: item.text || ''
+        }));
+        
+        return {
+          videoUrl,
+          videoId,
+          segments,
+          totalDuration: segments[segments.length - 1]?.endTime || 0
+        };
       }
     }
   }
   
-  // WHISPER-FIRST APPROACH (if yt-dlp is available)
+  // WHISPER APPROACH (only if we can get audio)
   try {
-    console.log('🎤 Attempting Whisper transcription (primary method)...');
+    console.log('🎤 Attempting Whisper transcription...');
     
     // Extract audio for Whisper
     const audioPath = await extractAudioFromVideo(videoUrl);
@@ -220,30 +309,7 @@ export async function getVideoTranscript(videoUrl: string, platform: string): Pr
       }
     }
   } catch (error) {
-    console.log('⚠️ Whisper transcription failed, trying fallback methods...');
-  }
-  
-  // FALLBACK METHODS
-  switch (platform) {
-    case 'youtube':
-      // Try YouTube transcript API as fallback
-      console.log('📝 Trying YouTube transcript library (fallback)...');
-      const ytResult = await extractWithYouTubeTranscript(videoUrl);
-      if (ytResult) {
-        console.log('✅ YouTube transcript successful');
-        return ytResult;
-      }
-      break;
-      
-    case 'vimeo':
-    case 'twitter':
-    case 'tiktok':
-    case 'instagram':
-    case 'direct':
-    case 'generic':
-      // For non-YouTube platforms, we already tried Whisper
-      console.log('❌ No fallback methods available for this platform');
-      break;
+    console.log('⚠️ Whisper transcription failed');
   }
   
   console.log('❌ All transcription methods failed');

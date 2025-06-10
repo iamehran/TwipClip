@@ -12,59 +12,76 @@ command_exists() {
 echo "Checking Python..."
 if command_exists python3; then
     echo "✅ Python3 found: $(python3 --version)"
+    
+    # Upgrade pip first
+    echo "Upgrading pip..."
+    python3 -m pip install --upgrade pip || true
 else
     echo "❌ Python3 not found"
+    exit 1
 fi
 
 # 2. Install yt-dlp using multiple methods
 echo -e "\nInstalling yt-dlp..."
 
-# Method 1: pip install with user flag
-if command_exists pip3; then
-    echo "Trying pip3 install --user..."
-    pip3 install --user yt-dlp
-fi
+# Method 1: Direct pip install
+echo "Method 1: Direct pip install..."
+python3 -m pip install yt-dlp && echo "✅ Installed via pip" || echo "❌ pip install failed"
 
-# Method 2: pip install without user flag
-if ! command_exists yt-dlp; then
-    echo "Trying pip3 install..."
-    pip3 install yt-dlp || true
-fi
-
-# Method 3: Download directly from GitHub
-if ! command_exists yt-dlp; then
-    echo "Downloading yt-dlp directly..."
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-    chmod a+rx /usr/local/bin/yt-dlp
-fi
-
-# Method 4: Download to app directory
-if ! command_exists yt-dlp; then
-    echo "Downloading yt-dlp to app directory..."
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp
-    chmod +x ./yt-dlp
-    export PATH="$PATH:$(pwd)"
-fi
-
-# Method 5: Use Python module directly
-if ! command_exists yt-dlp && command_exists python3; then
-    echo "Setting up yt-dlp Python module alias..."
-    echo '#!/bin/bash' > /usr/local/bin/yt-dlp
-    echo 'python3 -m yt_dlp "$@"' >> /usr/local/bin/yt-dlp
-    chmod +x /usr/local/bin/yt-dlp
-fi
-
-# 3. Update PATH to include all possible locations
-export PATH="$PATH:/app/.local/bin:/root/.local/bin:/usr/local/bin:$(pwd)"
-
-# 4. Final check
-echo -e "\nFinal check..."
+# Check if it worked
 if command_exists yt-dlp || python3 -m yt_dlp --version 2>/dev/null; then
-    echo "✅ yt-dlp is available!"
-    yt-dlp --version || python3 -m yt_dlp --version
+    echo "✅ yt-dlp is now available!"
 else
-    echo "❌ Failed to install yt-dlp"
+    # Method 2: Download directly from GitHub
+    echo "Method 2: Downloading yt-dlp binary..."
+    mkdir -p /app/bin
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /app/bin/yt-dlp
+    chmod +x /app/bin/yt-dlp
+    export PATH="/app/bin:$PATH"
+    
+    # Test if binary works
+    if /app/bin/yt-dlp --version; then
+        echo "✅ Binary download successful"
+        
+        # Create a Python wrapper
+        echo "Creating Python wrapper..."
+        cat > /app/bin/yt-dlp-wrapper.py << 'EOF'
+#!/usr/bin/env python3
+import sys
+import subprocess
+subprocess.run(['/app/bin/yt-dlp'] + sys.argv[1:])
+EOF
+        chmod +x /app/bin/yt-dlp-wrapper.py
+        
+        # Create symlink for python module
+        mkdir -p /app/.local/lib/python3.11/site-packages
+        ln -sf /app/bin/yt-dlp-wrapper.py /app/.local/lib/python3.11/site-packages/yt_dlp.py
+    else
+        echo "❌ Binary download failed"
+    fi
 fi
+
+# 3. Set up environment variables
+echo -e "\nSetting up environment..."
+export PATH="/app/bin:/app/.local/bin:/usr/local/bin:$PATH"
+export PYTHONPATH="/app/.local/lib/python3.11/site-packages:$PYTHONPATH"
+export YTDLP_PATH="/app/bin/yt-dlp"
+
+# 4. Final verification
+echo -e "\nFinal verification..."
+echo "PATH: $PATH"
+echo "PYTHONPATH: $PYTHONPATH"
+
+# Test all possible ways to run yt-dlp
+echo -e "\nTesting yt-dlp execution methods:"
+echo "1. Direct command:"
+yt-dlp --version 2>/dev/null && echo "✅ Works" || echo "❌ Failed"
+
+echo "2. Python module:"
+python3 -m yt_dlp --version 2>/dev/null && echo "✅ Works" || echo "❌ Failed"
+
+echo "3. Direct path:"
+/app/bin/yt-dlp --version 2>/dev/null && echo "✅ Works" || echo "❌ Failed"
 
 # 5. Check FFmpeg
 echo -e "\nChecking FFmpeg..."
@@ -77,8 +94,14 @@ fi
 
 # 6. Create required directories
 echo -e "\nCreating directories..."
-mkdir -p public/downloads temp
-chmod 777 public/downloads temp
+mkdir -p /app/public/downloads /app/temp
+chmod 777 /app/public/downloads /app/temp
+
+# 7. Install additional Python packages if needed
+echo -e "\nInstalling additional Python packages..."
+if [ -f "/app/requirements.txt" ]; then
+    python3 -m pip install -r /app/requirements.txt || echo "⚠️ Some packages failed to install"
+fi
 
 echo -e "\nSetup complete!"
 echo "======================" 
