@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
   }
   
   try {
+    // Get the actual host from the request
+    const host = request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'http';
+    const baseUrl = `${protocol}://${host}`;
+    const redirectUri = `${baseUrl}/api/auth/youtube/callback`;
+    
     // Exchange code for tokens
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -34,9 +40,7 @@ export async function GET(request: NextRequest) {
         code,
         client_id: process.env.GOOGLE_CLIENT_ID!,
         client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        redirect_uri: process.env.NODE_ENV === 'production' 
-          ? 'https://twipclip-production.up.railway.app/api/auth/youtube/callback'
-          : 'http://localhost:3000/api/auth/youtube/callback',
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
     });
@@ -55,7 +59,7 @@ export async function GET(request: NextRequest) {
     // We'll use --cookies-from-browser in yt-dlp which will use the user's actual YouTube cookies
     response.cookies.set('youtube_authenticated', 'true', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: protocol === 'https',
       sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60, // 30 days
     });
