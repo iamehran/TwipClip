@@ -217,9 +217,9 @@ export async function checkSystemTools(): Promise<SystemTools> {
   if (!cachedTools.ytdlp.available) {
     console.error('❌ yt-dlp is required but not found!');
     if (isRailway()) {
-      console.error('📝 yt-dlp should be installed via nixpacks.');
-      console.error('📝 Check nixpacks.toml includes: python311Packages.yt-dlp');
-      console.error('📝 You may need to redeploy for changes to take effect.');
+      console.error('📝 yt-dlp should be installed via Docker.');
+      console.error('📝 Check Dockerfile includes yt-dlp installation.');
+      console.error('📝 The startup script should show yt-dlp availability.');
     } else {
       console.error('📝 To install: pip install yt-dlp');
     }
@@ -228,8 +228,8 @@ export async function checkSystemTools(): Promise<SystemTools> {
   if (!cachedTools.ffmpeg.available) {
     console.error('❌ FFmpeg is required but not found!');
     if (isRailway()) {
-      console.error('📝 FFmpeg should be installed via nixpacks.');
-      console.error('📝 Check nixpacks.toml includes: ffmpeg');
+      console.error('📝 FFmpeg should be installed via Docker.');
+      console.error('📝 Check Dockerfile includes: apk add ffmpeg');
     } else {
       console.error('📝 Download from: https://ffmpeg.org/download.html');
     }
