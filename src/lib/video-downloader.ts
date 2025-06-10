@@ -2,8 +2,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, renameSync } from 'fs';
 import { getYtDlpCommand, getFFmpegCommand, getFFmpegPath } from './system-tools';
+import { downloadVideoWithFallbacks } from './video-downloader-fallback';
 
 const execAsync = promisify(exec);
 
@@ -201,5 +202,73 @@ export async function cleanupTempFiles(olderThanMinutes: number = 30): Promise<v
     }
   } catch (error) {
     console.error('Cleanup error:', error);
+  }
+}
+
+// Ensure downloads directory exists
+const DOWNLOADS_DIR = path.join(process.cwd(), 'public', 'downloads');
+if (!existsSync(DOWNLOADS_DIR)) {
+  mkdirSync(DOWNLOADS_DIR, { recursive: true });
+}
+
+interface DownloadResult {
+  success: boolean;
+  filePath?: string;
+  url?: string;
+  error?: string;
+}
+
+/**
+ * Extract audio from YouTube video URL
+ * Now with fallback methods when yt-dlp is not available
+ */
+export async function extractAudio(videoUrl: string, videoId: string): Promise<string> {
+  const audioPath = path.join(DOWNLOADS_DIR, `${videoId}.m4a`);
+  const tempPath = path.join(DOWNLOADS_DIR, `${videoId}_temp.m4a`);
+
+  // Clean up any existing files
+  [audioPath, tempPath].forEach(file => {
+    if (existsSync(file)) {
+      unlinkSync(file);
+    }
+  });
+
+  try {
+    // First try with yt-dlp if available
+    const ytdlpCmd = await getYtDlpCommand().catch(() => null);
+    
+    if (ytdlpCmd) {
+      console.log('Using yt-dlp for audio extraction...');
+      const command = `${ytdlpCmd} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
+      await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
+      
+      if (existsSync(tempPath)) {
+        renameSync(tempPath, audioPath);
+        return audioPath;
+      }
+    }
+    
+    // If yt-dlp is not available or failed, use fallback methods
+    console.log('yt-dlp not available, trying fallback methods...');
+    const result = await downloadVideoWithFallbacks(videoUrl, audioPath);
+    
+    if (result.success) {
+      console.log(`Audio extracted using ${result.method} method`);
+      return audioPath;
+    }
+    
+    throw new Error('All download methods failed');
+    
+  } catch (error) {
+    console.error('Audio extraction failed:', error instanceof Error ? error.message : String(error));
+    
+    // Clean up temp files
+    [audioPath, tempPath].forEach(file => {
+      if (existsSync(file)) {
+        unlinkSync(file);
+      }
+    });
+    
+    throw error;
   }
 } 

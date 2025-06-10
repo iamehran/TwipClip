@@ -2,15 +2,17 @@
 # Last updated: 2025-06-05
 
 [phases.setup]
-# Install system packages
-nixPkgs = ["nodejs-18_x", "python311", "ffmpeg"]
+# Install system packages including curl for downloading
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "ffmpeg", "curl", "bash"]
 
 [phases.install]
-# Install Node dependencies and yt-dlp
+# Install Node dependencies and set up yt-dlp
 cmds = [
   "npm install --legacy-peer-deps",
   "python3 -m pip install --upgrade pip",
-  "python3 -m pip install yt-dlp"
+  "python3 -m pip install -r requirements.txt || true",
+  "chmod +x scripts/railway-setup.sh",
+  "bash scripts/railway-setup.sh"
 ]
 
 [phases.build]

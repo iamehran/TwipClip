@@ -43,9 +43,18 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
     '/usr/bin/yt-dlp',       // System location
   ] : [
     'yt-dlp',                // System command
+    '.\\yt-dlp.exe',         // Windows current directory with proper prefix
+    '.\\yt-dlp',             // Windows current directory without extension
     'python -m yt_dlp',      // Python module (most reliable on Windows)
     'python3 -m yt_dlp',     // Python3 variant
     'yt-dlp.exe',            // Windows executable
+    'C:\\Program Files\\yt-dlp\\yt-dlp.exe',  // Common installation path
+    'C:\\Program Files (x86)\\yt-dlp\\yt-dlp.exe',  // 32-bit programs
+    'C:\\ProgramData\\yt-dlp\\yt-dlp.exe',    // ProgramData location
+    'C:\\tools\\yt-dlp\\yt-dlp.exe',          // Chocolatey default
+    `${process.env.USERPROFILE}\\Downloads\\yt-dlp.exe`, // Downloads folder
+    `${process.env.USERPROFILE}\\yt-dlp\\yt-dlp.exe`,   // User folder
+    `${process.env.LOCALAPPDATA}\\Programs\\yt-dlp\\yt-dlp.exe`, // Local programs
     `${process.env.HOME}/.local/bin/yt-dlp`, // User local bin
     './yt-dlp',              // Local directory
     './yt-dlp.exe'           // Local Windows executable
@@ -79,16 +88,41 @@ async function findYtDlp(): Promise<{ command: string; version: string } | null>
     // Only try to install on non-Railway environments
     console.log('⚠️ yt-dlp not found, attempting to install...');
     try {
-      await execAsync('pip install yt-dlp', { timeout: 30000 });
+      // Try different pip commands based on platform
+      const isWindows = process.platform === 'win32';
+      const pipCommands = isWindows ? [
+        'python -m pip install yt-dlp',
+        'python3 -m pip install yt-dlp',
+        'pip install yt-dlp',
+        'pip3 install yt-dlp'
+      ] : [
+        'pip install yt-dlp',
+        'pip3 install yt-dlp',
+        'python -m pip install yt-dlp',
+        'python3 -m pip install yt-dlp'
+      ];
+
+      let installed = false;
+      for (const pipCmd of pipCommands) {
+        try {
+          await execAsync(pipCmd, { timeout: 30000 });
+          installed = true;
+          break;
+        } catch (e) {
+          // Try next command
+        }
+      }
       
-      // Try the standard command after installation
-      const { stdout } = await execAsync('yt-dlp --version', { timeout: 5000 });
-      if (stdout) {
-        console.log('✅ Successfully installed yt-dlp');
-        return { command: 'yt-dlp', version: stdout.trim() };
+      if (installed) {
+        // Try the standard command after installation
+        const { stdout } = await execAsync('yt-dlp --version', { timeout: 5000 });
+        if (stdout) {
+          console.log('✅ Successfully installed yt-dlp');
+          return { command: 'yt-dlp', version: stdout.trim() };
+        }
       }
     } catch (e) {
-      console.error('Failed to install yt-dlp:', e.message);
+      console.error('Failed to install yt-dlp:', e instanceof Error ? e.message : String(e));
     }
   }
 
