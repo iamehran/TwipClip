@@ -34,12 +34,19 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
   // Get the working yt-dlp command
   const ytdlpCmd = await getYtDlpCommand();
   
-  // Get FFmpeg path
-  const ffmpegPath = getFFmpegPath();
-  const ffmpegDir = path.dirname(ffmpegPath);
+  // Build command based on environment
+  const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+  let command: string;
   
-  // Use the detected command with FFmpeg location
-  const command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+  if (isRailway) {
+    // On Railway, FFmpeg is in PATH
+    command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+  } else {
+    // In development, specify FFmpeg location
+    const ffmpegPath = getFFmpegPath();
+    const ffmpegDir = path.dirname(ffmpegPath);
+    command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+  }
   
   console.log(`Running: ${command}`);
   

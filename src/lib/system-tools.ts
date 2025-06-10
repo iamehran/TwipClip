@@ -312,9 +312,9 @@ export function resetToolsCache(): void {
  * Get FFmpeg path from environment or use local path
  */
 export function getFFmpegPath(): string {
-  // In production, use system ffmpeg or env variable
+  // In production/Railway, ffmpeg is installed system-wide via apk
   if (isRailway() || process.env.NODE_ENV === 'production') {
-    return process.env.FFMPEG_PATH || 'ffmpeg';
+    return 'ffmpeg'; // Just use 'ffmpeg' since it's in PATH
   }
   
   // In development, use the local path

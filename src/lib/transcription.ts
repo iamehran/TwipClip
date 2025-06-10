@@ -58,7 +58,7 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   
   // Ensure temp directory exists
   if (!existsSync(tempDir)) {
-    await execAsync(`mkdir "${tempDir}"`);
+    await execAsync(`mkdir -p "${tempDir}"`);
   }
   
   console.log('Extracting audio from video...');
@@ -88,12 +88,20 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
     }
   }
   
-  // Get FFmpeg path
-  const ffmpegPath = getFFmpegPath();
-  const ffmpegDir = path.dirname(ffmpegPath);
+  // For Railway/Docker, FFmpeg is in the system PATH, no need to specify location
+  const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
   
-  // Use the detected command with FFmpeg location
-  const command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${audioPath}"`;
+  // Build the command
+  let command: string;
+  if (isRailway) {
+    // On Railway, FFmpeg is installed via apk and is in PATH
+    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 "${videoUrl}" -o "${audioPath}"`;
+  } else {
+    // In development, use the specific FFmpeg location
+    const ffmpegPath = getFFmpegPath();
+    const ffmpegDir = path.dirname(ffmpegPath);
+    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${audioPath}"`;
+  }
   
   console.log(`Running: ${command}`);
   
