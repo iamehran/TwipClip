@@ -3,8 +3,8 @@ FROM node:18-alpine
 # Install dependencies
 RUN apk add --no-cache python3 py3-pip ffmpeg curl bash
 
-# Install yt-dlp using pip
-RUN pip3 install --break-system-packages yt-dlp
+# Install yt-dlp using pip with no-cache-dir flag
+RUN pip3 install --break-system-packages --no-cache-dir yt-dlp
 
 # Also download the standalone binary to /usr/local/bin
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
@@ -36,16 +36,16 @@ RUN if [ ! -f /app/yt-dlp ]; then cp /usr/local/bin/yt-dlp /app/yt-dlp && chmod 
 # Build
 RUN npm run build
 
-# Create directories
+# Create directories with proper permissions
 RUN mkdir -p /app/public/downloads /app/temp && \
-    chmod 777 /app/public/downloads /app/temp
+    chmod -R 777 /app/public/downloads /app/temp
 
 EXPOSE 3000
 
 # Set environment to help find yt-dlp
 ENV NODE_ENV=production
 ENV PATH="/app:/usr/local/bin:/usr/bin:/bin:$PATH"
-ENV YTDLP_PATH="/app/yt-dlp"
+ENV YTDLP_PATH="/usr/local/bin/yt-dlp"
 
 # Direct command, no wrapper scripts
 CMD ["npm", "start"] 

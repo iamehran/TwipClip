@@ -11,6 +11,12 @@ import { downloadVideoWithFallbacks } from './video-downloader-fallback';
 import { getCaptionsViaAPI } from './youtube-api-only';
 import { scrapeYouTubeTranscript } from './youtube-transcript-scraper';
 
+// Fix for File API in Node.js < 20
+import { File } from 'node:buffer';
+if (!globalThis.File) {
+  globalThis.File = File as any;
+}
+
 const execAsync = promisify(exec);
 
 export interface TranscriptSegment {
@@ -52,16 +58,37 @@ function extractYouTubeVideoId(url: string): string | null {
 }
 
 async function extractAudioFromVideo(videoUrl: string): Promise<string> {
+  // Validate URL first
+  if (!videoUrl || typeof videoUrl !== 'string') {
+    throw new Error('Invalid video URL provided');
+  }
+  
+  // Clean the URL - remove any trailing semicolons or whitespace
+  videoUrl = videoUrl.trim().replace(/;+$/, '');
+  
   const tempDir = path.join(process.cwd(), 'temp');
   const timestamp = Date.now();
-  const audioPath = path.join(tempDir, `audio_${timestamp}.mp3`);
+  const randomId = Math.random().toString(36).substring(7);
+  const baseFilename = `audio_${timestamp}_${randomId}`;
+  const audioPath = path.join(tempDir, `${baseFilename}.mp3`);
   
-  // Ensure temp directory exists
+  // Ensure temp directory exists with proper permissions
   if (!existsSync(tempDir)) {
-    await execAsync(`mkdir -p "${tempDir}"`);
+    try {
+      await execAsync(`mkdir -p "${tempDir}"`);
+      // On Railway/Linux, ensure write permissions
+      if (process.env.RAILWAY_ENVIRONMENT || process.platform !== 'win32') {
+        await execAsync(`chmod 777 "${tempDir}"`);
+      }
+    } catch (error) {
+      console.error('Failed to create temp directory:', error);
+      throw new Error('Failed to create temp directory');
+    }
   }
   
   console.log('Extracting audio from video...');
+  console.log(`Video URL: ${videoUrl}`);
+  console.log(`Output path: ${audioPath}`);
   
   // Try to get the working yt-dlp command
   let ytdlpCmd: string;
@@ -91,39 +118,93 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   // For Railway/Docker, FFmpeg is in the system PATH, no need to specify location
   const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
   
-  // Build the command
+  // Build the command with proper options
   let command: string;
   if (isRailway) {
-    // On Railway, FFmpeg is installed via apk and is in PATH
-    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 "${videoUrl}" -o "${audioPath}"`;
+    // On Railway, use simpler options to avoid file permission issues
+    // Use --paths to specify temp directory
+    // Use --no-mtime to avoid utime errors
+    // Use --no-part to avoid partial file issues
+    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --no-mtime --no-part --paths "${tempDir}" "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   } else {
     // In development, use the specific FFmpeg location
     const ffmpegPath = getFFmpegPath();
     const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${audioPath}"`;
+    command = `${ytdlpCmd} -x --audio-format mp3 --audio-quality 0 --ffmpeg-location "${ffmpegDir}" --paths "${tempDir}" "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   }
   
-  console.log(`Running: ${command}`);
+  console.log(`Executing command...`);
   
-  await execAsync(command, {
-    timeout: 300000, // 5 minutes
-    maxBuffer: 1024 * 1024 * 10
-  });
-  
-  // Check if file was created
-  if (existsSync(audioPath)) {
-    console.log('✓ Audio extracted successfully');
-    return audioPath;
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: 300000, // 5 minutes
+      maxBuffer: 1024 * 1024 * 10,
+      cwd: tempDir, // Set working directory to temp
+      env: {
+        ...process.env,
+        // Ensure Python uses UTF-8
+        PYTHONIOENCODING: 'utf-8',
+        // Disable any interactive prompts
+        DEBIAN_FRONTEND: 'noninteractive'
+      }
+    });
+    
+    if (stdout) {
+      console.log('yt-dlp output:', stdout.substring(0, 200));
+    }
+    
+    if (stderr && !stderr.includes('WARNING')) {
+      console.log('yt-dlp stderr:', stderr.substring(0, 200));
+    }
+  } catch (error: any) {
+    console.error('yt-dlp command failed:', error.message);
+    if (error.stderr) {
+      console.error('stderr:', error.stderr);
+    }
+    if (error.stdout) {
+      console.error('stdout:', error.stdout);
+    }
+    throw new Error(`Audio extraction failed: ${error.message}`);
   }
   
-  // Sometimes yt-dlp adds extension, check for that
-  const audioPathWithExt = `${audioPath}.mp3`;
-  if (existsSync(audioPathWithExt)) {
-    console.log('✓ Audio extracted successfully');
-    return audioPathWithExt;
+  // Check if file was created (yt-dlp might use different extension)
+  const possibleFiles = [
+    audioPath,
+    path.join(tempDir, `${baseFilename}.mp3`),
+    path.join(tempDir, `${baseFilename}.m4a`),
+    path.join(tempDir, `${baseFilename}.opus`),
+    path.join(tempDir, `${baseFilename}.webm`)
+  ];
+  
+  for (const file of possibleFiles) {
+    if (existsSync(file)) {
+      console.log(`✓ Audio file found: ${file}`);
+      
+      // If it's not the expected mp3, rename it
+      if (file !== audioPath && file.endsWith('.mp3')) {
+        try {
+          await execAsync(`mv "${file}" "${audioPath}"`);
+          console.log(`✓ Renamed to: ${audioPath}`);
+          return audioPath;
+        } catch (e) {
+          console.log('Rename failed, using original path');
+          return file;
+        }
+      }
+      
+      return file;
+    }
   }
   
-  throw new Error('Audio file not created');
+  // List directory contents for debugging
+  try {
+    const files = await execAsync(`ls -la "${tempDir}"`);
+    console.error('Temp directory contents:', files.stdout);
+  } catch (e) {
+    // Ignore
+  }
+  
+  throw new Error('Audio file not created - no output file found');
 }
 
 async function transcribeWithWhisper(videoUrl: string, audioPath: string): Promise<ProcessedTranscript> {
@@ -135,34 +216,39 @@ async function transcribeWithWhisper(videoUrl: string, audioPath: string): Promi
     maxRetries: 2
   });
 
-  const fileStream = createReadStream(audioPath);
-  const transcriptionResponse = await openai.audio.transcriptions.create({
-    file: fileStream,
-    model: "whisper-1",
-    response_format: "verbose_json",
-    temperature: 0.2
-  });
+  try {
+    const fileStream = createReadStream(audioPath);
+    const transcriptionResponse = await openai.audio.transcriptions.create({
+      file: fileStream as any,
+      model: "whisper-1",
+      response_format: "verbose_json",
+      temperature: 0.2
+    });
 
-  if (!transcriptionResponse.segments || transcriptionResponse.segments.length === 0) {
-    throw new Error('No segments in transcription');
+    if (!transcriptionResponse.segments || transcriptionResponse.segments.length === 0) {
+      throw new Error('No segments in transcription');
+    }
+
+    const segments: TranscriptSegment[] = transcriptionResponse.segments.map((seg, index) => ({
+      index,
+      startTime: seg.start,
+      endTime: seg.end,
+      duration: seg.end - seg.start,
+      text: seg.text.trim()
+    }));
+
+    console.log(`✅ Transcription successful - ${segments.length} segments`);
+
+    return {
+      videoUrl,
+      videoId: extractYouTubeVideoId(videoUrl) || videoUrl,
+      segments,
+      totalDuration: segments[segments.length - 1]?.endTime || 0
+    };
+  } catch (error) {
+    console.error('Whisper transcription error:', error);
+    throw error;
   }
-
-  const segments: TranscriptSegment[] = transcriptionResponse.segments.map((seg, index) => ({
-    index,
-    startTime: seg.start,
-    endTime: seg.end,
-    duration: seg.end - seg.start,
-    text: seg.text.trim()
-  }));
-
-  console.log(`✅ Transcription successful - ${segments.length} segments`);
-
-  return {
-    videoUrl,
-    videoId: extractYouTubeVideoId(videoUrl) || videoUrl,
-    segments,
-    totalDuration: segments[segments.length - 1]?.endTime || 0
-  };
 }
 
 /**
