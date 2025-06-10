@@ -4,7 +4,6 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync, unlinkSync, renameSync } from 'fs';
 import { getYtDlpCommand, getFFmpegCommand, getFFmpegPath } from './system-tools';
-import { downloadVideoWithFallbacks } from './video-downloader-fallback';
 
 const execAsync = promisify(exec);
 
@@ -44,27 +43,22 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
   
   console.log(`Running: ${command}`);
   
-  try {
-    const { stderr } = await execAsync(command);
-    if (stderr && !stderr.includes('WARNING')) {
-      console.error('yt-dlp stderr:', stderr);
-    }
-    
-    // Find the downloaded file
-    const extensions = ['.mp4', '.mkv', '.webm', '.mov', '.flv'];
-    for (const ext of extensions) {
-      const filePath = `${outputPath}${ext}`;
-      if (existsSync(filePath)) {
-        console.log('Downloaded to:', filePath);
-        return filePath;
-      }
-    }
-    
-    throw new Error('Downloaded file not found');
-  } catch (error) {
-    console.error('Download error:', error);
-    throw error;
+  const { stderr } = await execAsync(command);
+  if (stderr && !stderr.includes('WARNING')) {
+    console.error('yt-dlp stderr:', stderr);
   }
+  
+  // Find the downloaded file
+  const extensions = ['.mp4', '.mkv', '.webm', '.mov', '.flv'];
+  for (const ext of extensions) {
+    const filePath = `${outputPath}${ext}`;
+    if (existsSync(filePath)) {
+      console.log('Downloaded to:', filePath);
+      return filePath;
+    }
+  }
+  
+  throw new Error('Downloaded file not found');
 }
 
 /**
@@ -89,15 +83,10 @@ async function cutVideoSegment(
   
   console.log(`Cutting segment: ${startTime}s - ${endTime}s`);
   
-  try {
-    await execAsync(command);
-    // FFmpeg outputs to stderr even on success
-    if (!existsSync(outputPath)) {
-      throw new Error('Output file not created');
-    }
-  } catch (error) {
-    console.error('FFmpeg error:', error);
-    throw error;
+  await execAsync(command);
+  
+  if (!existsSync(outputPath)) {
+    throw new Error('Output file not created');
   }
 }
 
@@ -205,24 +194,15 @@ export async function cleanupTempFiles(olderThanMinutes: number = 30): Promise<v
   }
 }
 
-// Ensure downloads directory exists
-const DOWNLOADS_DIR = path.join(process.cwd(), 'public', 'downloads');
-if (!existsSync(DOWNLOADS_DIR)) {
-  mkdirSync(DOWNLOADS_DIR, { recursive: true });
-}
-
-interface DownloadResult {
-  success: boolean;
-  filePath?: string;
-  url?: string;
-  error?: string;
-}
-
 /**
- * Extract audio from YouTube video URL
- * Now with fallback methods when yt-dlp is not available
+ * Extract audio from YouTube video URL using yt-dlp
  */
 export async function extractAudio(videoUrl: string, videoId: string): Promise<string> {
+  const DOWNLOADS_DIR = path.join(process.cwd(), 'public', 'downloads');
+  if (!existsSync(DOWNLOADS_DIR)) {
+    mkdirSync(DOWNLOADS_DIR, { recursive: true });
+  }
+
   const audioPath = path.join(DOWNLOADS_DIR, `${videoId}.m4a`);
   const tempPath = path.join(DOWNLOADS_DIR, `${videoId}_temp.m4a`);
 
@@ -233,42 +213,17 @@ export async function extractAudio(videoUrl: string, videoId: string): Promise<s
     }
   });
 
-  try {
-    // First try with yt-dlp if available
-    const ytdlpCmd = await getYtDlpCommand().catch(() => null);
-    
-    if (ytdlpCmd) {
-      console.log('Using yt-dlp for audio extraction...');
-      const command = `${ytdlpCmd} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
-      await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
-      
-      if (existsSync(tempPath)) {
-        renameSync(tempPath, audioPath);
-        return audioPath;
-      }
-    }
-    
-    // If yt-dlp is not available or failed, use fallback methods
-    console.log('yt-dlp not available, trying fallback methods...');
-    const result = await downloadVideoWithFallbacks(videoUrl, audioPath);
-    
-    if (result.success) {
-      console.log(`Audio extracted using ${result.method} method`);
-      return audioPath;
-    }
-    
-    throw new Error('All download methods failed');
-    
-  } catch (error) {
-    console.error('Audio extraction failed:', error instanceof Error ? error.message : String(error));
-    
-    // Clean up temp files
-    [audioPath, tempPath].forEach(file => {
-      if (existsSync(file)) {
-        unlinkSync(file);
-      }
-    });
-    
-    throw error;
+  console.log('Using yt-dlp for audio extraction...');
+  
+  const ytdlpCmd = await getYtDlpCommand();
+  const command = `${ytdlpCmd} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
+  
+  await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
+  
+  if (existsSync(tempPath)) {
+    renameSync(tempPath, audioPath);
+    return audioPath;
   }
+  
+  throw new Error('Audio extraction failed');
 } 

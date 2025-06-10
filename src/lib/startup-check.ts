@@ -12,20 +12,29 @@ export async function performStartupCheck(): Promise<boolean> {
   console.log('\n📋 Environment Check:');
   console.log(`OpenAI API Key: ${hasOpenAI ? '✅' : '❌'}`);
   
-  // Only block if OpenAI is missing
+  // Both OpenAI and yt-dlp are required
   if (!hasOpenAI) {
     console.error('\n❌ OpenAI API key is required but not found!');
     console.error('Please set OPENAI_API_KEY environment variable.');
     return false;
   }
   
-  // Warn about missing tools but don't block
-  if (!tools.ytdlp.available || !tools.ffmpeg.available) {
-    console.warn('\n⚠️  Some tools are missing but core functionality may still work.');
-    console.warn('Video processing features may be limited.');
-  } else {
-    console.log('\n✅ All systems ready!');
+  if (!tools.ytdlp.available) {
+    console.error('\n❌ yt-dlp is required but not found!');
+    console.error('The application cannot function without yt-dlp.');
+    return false;
   }
+  
+  if (!tools.ffmpeg.available) {
+    console.error('\n❌ FFmpeg is required but not found!');
+    console.error('The application cannot function without FFmpeg.');
+    return false;
+  }
+  
+  console.log('\n✅ All systems ready!');
+  console.log('   - OpenAI API configured');
+  console.log('   - yt-dlp available');
+  console.log('   - FFmpeg available');
   
   return true;
 } 
