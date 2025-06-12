@@ -71,9 +71,9 @@ export default function ErrorDisplay({ error, onRetry }: ErrorDisplayProps) {
   const errorInfo = getErrorInfo();
 
   return (
-    <div className="mt-8 p-6 bg-red-900/20 border border-red-700/50 rounded-lg">
+    <div className="mt-8 p-6 bg-red-900/10 border border-red-800/30 rounded-lg">
       <div className="flex items-start gap-3">
-        <svg className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <div className="flex-1">
@@ -83,9 +83,9 @@ export default function ErrorDisplay({ error, onRetry }: ErrorDisplayProps) {
           <p className="text-red-300/90 mb-3">{error}</p>
           
           {isBotDetectionError && (
-            <div className="mt-3 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded text-sm text-yellow-300">
+            <div className="mt-3 p-3 bg-[#b8a887]/10 border border-[#b8a887]/20 rounded text-sm text-[#b8a887]">
               <p className="font-semibold mb-1">YouTube is blocking automated access. Try:</p>
-              <ul className="list-disc list-inside space-y-1 text-yellow-300/90">
+              <ul className="list-disc list-inside space-y-1 text-[#b8a887]/90">
                 <li>Wait a few minutes and retry</li>
                 <li>Use different video URLs</li>
                 <li>Try videos from other platforms (Vimeo, etc.)</li>
@@ -97,7 +97,7 @@ export default function ErrorDisplay({ error, onRetry }: ErrorDisplayProps) {
           {onRetry && (
             <button
               onClick={onRetry}
-              className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm font-medium"
+              className="mt-4 px-4 py-2 bg-[#b8a887] hover:bg-[#a09775] text-[#0e1e2d] rounded-md transition-colors text-sm font-medium"
             >
               Try Again
             </button>

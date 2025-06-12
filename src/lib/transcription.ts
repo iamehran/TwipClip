@@ -172,7 +172,7 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
       }
       
       const { stdout, stderr } = await execAsync(attemptCommand, {
-        timeout: 300000, // 5 minutes
+      timeout: 300000, // 5 minutes
         maxBuffer: 1024 * 1024 * 10,
         cwd: tempDir, // Set working directory to temp
         env: {
@@ -305,12 +305,12 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
 
 async function transcribeWithWhisper(videoUrl: string, audioPath: string): Promise<ProcessedTranscript> {
   console.log('🎤 Transcribing with Whisper...');
-  
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    timeout: 300000, // 5 minutes
-    maxRetries: 2
-  });
+    
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 300000, // 5 minutes
+      maxRetries: 2
+    });
 
   try {
     const fileStream = createReadStream(audioPath);

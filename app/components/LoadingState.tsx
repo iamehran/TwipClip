@@ -29,13 +29,13 @@ export default function LoadingState({
     <div className="mt-12">
       <div className="max-w-2xl mx-auto">
         {/* Main Loading Card */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border border-gray-700 shadow-2xl">
+        <div className="bg-gray-800/30 backdrop-blur-sm rounded-2xl p-8 border border-gray-700/50 shadow-2xl">
           {/* Animated Icon */}
           <div className="flex justify-center mb-6">
             <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-spin" 
+              <div className="w-20 h-20 rounded-full bg-[#b8a887] animate-spin" 
                    style={{ animationDuration: '3s' }}>
-                <div className="absolute inset-2 bg-gray-900 rounded-full"></div>
+                <div className="absolute inset-2 bg-[#0e1e2d] rounded-full"></div>
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -54,9 +54,9 @@ export default function LoadingState({
           {/* Progress Bar */}
           {progress > 0 && (
             <div className="mt-6 mb-4">
-              <div className="bg-gray-700 rounded-full h-2 overflow-hidden">
+              <div className="bg-gray-700/50 rounded-full h-2 overflow-hidden">
                 <div 
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-500 ease-out"
+                  className="bg-[#b8a887] h-full transition-all duration-500 ease-out"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -66,7 +66,7 @@ export default function LoadingState({
           
           {/* Current Video Info */}
           {currentVideo && totalVideos && (
-            <div className="mt-6 p-4 bg-gray-900/50 rounded-lg">
+            <div className="mt-6 p-4 bg-gray-900/30 rounded-lg">
               <p className="text-sm text-gray-400 text-center">
                 Processing video {currentVideo} of {totalVideos}
               </p>
@@ -96,8 +96,8 @@ export default function LoadingState({
           </div>
           
           {/* Tips */}
-          <div className="mt-8 p-4 bg-blue-900/20 rounded-lg border border-blue-800/30">
-            <p className="text-xs text-blue-300 text-center">
+          <div className="mt-8 p-4 bg-[#b8a887]/10 rounded-lg border border-[#b8a887]/20">
+            <p className="text-xs text-[#b8a887] text-center">
               💡 Tip: Whisper transcription provides the highest quality results with proper punctuation
             </p>
           </div>
@@ -118,8 +118,8 @@ function ProcessingStep({ icon, text, active, completed }: {
       active ? 'scale-105' : ''
     }`}>
       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm
-        ${completed ? 'bg-green-500/20 text-green-400' : 
-          active ? 'bg-blue-500/20 text-blue-400 animate-pulse' : 
+        ${completed ? 'bg-green-600/20 text-green-400' : 
+          active ? 'bg-[#b8a887]/20 text-[#b8a887] animate-pulse' : 
           'bg-gray-700/50 text-gray-500'}`}>
         {completed ? '✓' : icon}
       </div>
@@ -132,7 +132,7 @@ function ProcessingStep({ icon, text, active, completed }: {
       </p>
       {active && (
         <div className="ml-auto">
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-4 h-4 border-2 border-[#b8a887] border-t-transparent rounded-full animate-spin"></div>
         </div>
       )}
     </div>

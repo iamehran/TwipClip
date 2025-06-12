@@ -105,18 +105,18 @@ export default function VideoResult({ clip }: VideoResultProps) {
   const getMethodBadge = () => {
     switch (clip.matchMethod) {
       case 'semantic':
-        return { icon: '🧠', text: 'AI Match', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' };
+        return { icon: '🧠', text: 'AI Match', color: 'bg-[#b8a887]/20 text-[#b8a887] border-[#b8a887]/30' };
       case 'phrase':
-        return { icon: '📝', text: 'Phrase Match', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
+        return { icon: '📝', text: 'Phrase Match', color: 'bg-blue-600/20 text-blue-300 border-blue-600/30' };
       case 'keyword':
-        return { icon: '🔍', text: 'Keyword', color: 'bg-green-500/20 text-green-300 border-green-500/30' };
+        return { icon: '🔍', text: 'Keyword', color: 'bg-green-600/20 text-green-300 border-green-600/30' };
     }
   };
 
   const methodBadge = getMethodBadge();
 
   return (
-    <div className="group bg-gray-800/30 rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-all duration-300">
+    <div className="group bg-gray-800/20 rounded-xl p-3 sm:p-4 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-300">
       {/* YouTube Embed Preview */}
       {showPreview && (
         <div className="mb-4 aspect-video rounded-lg overflow-hidden">
@@ -132,14 +132,14 @@ export default function VideoResult({ clip }: VideoResultProps) {
         </div>
       )}
 
-      <div className="flex gap-4">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
         {/* Thumbnail with Preview Toggle */}
-        <div className="relative flex-shrink-0 group/thumb">
+        <div className="relative flex-shrink-0 group/thumb w-full sm:w-40">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
             alt={clip.title}
-            className="w-40 h-24 object-cover rounded-lg cursor-pointer"
+            className="w-full sm:w-40 h-32 sm:h-24 object-cover rounded-lg cursor-pointer"
             onClick={() => setShowPreview(!showPreview)}
           />
           <div 
@@ -175,21 +175,21 @@ export default function VideoResult({ clip }: VideoResultProps) {
             </span>
 
             {/* Confidence Score */}
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-700/50 text-gray-300">
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-700/30 text-gray-300">
               <span className="font-mono">{(clip.confidence * 100).toFixed(0)}%</span>
               <span className="text-gray-500">match</span>
             </span>
           </div>
 
           {/* Transcript Preview */}
-          <div className="mt-3 p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
+          <div className="mt-3 p-2 sm:p-3 bg-gray-900/30 rounded-lg border border-gray-700/30">
             <p className="text-xs text-gray-300 line-clamp-2 italic">
               &quot;{clip.transcriptText}&quot;
             </p>
           </div>
 
           {/* Timestamp and Actions */}
-          <div className="flex items-center justify-between mt-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400">
                 {formatTime(clip.startTime)} - {formatTime(clip.endTime)}
@@ -208,7 +208,7 @@ export default function VideoResult({ clip }: VideoResultProps) {
               {/* Preview Toggle */}
               <button
                 onClick={() => setShowPreview(!showPreview)}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-700/50 hover:bg-gray-600/50 text-white transition-all flex-1 sm:flex-initial"
               >
                 {showPreview ? 'Hide' : 'Preview'}
               </button>
@@ -217,10 +217,10 @@ export default function VideoResult({ clip }: VideoResultProps) {
               <button
                 onClick={handleDownload}
                 disabled={downloading}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 flex-1 sm:flex-initial ${
                   downloading 
                     ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-[#b8a887] hover:bg-[#a09775] text-[#0e1e2d]'
                 }`}
               >
                 {downloading ? 'Downloading...' : 'Download Clip'}

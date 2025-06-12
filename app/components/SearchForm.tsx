@@ -41,20 +41,20 @@ https://www.youtube.com/watch?v=xyz789`);
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Thread Content Input */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700">
-        <div className="flex justify-between items-start mb-3">
+      <div className="bg-gray-800/30 backdrop-blur-sm rounded-lg p-4 sm:p-6 border border-gray-700/50">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
           <div>
-            <label htmlFor="thread" className="block text-lg font-medium text-white mb-1">
+            <label htmlFor="thread" className="block text-base sm:text-lg font-medium text-white mb-1">
               Thread Content
             </label>
-            <p className="text-sm text-gray-400">
+            <p className="text-xs sm:text-sm text-gray-400">
               Enter your hook first, then separate each tweet with triple dashes (---)
             </p>
           </div>
           <button
             type="button"
             onClick={loadExample}
-            className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+            className="px-3 py-1 text-xs bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded-md transition-colors self-start"
           >
             Load Example
           </button>
@@ -64,7 +64,7 @@ https://www.youtube.com/watch?v=xyz789`);
           id="thread"
           value={threadContent}
           onChange={(e) => setThreadContent(e.target.value)}
-          className="w-full h-48 px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
+          className="w-full h-48 px-4 py-3 bg-gray-900/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-[#b8a887] focus:border-transparent resize-none font-mono text-sm"
           placeholder={`Your thread hook goes here...
 ---
 First tweet content
@@ -88,11 +88,11 @@ Third tweet content`}
       </div>
 
       {/* Video URLs Input */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700">
-        <label htmlFor="videos" className="block text-lg font-medium text-white mb-1">
+      <div className="bg-gray-800/30 backdrop-blur-sm rounded-lg p-4 sm:p-6 border border-gray-700/50">
+        <label htmlFor="videos" className="block text-base sm:text-lg font-medium text-white mb-1">
           Video URLs
         </label>
-        <p className="text-sm text-gray-400 mb-3">
+        <p className="text-xs sm:text-sm text-gray-400 mb-3">
           Enter video URLs (one per line) - supports YouTube, Vimeo, and direct video links
         </p>
         
@@ -100,7 +100,7 @@ Third tweet content`}
           id="videos"
           value={videoUrlsText}
           onChange={(e) => setVideoUrlsText(e.target.value)}
-          className="w-full h-32 px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
+          className="w-full h-32 px-4 py-3 bg-gray-900/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-[#b8a887] focus:border-transparent resize-none font-mono text-sm"
           placeholder={`https://www.youtube.com/watch?v=VIDEO_ID
 https://youtu.be/VIDEO_ID
 https://vimeo.com/VIDEO_ID
@@ -123,17 +123,17 @@ https://example.com/video.mp4`}
       {/* Submit Button */}
       <div className="space-y-4">
         {/* Force Refresh Option */}
-        <div className="flex items-center gap-3 bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4">
+        <div className="flex items-center gap-3 bg-[#b8a887]/10 border border-[#b8a887]/20 rounded-lg p-4">
           <input
             type="checkbox"
             id="forceRefresh"
             checked={forceRefresh}
             onChange={(e) => setForceRefresh(e.target.checked)}
-            className="w-5 h-5 text-yellow-600 bg-gray-900 border-gray-600 rounded focus:ring-yellow-500 focus:ring-2"
+            className="w-5 h-5 text-[#b8a887] bg-gray-900 border-gray-600 rounded focus:ring-[#b8a887] focus:ring-2"
           />
           <label htmlFor="forceRefresh" className="flex-1 cursor-pointer">
-            <span className="text-yellow-300 font-medium">Force Refresh Transcripts</span>
-            <p className="text-xs text-yellow-400/70 mt-1">
+            <span className="text-[#b8a887] font-medium">Force Refresh Transcripts</span>
+            <p className="text-xs text-[#b8a887]/70 mt-1">
               Check this to bypass cache and fetch fresh transcripts (slower but ensures latest content)
             </p>
           </label>
@@ -145,7 +145,7 @@ https://example.com/video.mp4`}
           className={`w-full py-4 px-6 rounded-lg font-semibold text-lg transition-all duration-200 ${
             loading 
               ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-              : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+              : 'bg-[#b8a887] hover:bg-[#a09775] text-[#0e1e2d] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
           }`}
         >
           {loading ? (
