@@ -1,0 +1,66 @@
+# Stage 1: Dependencies
+FROM node:18-alpine AS deps
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY .npmrc ./
+
+# Install dependencies with multiple retry strategies
+RUN echo "Installing dependencies..." && \
+    # Try 1: Normal install
+    (npm ci --legacy-peer-deps && echo "✓ npm ci succeeded") || \
+    # Try 2: Clean install with cache clear
+    (npm cache clean --force && npm install --legacy-peer-deps && echo "✓ npm install succeeded after cache clear") || \
+    # Try 3: Use different registry
+    (npm config set registry https://registry.yarnpkg.com && npm install --legacy-peer-deps && echo "✓ npm install succeeded with yarn registry") || \
+    # Try 4: Last resort - install with --force
+    (npm install --legacy-peer-deps --force && echo "✓ npm install succeeded with --force") || \
+    # If all fails, exit with error
+    (echo "ERROR: All npm install attempts failed" && exit 1)
+
+# Stage 2: Builder
+FROM node:18-alpine AS builder
+WORKDIR /app
+
+# Copy dependencies from previous stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Stage 3: Runner
+FROM node:18-alpine AS runner
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apk add --no-cache python3 py3-pip ffmpeg curl bash
+
+# Install yt-dlp
+RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp && \
+    cp /usr/local/bin/yt-dlp /app/yt-dlp && \
+    chmod a+rx /app/yt-dlp
+
+# Copy built application
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/app ./app
+
+# Create necessary directories
+RUN mkdir -p /app/public/downloads /app/temp && \
+    chmod -R 777 /app/public/downloads /app/temp
+
+# Environment variables
+ENV NODE_ENV=production
+ENV PATH="/app:/usr/local/bin:/usr/bin:/bin:$PATH"
+ENV YTDLP_PATH="/usr/local/bin/yt-dlp"
+
+EXPOSE 3000
+
+CMD ["npm", "start"] 

@@ -25,7 +25,24 @@ WORKDIR /app
 
 # Copy and install dependencies
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+
+# Configure npm with retry logic and timeout settings
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm config set registry https://registry.npmjs.org/
+
+# Install with retries - if first attempt fails, wait and retry
+RUN npm install --legacy-peer-deps || \
+    (echo "First npm install failed, waiting 30s and retrying..." && sleep 30 && npm install --legacy-peer-deps) || \
+    (echo "Second attempt failed, trying with yarn mirror..." && \
+     npm config set registry https://registry.yarnpkg.com && \
+     npm install --legacy-peer-deps) || \
+    (echo "Third attempt failed, clearing cache and retrying..." && \
+     npm cache clean --force && \
+     npm config set registry https://registry.npmjs.org/ && \
+     npm install --legacy-peer-deps)
 
 # Copy application
 COPY . .
