@@ -516,6 +516,7 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
   for (const [index, strategy] of strategies.entries()) {
     try {
       console.log(`Trying audio extraction strategy ${index + 1}/${strategies.length}`);
+      console.log(`Command: ${strategy.command.substring(0, 100)}...`);
       
       await execAsync(strategy.command, {
         timeout: strategy.timeout || 30000,
@@ -523,19 +524,60 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
         cwd: outputDir // Run in the temp directory
       });
       
-      // Verify file was created and has content
-      const stats = await fs.stat(outputPath);
-      if (stats.size > 1000) { // At least 1KB
-        console.log(`✓ Audio extraction successful: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
-        return true;
+      // Check for any output files (m4a, mp3, mp4, etc.)
+      const files = await fs.readdir(outputDir);
+      const audioFiles = files.filter(f => 
+        f.startsWith(path.basename(outputPath, path.extname(outputPath))) &&
+        (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.mp4') || f.endsWith('.webm'))
+      );
+      
+      if (audioFiles.length > 0) {
+        // Use the first audio file found
+        const actualFile = path.join(outputDir, audioFiles[0]);
+        const stats = await fs.stat(actualFile);
+        
+        if (stats.size > 1000) { // At least 1KB
+          // If it's not the expected file, rename it
+          if (actualFile !== outputPath) {
+            await fs.rename(actualFile, outputPath);
+          }
+          console.log(`✓ Audio extraction successful: ${audioFiles[0]} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+          return true;
+        }
       }
       
-    } catch (error) {
-      console.warn(`Audio extraction strategy ${index + 1} failed:`, error instanceof Error ? error.message.split('\n')[0] : 'Unknown error');
-      
-      // Clean up failed attempt
+      // If no file found, check the exact output path
       try {
-        await fs.unlink(outputPath);
+        const stats = await fs.stat(outputPath);
+        if (stats.size > 1000) { // At least 1KB
+          console.log(`✓ Audio extraction successful: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+          return true;
+        }
+      } catch {}
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`Audio extraction strategy ${index + 1} failed:`, errorMsg.split('\n')[0]);
+      
+      // Log more details for debugging
+      if (errorMsg.includes('yt-dlp')) {
+        console.warn('  → yt-dlp error detected. Check if yt-dlp is installed and accessible.');
+      }
+      if (errorMsg.includes('ffmpeg')) {
+        console.warn('  → ffmpeg error detected. Check if ffmpeg is installed and accessible.');
+      }
+      if (errorMsg.includes('ERROR') || errorMsg.includes('unavailable') || errorMsg.includes('private')) {
+        console.warn('  → Video might be private, deleted, or region-restricted.');
+      }
+      
+      // Clean up any failed attempts
+      try {
+        const files = await fs.readdir(outputDir);
+        for (const file of files) {
+          if (file.startsWith(path.basename(outputPath, path.extname(outputPath)))) {
+            await fs.unlink(path.join(outputDir, file));
+          }
+        }
       } catch {}
     }
   }
@@ -572,9 +614,14 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
           command: `"${ytDlpPath}" -f "bestaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
           timeout: 120000
         },
-        // Strategy 3: Fallback - download video and extract audio separately
+        // Strategy 3: Download with worstaudio format for smaller size
         {
-          command: `"${ytDlpPath}" -f "best[height<=480]" --no-playlist --no-warnings -o "${outputFilename}.mp4" "${videoUrl}" && "${ffmpegPath}" -i "${outputFilename}.mp4" -vn -acodec copy "${outputFilename}.m4a" -y`,
+          command: `"${ytDlpPath}" -f "worstaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+          timeout: 120000
+        },
+        // Strategy 4: Fallback - download small video
+        {
+          command: `"${ytDlpPath}" -f "worst[height>=144]" --no-playlist --no-warnings -o "${outputFilename}.mp4" "${videoUrl}"`,
           timeout: 180000 // 3 minutes
         }
       );
