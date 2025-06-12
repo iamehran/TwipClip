@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@types/adm-zip": "^0.5.7",
+    "adm-zip": "^0.5.16",
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
     "googleapis": "^149.0.0",

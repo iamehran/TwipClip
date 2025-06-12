@@ -8,6 +8,6 @@ npm-debug.log
 .DS_Store
 temp
 public/downloads
-*.log
+*.log 
 .vscode
 .idea 

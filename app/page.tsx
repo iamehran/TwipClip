@@ -8,6 +8,7 @@ import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
 import YouTubeConnect from './components/YouTubeConnect';
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
+import BulkDownloadButton from './components/BulkDownloadButton';
 
 interface VideoClip {
   videoId: string;
@@ -239,7 +240,14 @@ export default function Home() {
             <div className="mt-8 p-4 sm:p-6 bg-gray-800/30 rounded-lg border border-gray-700/50">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                 <h3 className="text-base sm:text-lg font-semibold text-white">Results Summary</h3>
-                <ExportButton data={results} />
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <BulkDownloadButton 
+                    threadContent={lastSearch?.threadContent || ''}
+                    videoUrls={lastSearch?.videoUrls || []}
+                    disabled={!lastSearch}
+                  />
+                  <ExportButton data={results} />
+                </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 text-center">
                 <div>
@@ -252,7 +260,7 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl font-bold text-[#b8a887]/80">
                     {totalClips}
                   </p>
-                  <p className="text-xs sm:text-sm text-gray-400">Clips Found</p>
+                  <p className="text-xs sm:text-sm text-gray-400">Perfect Matches</p>
                 </div>
                 <div>
                   <p className="text-2xl sm:text-3xl font-bold text-[#b8a887]/60">
@@ -266,6 +274,13 @@ export default function Home() {
                   </p>
                   <p className="text-xs sm:text-sm text-gray-400">Avg Confidence</p>
                 </div>
+              </div>
+              
+              {/* Quality Indicator */}
+              <div className="mt-4 pt-4 border-t border-gray-700/50">
+                <p className="text-xs text-gray-400 text-center">
+                  🎯 One perfect clip selected per tweet using AI matching
+                </p>
               </div>
             </div>
           )}

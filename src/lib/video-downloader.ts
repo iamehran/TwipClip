@@ -43,29 +43,29 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
     command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   } else {
     // In development, specify FFmpeg location
-    const ffmpegPath = getFFmpegPath();
-    const ffmpegDir = path.dirname(ffmpegPath);
+  const ffmpegPath = getFFmpegPath();
+  const ffmpegDir = path.dirname(ffmpegPath);
     command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   }
   
   console.log(`Running: ${command}`);
   
-  const { stderr } = await execAsync(command);
-  if (stderr && !stderr.includes('WARNING')) {
-    console.error('yt-dlp stderr:', stderr);
-  }
-  
-  // Find the downloaded file
-  const extensions = ['.mp4', '.mkv', '.webm', '.mov', '.flv'];
-  for (const ext of extensions) {
-    const filePath = `${outputPath}${ext}`;
-    if (existsSync(filePath)) {
-      console.log('Downloaded to:', filePath);
-      return filePath;
+    const { stderr } = await execAsync(command);
+    if (stderr && !stderr.includes('WARNING')) {
+      console.error('yt-dlp stderr:', stderr);
     }
-  }
-  
-  throw new Error('Downloaded file not found');
+    
+    // Find the downloaded file
+    const extensions = ['.mp4', '.mkv', '.webm', '.mov', '.flv'];
+    for (const ext of extensions) {
+      const filePath = `${outputPath}${ext}`;
+      if (existsSync(filePath)) {
+        console.log('Downloaded to:', filePath);
+        return filePath;
+      }
+    }
+    
+    throw new Error('Downloaded file not found');
 }
 
 /**
@@ -90,10 +90,10 @@ async function cutVideoSegment(
   
   console.log(`Cutting segment: ${startTime}s - ${endTime}s`);
   
-  await execAsync(command);
+    await execAsync(command);
   
-  if (!existsSync(outputPath)) {
-    throw new Error('Output file not created');
+    if (!existsSync(outputPath)) {
+      throw new Error('Output file not created');
   }
 }
 

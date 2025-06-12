@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { processVideosIntelligently } from '../../../src/lib/intelligent-processor-v2';
+import { processVideosIntelligently } from '../../../src/lib/intelligent-processor-v3';
 import { performStartupCheck } from '../../../src/lib/startup-check';
 import { handleError, logError } from '../../../src/lib/error-handler';
 import { cookies } from 'next/headers';
