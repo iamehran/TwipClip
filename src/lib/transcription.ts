@@ -7,6 +7,7 @@ import path from 'path';
 import { existsSync } from 'fs';
 import * as YoutubeTranscript from 'youtube-transcript';
 import { getYtDlpCommand, getFFmpegPath } from './system-tools';
+import { downloadViaInvidious } from './invidious-fallback';
 
 // Fix for File API in Node.js < 20
 import { File } from 'node:buffer';
@@ -133,7 +134,10 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   let authOptions = '';
   if (isAuthenticated) {
     // Use options that make yt-dlp appear more like a logged-in user
-    authOptions = '--extractor-args "youtube:player_client=web" --no-check-certificates';
+    authOptions = '--extractor-args "youtube:player_client=android,web_creator" --no-check-certificates';
+  } else {
+    // Use android client by default for better success rate
+    authOptions = '--extractor-args "youtube:player_client=android"';
   }
   
   if (isRailway) {
@@ -210,10 +214,53 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
     }
   }
   
-  // If all attempts failed, throw the last error
+  // If all attempts failed, try Invidious fallback
   if (attemptCount >= maxAttempts && lastError) {
-    console.error('All attempts failed');
-    throw lastError;
+    console.error('All yt-dlp attempts failed');
+    
+    // Try Invidious as last resort for YouTube videos
+    if (isYouTube) {
+      console.log('🔄 Attempting Invidious fallback...');
+      const fallbackPath = path.join(tempDir, `${baseFilename}_invidious.m4a`);
+      
+      try {
+        const success = await downloadViaInvidious(videoUrl, fallbackPath);
+        if (success && existsSync(fallbackPath)) {
+          console.log('✅ Invidious fallback successful');
+          
+          // Convert to mp3 if needed
+          if (fallbackPath.endsWith('.m4a') || fallbackPath.endsWith('.webm')) {
+            const ffmpegCmd = isRailway ? 'ffmpeg' : getFFmpegPath();
+            const convertCmd = `${ffmpegCmd} -i "${fallbackPath}" -acodec mp3 -ab 192k "${audioPath}" -y`;
+            
+            await execAsync(convertCmd, {
+              timeout: 60000,
+              cwd: tempDir
+            });
+            
+            if (existsSync(audioPath)) {
+              // Clean up original
+              try {
+                await execAsync(`rm -f "${fallbackPath}"`);
+              } catch (e) {
+                // Ignore cleanup errors
+              }
+              // Success - continue to file check below
+            }
+          } else {
+            // If we have the fallback file, use it as is
+            await execAsync(`mv "${fallbackPath}" "${audioPath}"`);
+          }
+        }
+      } catch (invidiousError) {
+        console.error('Invidious fallback failed:', invidiousError);
+      }
+    }
+    
+    // If still no file after all attempts, throw error
+    if (!existsSync(audioPath)) {
+      throw lastError;
+    }
   }
   
   // Check if file was created (yt-dlp might use different extension)

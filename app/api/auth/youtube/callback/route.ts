@@ -10,24 +10,25 @@ export async function GET(request: NextRequest) {
   const cookieStore = cookies();
   const savedState = cookieStore.get('youtube_auth_state')?.value;
   
+  // Get the actual host from the request for all redirects
+  const host = request.headers.get('host');
+  const protocol = request.headers.get('x-forwarded-proto') || 'http';
+  const baseUrl = `${protocol}://${host}`;
+  
   // Verify state to prevent CSRF
   if (state !== savedState) {
-    return NextResponse.redirect(new URL('/?error=invalid_state', request.url));
+    return NextResponse.redirect(new URL('/?error=invalid_state', baseUrl));
   }
   
   if (error) {
-    return NextResponse.redirect(new URL('/?error=auth_denied', request.url));
+    return NextResponse.redirect(new URL('/?error=auth_denied', baseUrl));
   }
   
   if (!code) {
-    return NextResponse.redirect(new URL('/?error=no_code', request.url));
+    return NextResponse.redirect(new URL('/?error=no_code', baseUrl));
   }
   
   try {
-    // Get the actual host from the request
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'http';
-    const baseUrl = `${protocol}://${host}`;
     const redirectUri = `${baseUrl}/api/auth/youtube/callback`;
     
     // Exchange code for tokens
@@ -49,11 +50,12 @@ export async function GET(request: NextRequest) {
     
     if (!tokenResponse.ok) {
       console.error('Token exchange failed:', tokens);
-      return NextResponse.redirect(new URL('/?error=token_failed', request.url));
+      return NextResponse.redirect(new URL('/?error=token_failed', baseUrl));
     }
     
-    // Create response with redirect
-    const response = NextResponse.redirect(new URL('/?youtube_connected=true', request.url));
+    // Create response with redirect to the correct domain
+    const redirectUrl = new URL('/?youtube_connected=true', baseUrl);
+    const response = NextResponse.redirect(redirectUrl);
     
     // Set a simple flag that user is authenticated
     // We'll use --cookies-from-browser in yt-dlp which will use the user's actual YouTube cookies
@@ -71,6 +73,6 @@ export async function GET(request: NextRequest) {
     
   } catch (error) {
     console.error('OAuth callback error:', error);
-    return NextResponse.redirect(new URL('/?error=unknown', request.url));
+    return NextResponse.redirect(new URL('/?error=unknown', baseUrl));
   }
 } 
