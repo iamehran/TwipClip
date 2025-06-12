@@ -10,6 +10,7 @@ import { enhanceTranscriptQuality } from './transcript-quality';
 import { GOOGLE_CLOUD_API_KEY } from '../config';
 import { transcribeLargeAudio } from './audio-chunking';
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
+import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
 
 const execAsync = promisify(exec);
 
@@ -89,11 +90,17 @@ async function getFFmpegCommand(): Promise<string> {
   if (workingFFmpegCommand) return workingFFmpegCommand;
   
   try {
-    const ffmpegPath = await getFFmpegPath();
+    // Use the working command from src/lib/system-tools which properly detects Railway
+    const ffmpegPath = await getWorkingFFmpegCommand();
     workingFFmpegCommand = ffmpegPath;
     return ffmpegPath;
   } catch (error) {
     console.error('FFmpeg not available:', error);
+    // On Railway/Docker, use simple command
+    if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV) {
+      workingFFmpegCommand = 'ffmpeg';
+      return 'ffmpeg';
+    }
     return 'ffmpeg'; // Fallback
   }
 }
@@ -102,11 +109,17 @@ async function getYtDlpCommand(): Promise<string> {
   if (workingYtDlpCommand) return workingYtDlpCommand;
   
   try {
-    const ytDlpPath = await getYtDlpPath();
+    // Use the working command from src/lib/system-tools which properly detects Railway
+    const ytDlpPath = await getWorkingYtDlpCommand();
     workingYtDlpCommand = ytDlpPath;
     return ytDlpPath;
   } catch (error) {
     console.error('yt-dlp not available:', error);
+    // On Railway/Docker, use simple command
+    if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV) {
+      workingYtDlpCommand = 'yt-dlp';
+      return 'yt-dlp';
+    }
     return 'yt-dlp'; // Fallback
   }
 }
@@ -518,11 +531,17 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
       console.log(`Trying audio extraction strategy ${index + 1}/${strategies.length}`);
       console.log(`Command: ${strategy.command.substring(0, 100)}...`);
       
-      await execAsync(strategy.command, {
+      const { stdout, stderr } = await execAsync(strategy.command, {
         timeout: strategy.timeout || 30000,
         maxBuffer: 1024 * 1024 * 50, // 50MB buffer
-        cwd: outputDir // Run in the temp directory
+        cwd: outputDir, // Run in the temp directory
+        shell: true // Ensure shell is used
       });
+      
+      // Log any stderr output for debugging
+      if (stderr) {
+        console.log(`Command stderr: ${stderr.substring(0, 200)}`);
+      }
       
       // Check for any output files (m4a, mp3, mp4, etc.)
       const files = await fs.readdir(outputDir);
@@ -597,34 +616,63 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
   // Use just the filename for yt-dlp, since we'll set cwd to the temp directory
   const outputPattern = `${outputFilename}.%(ext)s`;
   
+  // Initialize commands if not already done
+  if (!workingYtDlpCommand || !workingFFmpegCommand) {
+    await getYtDlpCommand();
+    await getFFmpegCommand();
+  }
+  
   // Get FFmpeg path (will be set during initialization)
+  // On Railway/Docker, use the commands directly without full paths
+  const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
   const ffmpegPath = workingFFmpegCommand || 'ffmpeg';
   const ytDlpPath = workingYtDlpCommand || 'yt-dlp';
   
   switch (videoInfo.platform) {
     case 'youtube':
-      strategies.push(
-        // Strategy 1: Download best audio (let yt-dlp choose format)
-        {
-          command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-          timeout: 120000 // 2 minutes
-        },
-        // Strategy 2: Direct audio download without conversion
-        {
-          command: `"${ytDlpPath}" -f "bestaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-          timeout: 120000
-        },
-        // Strategy 3: Download with worstaudio format for smaller size
-        {
-          command: `"${ytDlpPath}" -f "worstaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-          timeout: 120000
-        },
-        // Strategy 4: Fallback - download small video
-        {
-          command: `"${ytDlpPath}" -f "worst[height>=144]" --no-playlist --no-warnings -o "${outputFilename}.mp4" "${videoUrl}"`,
-          timeout: 180000 // 3 minutes
-        }
-      );
+      // On Docker/Railway, don't quote the command paths
+      if (isDocker) {
+        strategies.push(
+          // Strategy 1: Simple audio extraction
+          {
+            command: `${ytDlpPath} -x --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000 // 2 minutes
+          },
+          // Strategy 2: Direct audio download
+          {
+            command: `${ytDlpPath} -f bestaudio --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000
+          },
+          // Strategy 3: Worst audio for smaller size
+          {
+            command: `${ytDlpPath} -f worstaudio --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000
+          }
+        );
+      } else {
+        strategies.push(
+          // Strategy 1: Download best audio (let yt-dlp choose format)
+          {
+            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000 // 2 minutes
+          },
+          // Strategy 2: Direct audio download without conversion
+          {
+            command: `"${ytDlpPath}" -f "bestaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000
+          },
+          // Strategy 3: Download with worstaudio format for smaller size
+          {
+            command: `"${ytDlpPath}" -f "worstaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000
+          },
+          // Strategy 4: Fallback - download small video
+          {
+            command: `"${ytDlpPath}" -f "worst[height>=144]" --no-playlist --no-warnings -o "${outputFilename}.mp4" "${videoUrl}"`,
+            timeout: 180000 // 3 minutes
+          }
+        );
+      }
       break;
       
     case 'vimeo':
