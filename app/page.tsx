@@ -6,7 +6,7 @@ import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
 import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
-import YouTubeConnect from './components/YouTubeConnect';
+// import YouTubeConnect from './components/YouTubeConnect';
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
 import BulkDownloadButton from './components/BulkDownloadButton';
 
@@ -206,7 +206,7 @@ export default function Home() {
             </div>
             
             {/* YouTube Connect */}
-            <YouTubeConnect />
+            {/* <YouTubeConnect /> */}
           </div>
         </div>
       </div>

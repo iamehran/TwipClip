@@ -354,8 +354,28 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     
     let extractCommand: string;
     if (isDocker) {
-      // Simple command for Docker/Railway - no quotes needed
-      extractCommand = `${ytDlpCmd} -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`;
+      // Enhanced command for Docker/Railway with cookies and user-agent
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      
+      // Check for cookie options
+      const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+      const cookieString = process.env.YOUTUBE_COOKIES;
+      let cookieFlag = '';
+      
+      // If cookie string is provided in env, create a temp file
+      if (cookieString) {
+        const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+        await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+        cookieFlag = `--cookies ${tempCookieFile}`;
+      } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+        // Use existing cookie file if it exists
+        cookieFlag = `--cookies ${cookieFile}`;
+      } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+        // Try Firefox cookies as fallback
+        cookieFlag = '--cookies-from-browser firefox';
+      }
+      
+      extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
     } else {
       // Windows/local command
       extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
@@ -372,8 +392,25 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
       console.error('Audio extraction failed:', error);
       
       // Try without audio extraction flag
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      
+      // Same cookie logic as above
+      const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+      const cookieString = process.env.YOUTUBE_COOKIES;
+      let cookieFlag = '';
+      
+      if (cookieString) {
+        const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+        await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+        cookieFlag = `--cookies ${tempCookieFile}`;
+      } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+        cookieFlag = `--cookies ${cookieFile}`;
+      } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+        cookieFlag = '--cookies-from-browser firefox';
+      }
+      
       const fallbackCommand = isDocker 
-        ? `${ytDlpCmd} -f bestaudio -o ${audioPath} ${videoInfo.url}`
+        ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
         : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
       
       console.log('Trying fallback command:', fallbackCommand);
@@ -593,33 +630,44 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
     case 'youtube':
       // On Docker/Railway, use simpler commands without complex quoting
       if (isDocker) {
-        // If user is authenticated, use cookies first
-        if (hasYouTubeAuth) {
-          strategies.push({
-            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v --cookies ${cookieFile} -o ${outputPattern} ${videoUrl}`,
-            timeout: 180000
-          });
+        // User agent for all requests
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Cookie handling
+        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+        const cookieString = process.env.YOUTUBE_COOKIES;
+        let cookieFlag = '';
+        
+        // Create temp cookie file if string provided
+        if (cookieString) {
+          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+          require('fs').writeFileSync(tempCookieFile, cookieString, 'utf-8');
+          cookieFlag = `--cookies ${tempCookieFile}`;
+        } else if (require('fs').existsSync(cookieFile)) {
+          cookieFlag = `--cookies ${cookieFile}`;
+        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+          cookieFlag = '--cookies-from-browser firefox';
         }
         
         strategies.push(
-          // Strategy 1: Simple audio extraction with verbose output
+          // Strategy 1: Cookies (if available) + user agent + audio extraction
           {
-            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 180000 // 3 minutes for Railway
           },
-          // Strategy 2: Direct download without audio extraction (in case ffmpeg is missing)
+          // Strategy 2: Cookies (if available) + user agent + direct download
           {
-            command: `${ytDlpPath} -f bestaudio --no-playlist -v -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 180000
           },
-          // Strategy 3: Try with user agent
+          // Strategy 3: Just user agent (fallback if cookies fail)
           {
-            command: `${ytDlpPath} --no-playlist -v --user-agent Mozilla/5.0 -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           },
-          // Strategy 4: Absolute minimal command
+          // Strategy 4: Minimal with user agent
           {
-            command: `${ytDlpPath} -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} --user-agent "${userAgent}" -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           }
         );

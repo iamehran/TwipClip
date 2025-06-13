@@ -109,25 +109,26 @@ He gave them 2 options: Drop the case—or lose access for 400M users.
 
 ## 🚀 Deployment
 
-### Railway (Recommended)
+### Railway Deployment (Recommended)
 
-1. **Create Railway account** at [railway.app](https://railway.app)
+1. Fork this repository
+2. Create a new project on [Railway](https://railway.app)
+3. Connect your GitHub repository
+4. Add environment variables (see Configuration section)
+5. Deploy!
 
-2. **Deploy from GitHub**:
-   - Connect your GitHub repository
-   - Railway auto-detects the configuration
+### YouTube Authentication (Optional but Recommended)
 
-3. **Set environment variables**:
-   ```env
-   OPENAI_API_KEY=sk-your-openai-key
-   ANTHROPIC_API_KEY=sk-ant-api03-your-anthropic-key
-   NODE_ENV=production
-   CLEANUP_SECRET=your-random-secret
+To avoid YouTube bot detection errors, you can add your YouTube cookies:
+
+1. Extract cookies from your browser (see [COOKIE_EXTRACTION_GUIDE.md](COOKIE_EXTRACTION_GUIDE.md))
+2. Add to Railway environment variables:
    ```
+   YOUTUBE_COOKIES="[your cookie string]"
+   ```
+3. Cookies last 30-60 days and work for all users
 
-4. **Generate domain**:
-   - Go to Settings → Generate Domain
-   - Your app will be live at `yourapp.railway.app`
+For detailed instructions, see the [Cookie Extraction Guide](COOKIE_EXTRACTION_GUIDE.md).
 
 ### Manual Deployment
 

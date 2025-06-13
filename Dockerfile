@@ -3,6 +3,9 @@ FROM node:18-alpine
 # Install dependencies
 RUN apk add --no-cache python3 py3-pip ffmpeg curl bash
 
+# Install Firefox ESR and X11 virtual framebuffer for headless operation
+RUN apk add --no-cache firefox-esr xvfb dbus-x11
+
 # Install yt-dlp using pip with no-cache-dir flag
 RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp
 
