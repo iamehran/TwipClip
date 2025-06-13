@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
   
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const savedState = cookieStore.get('youtube_auth_state')?.value;
   
   // Get the actual host from the request for all redirects

@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 
 export async function GET() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const isAuthenticated = cookieStore.get('youtube_authenticated')?.value === 'true';
   
   if (!isAuthenticated) {

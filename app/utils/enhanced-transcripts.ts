@@ -372,10 +372,10 @@ function getPlatformStrategies(videoInfo: VideoInfo): Array<{ method: string; pr
   switch (videoInfo.platform) {
     case 'youtube':
       strategies.push(
-        // PRIORITY 1: YouTube transcript library - try this first (fast and free)
-        { method: 'youtube-transcript-lib', priority: 1 },
-        // PRIORITY 2: Audio extraction with Whisper - for videos without captions
-        { method: 'whisper-optimized', priority: 2 },
+        // PRIORITY 1: Audio extraction with Whisper - most reliable method
+        { method: 'whisper-optimized', priority: 1 },
+        // PRIORITY 2: YouTube transcript library - fallback if Whisper fails
+        { method: 'youtube-transcript-lib', priority: 2 },
         // PRIORITY 3: YouTube API captions if available
         { method: 'youtube-api-captions', priority: 3 }
       );
@@ -521,6 +521,12 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
  * PHASE 2A: Multi-strategy audio extraction
  */
 async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: string): Promise<boolean> {
+  // Initialize commands if not already done
+  if (!workingYtDlpCommand || !workingFFmpegCommand) {
+    await getYtDlpCommand();
+    await getFFmpegCommand();
+  }
+  
   const strategies = getAudioExtractionStrategies(videoInfo, outputPath);
   
   // Get the directory where the file should be created
@@ -534,8 +540,7 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
       const { stdout, stderr } = await execAsync(strategy.command, {
         timeout: strategy.timeout || 30000,
         maxBuffer: 1024 * 1024 * 50, // 50MB buffer
-        cwd: outputDir, // Run in the temp directory
-        shell: true // Ensure shell is used
+        cwd: outputDir // Run in the temp directory
       });
       
       // Log any stderr output for debugging
@@ -616,17 +621,11 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
   // Use just the filename for yt-dlp, since we'll set cwd to the temp directory
   const outputPattern = `${outputFilename}.%(ext)s`;
   
-  // Initialize commands if not already done
-  if (!workingYtDlpCommand || !workingFFmpegCommand) {
-    await getYtDlpCommand();
-    await getFFmpegCommand();
-  }
-  
   // Get FFmpeg path (will be set during initialization)
   // On Railway/Docker, use the commands directly without full paths
   const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
-  const ffmpegPath = workingFFmpegCommand || 'ffmpeg';
-  const ytDlpPath = workingYtDlpCommand || 'yt-dlp';
+  const ffmpegPath = isDocker ? 'ffmpeg' : (workingFFmpegCommand || 'ffmpeg');
+  const ytDlpPath = isDocker ? 'yt-dlp' : (workingYtDlpCommand || 'yt-dlp');
   
   switch (videoInfo.platform) {
     case 'youtube':

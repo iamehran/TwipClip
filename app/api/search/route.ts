@@ -262,8 +262,8 @@ export async function POST(request: Request) {
             const clipDuration = match.endTime - match.startTime;
             
             // Basic quality checks
-            if (clipDuration < 3 || clipDuration > 300) {
-              console.log(`❌ Rejected: duration ${clipDuration.toFixed(1)}s out of range`);
+            if (clipDuration < 10 || clipDuration > 300) {
+              console.log(`❌ Rejected: duration ${clipDuration.toFixed(1)}s out of range (min: 10s, max: 300s)`);
               continue;
             }
             
