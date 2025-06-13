@@ -331,99 +331,115 @@ function getPlatformStrategies(videoInfo: VideoInfo): Array<{ method: string; pr
 }
 
 /**
- * PHASE 2A: Enhanced Whisper processing with multiple fallbacks
+ * PHASE 2A: Optimized Whisper transcript with audio extraction
  */
 async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
+  console.log('Using audio extraction + Whisper transcription...');
+  
   if (!openai) {
     throw new Error('OpenAI API key not available for Whisper transcription');
   }
-
-  let tempDir: string | null = null;
-  let audioPath: string | null = null;
-
+  
+  const tempDir = path.join(process.cwd(), 'temp');
+  await fs.mkdir(tempDir, { recursive: true });
+  
+  const audioPath = path.join(tempDir, `${videoInfo.id}_audio.m4a`);
+  
   try {
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twipclip-whisper-'));
-    audioPath = path.join(tempDir, `${videoInfo.id}.m4a`);
-    
+    // Extract audio using simple yt-dlp command
     console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
     
-    // Platform-specific audio extraction
-    const extractionSuccess = await extractAudioMultiStrategy(videoInfo, audioPath);
+    const ytDlpCmd = await getYtDlpCommand();
+    const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
     
-    if (!extractionSuccess) {
-      throw new Error('All audio extraction strategies failed');
+    let extractCommand: string;
+    if (isDocker) {
+      // Simple command for Docker/Railway - no quotes needed
+      extractCommand = `${ytDlpCmd} -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`;
+    } else {
+      // Windows/local command
+      extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
     }
     
-    // Check file size
-    const stats = await fs.stat(audioPath);
-    const sizeMB = stats.size / (1024 * 1024);
-    console.log(`Audio file size: ${sizeMB.toFixed(1)}MB`);
+    console.log(`Running: ${extractCommand}`);
     
-    // Use chunking for large files
-    if (sizeMB > 24) {
-      console.log('🚀 Using advanced chunking strategy for large audio file...');
+    try {
+      await execAsync(extractCommand, {
+        timeout: 120000, // 2 minutes
+        maxBuffer: 10 * 1024 * 1024
+      });
+    } catch (error) {
+      console.error('Audio extraction failed:', error);
       
-      const segments = await transcribeLargeAudio(audioPath, tempDir, openai);
+      // Try without audio extraction flag
+      const fallbackCommand = isDocker 
+        ? `${ytDlpCmd} -f bestaudio -o ${audioPath} ${videoInfo.url}`
+        : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
       
-      if (segments && segments.length > 0) {
-        return {
-          segments,
-          source: 'whisper-api',
-          quality: 'high',
-          language: 'en',
-          confidence: 0.95,
-          platform: videoInfo.platform as any
-        };
-      }
+      console.log('Trying fallback command:', fallbackCommand);
+      await execAsync(fallbackCommand, {
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024
+      });
     }
     
-    // For smaller files, use the original approach
-    console.log('Uploading to Whisper API...');
+    // Check if audio file was created
+    const audioStats = await fs.stat(audioPath);
+    if (audioStats.size < 1000) {
+      throw new Error('Audio file too small, likely corrupted');
+    }
     
+    console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB`);
+    
+    // Optimize audio if needed
+    await optimizeAudioForWhisper(audioPath, tempDir);
+    
+    // Transcribe with Whisper
     const audioFile = await fs.readFile(audioPath);
-    const audioBlob = new File([audioFile], `${videoInfo.id}.m4a`, { type: 'audio/m4a' });
-    
-    const transcription = await openai.audio.transcriptions.create({
-        file: audioBlob,
-        model: 'whisper-1',
-      language: 'en', // Auto-detect or specify
-        response_format: 'verbose_json',
-        timestamp_granularities: ['segment']
+    const audioBlob = new File([audioFile], path.basename(audioPath), { 
+      type: 'audio/m4a' 
     });
     
+    console.log('Sending to Whisper API...');
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioBlob,
+      model: 'whisper-1',
+      language: 'en',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['segment']
+    });
+    
+    // Clean up
+    await fs.unlink(audioPath).catch(() => {});
+    
     if (!transcription.segments || transcription.segments.length === 0) {
-      throw new Error('Whisper returned empty transcription');
+      throw new Error('No segments in transcription');
     }
     
-    // Convert Whisper segments to our format
-    const segments: TranscriptSegment[] = transcription.segments.map((segment: any) => ({
-          text: segment.text.trim(),
-          offset: segment.start,
-          duration: segment.end - segment.start
+    const segments: TranscriptSegment[] = transcription.segments.map((seg: any) => ({
+      text: seg.text,
+      offset: seg.start || 0,
+      duration: (seg.end || seg.start || 0) - (seg.start || 0)
     }));
     
     return {
-      segments,
+      segments: enhancePunctuation(segments),
       source: 'whisper-api',
       quality: 'high',
       language: transcription.language || 'en',
-      confidence: 0.95, // Whisper is generally high confidence
+      confidence: 0.95,
       platform: videoInfo.platform as any
     };
     
   } catch (error) {
     console.error('Whisper transcription failed:', error);
+    
+    // Clean up on error
+    try {
+      await fs.unlink(audioPath);
+    } catch {}
+    
     throw error;
-  } finally {
-    // Cleanup
-    if (tempDir) {
-      try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup temp directory:', cleanupError);
-      }
-    }
   }
 }
 
@@ -450,19 +466,26 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
       // Log the full command for debugging
       console.log(`Executing: ${strategy.command}`);
       
-      const { stdout, stderr } = await execAsync(strategy.command, {
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+      const execOptions: any = {
         timeout: strategy.timeout || 30000,
         maxBuffer: 1024 * 1024 * 50, // 50MB buffer
         cwd: outputDir, // Run in the temp directory
-        shell: '/bin/sh' // Use shell explicitly for Railway/Docker
-      });
+      };
+      
+      // Only set shell for non-Docker environments
+      if (!isDocker) {
+        execOptions.shell = true;
+      }
+      
+      const { stdout, stderr } = await execAsync(strategy.command, execOptions);
       
       // Log any output for debugging
       if (stdout) {
-        console.log(`Command stdout: ${stdout.substring(0, 200)}`);
+        console.log(`Command stdout: ${stdout.toString().substring(0, 200)}`);
       }
       if (stderr) {
-        console.log(`Command stderr: ${stderr.substring(0, 200)}`);
+        console.log(`Command stderr: ${stderr.toString().substring(0, 200)}`);
       }
       
       // Check for any output files (m4a, mp3, mp4, etc.)
@@ -558,6 +581,10 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
   const ffmpegPath = workingFFmpegCommand || 'ffmpeg';
   const ytDlpPath = workingYtDlpCommand || '/usr/local/bin/yt-dlp';
   
+  console.log(`Platform: ${isDocker ? 'Docker/Railway' : 'Local'}`);
+  console.log(`yt-dlp path: ${ytDlpPath}`);
+  console.log(`FFmpeg path: ${ffmpegPath}`);
+  
   // Check for YouTube authentication
   const cookieFile = path.join(process.cwd(), 'temp', 'youtube_auth.txt');
   const hasYouTubeAuth = videoInfo.platform === 'youtube' && require('fs').existsSync(cookieFile);
@@ -569,7 +596,7 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         // If user is authenticated, use cookies first
         if (hasYouTubeAuth) {
           strategies.push({
-            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v --cookies "${cookieFile}" -o "${outputPattern}" "${videoUrl}"`,
+            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v --cookies ${cookieFile} -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           });
         }
@@ -577,22 +604,22 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         strategies.push(
           // Strategy 1: Simple audio extraction with verbose output
           {
-            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v -o "${outputPattern}" "${videoUrl}"`,
+            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`,
             timeout: 180000 // 3 minutes for Railway
           },
-          // Strategy 2: Direct audio download without format specification
+          // Strategy 2: Direct download without audio extraction (in case ffmpeg is missing)
           {
-            command: `${ytDlpPath} --no-playlist -v -o "${outputPattern}" "${videoUrl}"`,
+            command: `${ytDlpPath} -f bestaudio --no-playlist -v -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           },
-          // Strategy 3: Try with cookies and user agent
+          // Strategy 3: Try with user agent
           {
-            command: `${ytDlpPath} --no-playlist -v --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -o "${outputPattern}" "${videoUrl}"`,
+            command: `${ytDlpPath} --no-playlist -v --user-agent Mozilla/5.0 -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           },
           // Strategy 4: Absolute minimal command
           {
-            command: `${ytDlpPath} "${videoUrl}" -o "${outputPattern}"`,
+            command: `${ytDlpPath} -o ${outputPattern} ${videoUrl}`,
             timeout: 180000
           }
         );

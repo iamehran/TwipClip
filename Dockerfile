@@ -21,6 +21,11 @@ RUN echo "Testing yt-dlp installations:" && \
     (python3 -m yt_dlp --version || echo "Python module failed") && \
     (/app/yt-dlp --version || echo "App copy failed")
 
+# Verify FFmpeg is installed
+RUN echo "Testing FFmpeg installation:" && \
+    (ffmpeg -version || echo "FFmpeg not found") && \
+    (which ffmpeg || echo "FFmpeg not in PATH")
+
 WORKDIR /app
 
 # Copy and install dependencies
