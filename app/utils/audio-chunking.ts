@@ -64,17 +64,19 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
       return audioPath;
     }
     
-    compressedPath = path.join(tempDir, `compressed_${Date.now()}_${path.basename(audioPath)}`);
+    // Detect input format
+    const inputExt = path.extname(audioPath).toLowerCase();
+    const inputFormat = inputExt === '.webm' ? '-f webm' : '';
+    
+    compressedPath = path.join(tempDir, `compressed_${Date.now()}_${path.basename(audioPath, inputExt)}.m4a`);
     const ffmpegPath = await getFFmpegPath();
     
-    // Aggressive compression: mono, 16kHz, 64kbps
-    // This should reduce file size by ~75-80%
-    const compressionCmd = `"${ffmpegPath}" -i "${audioPath}" -ac 1 -ar 16000 -b:a 64k -f mp4 "${compressedPath}" -y`;
+    // Compress with moderate settings first
+    const compressCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" -ac 1 -ar 16000 -b:a 64k -f mp4 "${compressedPath}" -y`;
     
-    console.log('Compressing with: mono, 16kHz, 64kbps...');
-    const { stderr } = await execAsync(compressionCmd, { 
-      timeout: 180000, // 3 minute timeout
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+    const { stdout, stderr } = await execAsync(compressCmd, {
+      timeout: 120000, // 2 minutes
+      maxBuffer: 10 * 1024 * 1024
     });
     
     // Check if compression succeeded
@@ -93,8 +95,8 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
       if (compressedSizeMB > 24) {
         console.log('⚠️ Still too large, trying more aggressive compression...');
         
-        const ultraCompressedPath = path.join(tempDir, `ultra_compressed_${Date.now()}_${path.basename(audioPath)}`);
-        const ultraCompressionCmd = `"${ffmpegPath}" -i "${audioPath}" -ac 1 -ar 16000 -b:a 32k -f mp4 "${ultraCompressedPath}" -y`;
+        const ultraCompressedPath = path.join(tempDir, `ultra_compressed_${Date.now()}_${path.basename(audioPath, inputExt)}.m4a`);
+        const ultraCompressionCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" -ac 1 -ar 16000 -b:a 32k -f mp4 "${ultraCompressedPath}" -y`;
         
         await execAsync(ultraCompressionCmd, { 
           timeout: 180000,
@@ -137,6 +139,23 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
  */
 async function getAudioDuration(audioPath: string, ffmpegPath: string): Promise<number> {
   try {
+    // Use ffprobe if available for more reliable duration detection
+    const probeCmd = `"${ffmpegPath.replace('ffmpeg', 'ffprobe')}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
+    
+    try {
+      const { stdout: probeDuration } = await execAsync(probeCmd, {
+        timeout: 30000,
+        maxBuffer: 5 * 1024 * 1024
+      });
+      
+      if (probeDuration && !isNaN(parseFloat(probeDuration.trim()))) {
+        return parseFloat(probeDuration.trim());
+      }
+    } catch {
+      // Fall back to ffmpeg if ffprobe fails
+    }
+    
+    // Fallback to ffmpeg
     const durationCmd = `"${ffmpegPath}" -i "${audioPath}" 2>&1`;
     const { stdout, stderr } = await execAsync(durationCmd, {
       timeout: 30000,
@@ -224,7 +243,11 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
     
     // Extract chunk with compression to ensure it's under size limit
       // Use precise seeking with -ss before -i for accuracy
-      const extractCmd = `"${ffmpegPath}" -ss ${currentTime} -i "${audioPath}" -t ${duration} -ac 1 -ar 16000 -b:a 64k -f mp4 "${chunkPath}" -y`;
+      // For webm input, we need to specify the input format
+      const inputExt = path.extname(audioPath).toLowerCase();
+      const inputFormat = inputExt === '.webm' ? '-f webm' : '';
+      
+      const extractCmd = `"${ffmpegPath}" ${inputFormat} -ss ${currentTime} -i "${audioPath}" -t ${duration} -ac 1 -ar 16000 -b:a 64k -f mp4 "${chunkPath}" -y`;
       
       console.log(`  Extracting chunk ${chunkIndex + 1}: ${currentTime.toFixed(1)}s - ${(currentTime + duration).toFixed(1)}s`);
       

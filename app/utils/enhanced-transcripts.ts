@@ -344,6 +344,7 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
   await fs.mkdir(tempDir, { recursive: true });
   
   const audioPath = path.join(tempDir, `${videoInfo.id}_audio.m4a`);
+  let actualAudioPath = audioPath; // Declare at function scope
   
   try {
     // Extract audio using simple yt-dlp command
@@ -421,22 +422,45 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     }
     
     // Check if audio file was created
-    const audioStats = await fs.stat(audioPath);
+    // yt-dlp might download in a different format than requested
+    try {
+      await fs.stat(audioPath);
+    } catch {
+      // Check for other common audio formats
+      const baseName = path.basename(audioPath, path.extname(audioPath));
+      const possibleExtensions = ['.webm', '.opus', '.m4a', '.mp3', '.mp4'];
+      
+      for (const ext of possibleExtensions) {
+        const possiblePath = path.join(tempDir, baseName + ext);
+        try {
+          const stats = await fs.stat(possiblePath);
+          if (stats.size > 1000) {
+            console.log(`Found audio file at: ${possiblePath}`);
+            actualAudioPath = possiblePath;
+            break;
+          }
+        } catch {
+          // Continue checking other extensions
+        }
+      }
+    }
+    
+    const audioStats = await fs.stat(actualAudioPath);
     if (audioStats.size < 1000) {
       throw new Error('Audio file too small, likely corrupted');
     }
     
-    console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB`);
+    console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB at ${actualAudioPath}`);
     
     // Check if audio needs optimization or chunking
-    const needsChunking = await optimizeAudioForWhisper(audioPath, tempDir);
+    const needsChunking = await optimizeAudioForWhisper(actualAudioPath, tempDir);
     
     if (needsChunking) {
       // File is too large, use chunking method
       console.log('Using chunking method for large audio file...');
       
       try {
-        const segments = await transcribeLargeAudio(audioPath, tempDir, openai);
+        const segments = await transcribeLargeAudio(actualAudioPath, tempDir, openai);
         
         // If transcribeLargeAudio returns null, it means the file was small enough after all
         if (!segments) {
@@ -445,7 +469,7 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
           // Fall through to regular transcription
         } else {
           // Clean up
-          await fs.unlink(audioPath).catch(() => {});
+          await fs.unlink(actualAudioPath).catch(() => {});
           
           return {
             segments: enhancePunctuation(segments),
@@ -463,8 +487,8 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     }
     
     // File is small enough for direct transcription
-    const audioFile = await fs.readFile(audioPath);
-    const audioBlob = new File([audioFile], path.basename(audioPath), { 
+    const audioFile = await fs.readFile(actualAudioPath);
+    const audioBlob = new File([audioFile], path.basename(actualAudioPath), { 
       type: 'audio/m4a' 
     });
     
@@ -479,7 +503,7 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     });
     
     // Clean up
-    await fs.unlink(audioPath).catch(() => {});
+    await fs.unlink(actualAudioPath).catch(() => {});
     
     if (!transcription.segments || transcription.segments.length === 0) {
       throw new Error('No segments in transcription');
@@ -505,7 +529,9 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     
     // Clean up on error
     try {
-      await fs.unlink(audioPath);
+      if (actualAudioPath) {
+        await fs.unlink(actualAudioPath);
+      }
     } catch {}
     
     throw error;
