@@ -55,6 +55,8 @@ export default function Home() {
     setLastSearch({ threadContent, videoUrls });
     setShowSearchForm(false); // Hide search form when processing starts
 
+    let progressInterval: NodeJS.Timeout | undefined;
+
     try {
       // No need to parse - send the full thread content
       if (!threadContent.trim()) {
@@ -67,9 +69,44 @@ export default function Home() {
 
       console.log('Sending to process API:', { thread: threadContent, videos: videoUrls });
 
-      // Simulate progress updates
-      setLoadingStatus('Starting intelligent processing...');
-      setLoadingProgress(10);
+      // Start with initial progress
+      setLoadingStatus('Initializing search...');
+      setLoadingProgress(5);
+
+      // Simulate realistic progress updates
+      progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          if (prev < 85) {
+            // Gradually increase progress
+            const increment = Math.random() * 3 + 1; // 1-4% increment
+            const newProgress = Math.min(prev + increment, 85);
+            
+            // Update status message based on progress
+            if (newProgress >= 5 && newProgress < 15) {
+              setLoadingStatus('Preparing video processing...');
+            } else if (newProgress >= 15 && newProgress < 25) {
+              setLoadingStatus('Connecting to video sources...');
+            } else if (newProgress >= 25 && newProgress < 35) {
+              setLoadingStatus('Downloading video data...');
+            } else if (newProgress >= 35 && newProgress < 40) {
+              setLoadingStatus('Extracting audio tracks...');
+            } else if (newProgress >= 40 && newProgress < 50) {
+              setLoadingStatus('Processing audio with Whisper AI...');
+            } else if (newProgress >= 50 && newProgress < 60) {
+              setLoadingStatus('Generating high-quality transcripts...');
+            } else if (newProgress >= 60 && newProgress < 70) {
+              setLoadingStatus('Analyzing content with Claude AI...');
+            } else if (newProgress >= 70 && newProgress < 80) {
+              setLoadingStatus('Matching clips to your content...');
+            } else if (newProgress >= 80 && newProgress < 85) {
+              setLoadingStatus('Optimizing clip boundaries...');
+            }
+            
+            return newProgress;
+          }
+          return prev;
+        });
+      }, 500);
 
       const response = await fetch('/api/process', {
         method: 'POST',
@@ -80,17 +117,19 @@ export default function Home() {
         }),
       });
 
-      setLoadingProgress(30);
-      setLoadingStatus('Processing videos with AI...');
+      // Update status based on progress
+      setLoadingProgress(40);
+      setLoadingStatus('Extracting audio from videos...');
 
       const data = await response.json();
 
       if (!response.ok) {
+        clearInterval(progressInterval);
         throw new Error(data.error || 'Processing failed');
       }
 
-      setLoadingProgress(90);
-      setLoadingStatus('Finalizing results...');
+      setLoadingProgress(70);
+      setLoadingStatus('Analyzing transcripts with AI...');
 
       // Convert the new format to match the UI expectations
       const formattedResults: SearchResults = {};
@@ -124,6 +163,10 @@ export default function Home() {
         });
       }
 
+      clearInterval(progressInterval);
+      setLoadingProgress(95);
+      setLoadingStatus('Finalizing results...');
+
       setResults(formattedResults);
       setStats(data.summary || null);
       
@@ -136,6 +179,7 @@ export default function Home() {
         setLoadingStatus('');
       }, 1000);
     } catch (err) {
+      clearInterval(progressInterval);
       setError(err instanceof Error ? err.message : 'An error occurred');
       console.error('Processing error:', err);
       setShowSearchForm(true); // Show form again on error
@@ -230,8 +274,8 @@ export default function Home() {
             <LoadingState 
               status={loadingStatus}
               progress={loadingProgress}
-              currentVideo={loadingProgress > 30 ? 1 : undefined}
-              totalVideos={loadingProgress > 30 ? 3 : undefined}
+              currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
+              totalVideos={lastSearch?.videoUrls.length}
             />
           )}
 

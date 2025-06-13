@@ -78,20 +78,20 @@ export default function LoadingState({
             <ProcessingStep 
               icon="🎬" 
               text="Extracting audio from videos" 
-              active={progress < 33} 
-              completed={progress >= 33} 
+              active={progress >= 5 && progress < 40} 
+              completed={progress >= 40} 
             />
             <ProcessingStep 
               icon="🎙️" 
               text="Transcribing with AI (Whisper)" 
-              active={progress >= 33 && progress < 66} 
-              completed={progress >= 66} 
+              active={progress >= 40 && progress < 70} 
+              completed={progress >= 70} 
             />
             <ProcessingStep 
               icon="🔍" 
-              text="Finding perfect matches" 
-              active={progress >= 66 && progress < 100} 
-              completed={progress >= 100} 
+              text="Finding perfect matches with Claude AI" 
+              active={progress >= 70 && progress < 95} 
+              completed={progress >= 95} 
             />
           </div>
           
