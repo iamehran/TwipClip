@@ -4,7 +4,8 @@ import { promisify } from 'util';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { getYtDlpCommand, getFFmpegCommand } from './system-tools';
+import { getYtDlpCommand, getFFmpegCommand } from '../../src/lib/system-tools';
+import AdmZip from 'adm-zip';
 
 const execAsync = promisify(exec);
 
@@ -231,7 +232,6 @@ export async function createDownloadZip(
   downloadResults: DownloadResult[],
   outputPath: string
 ): Promise<string> {
-  const AdmZip = require('adm-zip');
   const zip = new AdmZip();
   
   // Add each successful download to the ZIP

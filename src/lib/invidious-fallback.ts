@@ -73,7 +73,7 @@ export async function downloadViaInvidious(videoUrl: string, outputPath: string)
       }
       
     } catch (error) {
-      console.log(`Failed with ${instance}:`, error.message);
+      console.log(`Failed with ${instance}:`, error instanceof Error ? error.message : String(error));
       continue;
     }
   }

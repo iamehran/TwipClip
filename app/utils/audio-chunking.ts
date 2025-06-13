@@ -1,9 +1,9 @@
+import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
 import { promisify } from 'util';
 import OpenAI from 'openai';
-import { getFFmpegCommand } from './system-tools';
+import { getFFmpegPath } from './system-tools';
 
 const execAsync = promisify(exec);
 
@@ -21,11 +21,10 @@ interface TranscriptSegment {
   duration: number;
 }
 
-const MAX_CHUNK_SIZE = 24 * 1024 * 1024; // 24MB to be safe (Whisper limit is 25MB)
-const MIN_CHUNK_SIZE = 1024; // 1KB minimum to ensure valid audio
-const CHUNK_DURATION = 300; // 5 minutes per chunk initially
-const CHUNK_OVERLAP = 30; // 30 seconds overlap between chunks
-const MIN_CHUNK_DURATION = 10; // Minimum 10 seconds per chunk
+// Constants for chunking
+const MIN_CHUNK_DURATION = 10; // seconds
+const MAX_CHUNK_DURATION = 300; // 5 minutes
+const TARGET_CHUNK_SIZE = 20 * 1024 * 1024; // 20MB target size
 
 /**
  * Validate audio file before processing
@@ -49,26 +48,24 @@ async function validateAudioFile(audioPath: string): Promise<void> {
  * Returns the path to compressed file if successful, null if compression didn't help
  */
 export async function compressAudioFile(audioPath: string, tempDir: string): Promise<string | null> {
-  console.log('🗜️ Attempting to compress audio file...');
+  console.log('🎵 Attempting to compress audio file...');
+  
+  let compressedPath: string | null = null;
   
   try {
     await validateAudioFile(audioPath);
     
     const stats = await fs.stat(audioPath);
     const originalSizeMB = stats.size / (1024 * 1024);
-    console.log(`Original size: ${originalSizeMB.toFixed(1)}MB`);
+    console.log(`📊 Original size: ${originalSizeMB.toFixed(1)}MB`);
     
-    // If already small enough, no need to compress
     if (originalSizeMB <= 24) {
-      console.log('✅ File already within size limit, no compression needed');
-      return null;
+      console.log('✅ File already within size limit');
+      return audioPath;
     }
     
-    // Ensure temp directory exists
-    await fs.mkdir(tempDir, { recursive: true });
-    
-    const compressedPath = path.join(tempDir, `compressed_${Date.now()}_${path.basename(audioPath)}`);
-    const ffmpegPath = await getFFmpegCommand();
+    compressedPath = path.join(tempDir, `compressed_${Date.now()}_${path.basename(audioPath)}`);
+    const ffmpegPath = await getFFmpegPath();
     
     // Aggressive compression: mono, 16kHz, 64kbps
     // This should reduce file size by ~75-80%
@@ -83,7 +80,7 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
     // Check if compression succeeded
     try {
       const compressedStats = await fs.stat(compressedPath);
-      if (compressedStats.size < MIN_CHUNK_SIZE) {
+      if (compressedStats.size < MIN_CHUNK_DURATION) {
         throw new Error('Compressed file too small, likely corrupted');
       }
       
@@ -107,7 +104,7 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
         const ultraStats = await fs.stat(ultraCompressedPath);
         const ultraSizeMB = ultraStats.size / (1024 * 1024);
         
-        if (ultraStats.size >= MIN_CHUNK_SIZE && ultraSizeMB <= 24) {
+        if (ultraStats.size >= MIN_CHUNK_DURATION && ultraSizeMB <= 24) {
           console.log(`✅ Ultra-compressed to ${ultraSizeMB.toFixed(1)}MB`);
           // Clean up intermediate file
           await fs.unlink(compressedPath).catch(() => {});
@@ -187,7 +184,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
   try {
     await validateAudioFile(audioPath);
     
-    const ffmpegPath = await getFFmpegCommand();
+    const ffmpegPath = await getFFmpegPath();
     
     // Get accurate audio duration
     const totalDuration = await getAudioDuration(audioPath, ffmpegPath);
@@ -207,11 +204,11 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
   // Calculate optimal chunk duration based on file size
   const stats = await fs.stat(audioPath);
   const bytesPerSecond = stats.size / totalDuration;
-    const optimalChunkDuration = Math.floor(MAX_CHUNK_SIZE / bytesPerSecond * 0.8); // 80% to be extra safe
-    const chunkDuration = Math.max(MIN_CHUNK_DURATION, Math.min(optimalChunkDuration, CHUNK_DURATION));
+    const optimalChunkDuration = Math.floor(TARGET_CHUNK_SIZE / bytesPerSecond * 0.8); // 80% to be extra safe
+    const chunkDuration = Math.max(MIN_CHUNK_DURATION, Math.min(optimalChunkDuration, MAX_CHUNK_DURATION));
   
   console.log(`📊 Optimal chunk duration: ${chunkDuration} seconds (${(chunkDuration/60).toFixed(1)} minutes)`);
-    console.log(`📊 Using ${CHUNK_OVERLAP} seconds overlap between chunks`);
+    console.log(`📊 Using ${MAX_CHUNK_DURATION} seconds overlap between chunks`);
     
     while (currentTime < totalDuration - 1) { // Stop 1 second before end to avoid edge issues
       const remainingDuration = totalDuration - currentTime;
@@ -239,11 +236,11 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
         
         // Verify chunk was created and has valid size
     const chunkStats = await fs.stat(chunkPath);
-        if (chunkStats.size < MIN_CHUNK_SIZE) {
+        if (chunkStats.size < MIN_CHUNK_DURATION) {
           throw new Error(`Chunk too small (${chunkStats.size} bytes)`);
         }
         
-    if (chunkStats.size > MAX_CHUNK_SIZE) {
+    if (chunkStats.size > TARGET_CHUNK_SIZE) {
       // If still too large, try with lower bitrate
       console.log(`  ⚠️ Chunk too large (${(chunkStats.size / 1024 / 1024).toFixed(1)}MB), recompressing...`);
       const recompressedPath = chunkPath.replace('.m4a', '_compressed.m4a');
@@ -260,7 +257,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
       const newStats = await fs.stat(chunkPath);
       console.log(`  ✅ Recompressed to ${(newStats.size / 1024 / 1024).toFixed(1)}MB`);
           
-          if (newStats.size > MAX_CHUNK_SIZE) {
+          if (newStats.size > TARGET_CHUNK_SIZE) {
             throw new Error(`Chunk still too large after recompression: ${(newStats.size / 1024 / 1024).toFixed(1)}MB`);
           }
     }
@@ -275,7 +272,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
         
         // Move forward by (duration - overlap) to create overlapping chunks
         // Ensure we move forward at least MIN_CHUNK_DURATION
-        const step = Math.max(MIN_CHUNK_DURATION, duration - CHUNK_OVERLAP);
+        const step = Math.max(MIN_CHUNK_DURATION, duration - MAX_CHUNK_DURATION);
         currentTime += step;
         chunkIndex++;
         
@@ -299,7 +296,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
       throw new Error('No chunks could be extracted from the audio file');
   }
   
-    console.log(`✅ Split into ${chunks.length} chunks with ${CHUNK_OVERLAP}s overlap`);
+    console.log(`✅ Split into ${chunks.length} chunks with ${MAX_CHUNK_DURATION}s overlap`);
   return chunks;
     
   } catch (error) {

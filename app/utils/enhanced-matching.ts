@@ -1,11 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { TranscriptSegment } from './enhanced-transcripts';
 
 // Initialize Anthropic client for Claude
-const anthropic = process.env.ANTHROPIC_API_KEY 
-  ? new Anthropic({ 
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    }) 
-  : null;
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || ''
+});
 
 // Enhanced cache for embeddings with TTL and memory management
 const embeddingCache = new Map<string, { vector: number[]; timestamp: number; hits: number }>();
@@ -22,12 +21,6 @@ let totalProcessingTime = 0;
 let activeEmbeddingRequests = 0;
 const MAX_CONCURRENT_EMBEDDINGS = 3; // Limit concurrent OpenAI requests
 
-interface TranscriptSegment {
-  text: string;
-  offset: number;
-  duration: number;
-}
-
 interface MatchResult {
   startTime: number;
   endTime: number;
@@ -35,6 +28,15 @@ interface MatchResult {
   score: number;
   confidence: number;
   reasoning: string;
+}
+
+// Define TweetContext interface
+interface TweetContext {
+  tweet: string;
+  index: number;
+  topics: string[];
+  entities: string[];
+  sentiment: string;
 }
 
 /**
@@ -247,7 +249,7 @@ Be generous in finding connections - if there's any reasonable relationship, giv
         }]
       });
       
-      const content = response.content[0]?.text || '';
+      const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
       
       // Parse Claude's response
       const relevanceMatch = content.match(/RELEVANCE:\s*(\d+)/);
@@ -350,7 +352,7 @@ Be concise.`
     }]
   });
   
-  const searchGuidance = analysisResponse.content[0]?.text || '';
+  const searchGuidance = analysisResponse.content[0]?.type === 'text' ? analysisResponse.content[0].text : '';
   console.log('🔍 AI Search Guidance:', searchGuidance);
   
   // Now search with this understanding
@@ -390,14 +392,18 @@ MATCH_TYPE: [exact|related|contextual|complementary|tangential]`
         }]
       });
       
-      const content = response.content[0]?.text || '';
+      const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+      
+      // Parse the response
+      const lines = content.split('\n');
+      const matches: AdvancedMatchResult[] = [];
       
       // Parse response
-      const relevance = parseInt(content.match(/RELEVANCE:\s*(\d+)/)?.[1] || '0') / 100;
-      const confidence = parseInt(content.match(/CONFIDENCE:\s*(\d+)/)?.[1] || '50') / 100;
-      const value = content.match(/VALUE:\s*(.+?)(?=\n|$)/)?.[1] || '';
-      const timing = content.match(/TIMING:\s*(.+?)(?=\n|$)/)?.[1] || '';
-      const matchType = content.match(/MATCH_TYPE:\s*(\w+)/)?.[1] || 'contextual';
+      const relevance = parseInt(lines[0].match(/RELEVANCE:\s*(\d+)/)?.[1] || '0') / 100;
+      const confidence = parseInt(lines[1].match(/CONFIDENCE:\s*(\d+)/)?.[1] || '50') / 100;
+      const value = lines[2].match(/VALUE:\s*(.+?)(?=\n|$)/)?.[1] || '';
+      const timing = lines[3].match(/TIMING:\s*(.+?)(?=\n|$)/)?.[1] || '';
+      const matchType = lines[4].match(/MATCH_TYPE:\s*(\w+)/)?.[1] || 'contextual';
       
       if (relevance > 0.25) { // Even more generous threshold
         // Look for specific timing mentions to create more precise clips
@@ -410,6 +416,7 @@ MATCH_TYPE: [exact|related|contextual|complementary|tangential]`
           score: relevance,
           method: 'semantic' as const,
           confidence: confidence,
+          reasoning: value || 'AI-determined match',
           relevanceScore: relevance,
           contextScore: matchType === 'exact' ? 0.9 : matchType === 'related' ? 0.7 : 0.5,
           temporalScore: 0.7,
@@ -495,10 +502,10 @@ export async function analyzeTweetWithAI(tweetText: string): Promise<{
       }]
     });
     
-    const content = response.content[0]?.text || '';
+    const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
     
     return {
-      topics: content.match(/TOPICS:\s*(.+)/)?.[1]?.split(',').map(t => t.trim()) || [],
+      topics: content.match(/TOPICS:\s*(.+)/)?.[1]?.split(',').map((t: string) => t.trim()) || [],
       lookingFor: content.match(/LOOKING_FOR:\s*(.+)/)?.[1] || 'relevant content',
       sentiment: content.match(/SENTIMENT:\s*(\w+)/)?.[1] || 'neutral'
     };
@@ -596,10 +603,10 @@ export async function processVideosWithAdvancedMatching(
   
   // Process each tweet against all videos
   for (const tweetContext of tweetContexts) {
-    const tweetKey = `tweet-${tweetContext.tweetIndex}`;
+    const tweetKey = `tweet-${tweetContext.index}`;
     const tweetMatches: AdvancedMatchResult[] = [];
     
-    console.log(`\n🔍 Finding matches for ${tweetKey}: "${tweetContext.tweetText.substring(0, 80)}..."`);
+    console.log(`\n🔍 Finding matches for ${tweetKey}: "${tweetContext.tweet.substring(0, 80)}..."`);
     
     // Search in each video
     for (const videoResult of videoProcessingResults) {
@@ -608,8 +615,8 @@ export async function processVideosWithAdvancedMatching(
       try {
         const matches = await findPrecisionAIMatches(
           videoResult.transcript.segments,
-          tweetContext.tweetText,
-          tweetContext.tweetText,
+          tweetContext.tweet,
+          tweetContext.tweet,
           videoResult.videoId
         );
         

@@ -1,16 +1,14 @@
 import axios from 'axios';
-import { YoutubeTranscript } from 'youtube-transcript';
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { promisify } from 'util';
 import OpenAI from 'openai';
-import { enhanceTranscriptQuality } from './transcript-quality';
-import { GOOGLE_CLOUD_API_KEY } from '../config';
 import { transcribeLargeAudio } from './audio-chunking';
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
 import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
+import { downloadViaInvidious } from '../../src/lib/invidious-fallback';
 
 const execAsync = promisify(exec);
 
@@ -20,9 +18,8 @@ const openai = process.env.OPENAI_API_KEY
   : null;
 
 // Google Cloud Video Intelligence client (if available)
-const googleApiKey = GOOGLE_CLOUD_API_KEY;
 
-interface TranscriptSegment {
+export interface TranscriptSegment {
   text: string;
   offset: number; // in seconds
   duration: number; // in seconds
@@ -112,15 +109,27 @@ async function getYtDlpCommand(): Promise<string> {
     // Use the working command from src/lib/system-tools which properly detects Railway
     const ytDlpPath = await getWorkingYtDlpCommand();
     workingYtDlpCommand = ytDlpPath;
+    console.log(`Using yt-dlp command: ${ytDlpPath}`);
     return ytDlpPath;
   } catch (error) {
-    console.error('yt-dlp not available:', error);
-    // On Railway/Docker, use simple command
+    console.error('yt-dlp detection failed, trying fallbacks:', error);
+    // On Railway/Docker, try known paths
     if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV) {
-      workingYtDlpCommand = 'yt-dlp';
-      return 'yt-dlp';
+      // Try common installation paths
+      const possiblePaths = ['/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp', 'yt-dlp'];
+      for (const path of possiblePaths) {
+        try {
+          await execAsync(`${path} --version`, { timeout: 5000 });
+          workingYtDlpCommand = path;
+          console.log(`Found working yt-dlp at: ${path}`);
+          return path;
+        } catch (e) {
+          // Try next path
+        }
+      }
     }
-    return 'yt-dlp'; // Fallback
+    workingYtDlpCommand = 'yt-dlp';
+    return 'yt-dlp'; // Final fallback
   }
 }
 
@@ -290,134 +299,35 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
   // Store video info for potential re-download
   videoInfoCache.set(videoInfo.id, videoInfo);
   
-  // Get transcript strategies based on platform
-  const strategies = getPlatformStrategies(videoInfo);
-  
-  // Check if Google Cloud API key is configured (since it's our primary method)
-  if (!googleApiKey && strategies[0]?.method === 'google-video-intelligence') {
-    console.error('❌ CRITICAL: Google Cloud API key is not configured!');
-    console.error('📝 To fix this:');
-    console.error('1. Create a file named .env.local in your project root');
-    console.error('2. Add: GOOGLE_CLOUD_API_KEY=your_api_key_here');
-    console.error('3. Get your API key from: https://console.cloud.google.com/apis/credentials');
-    console.error('4. Enable Video Intelligence API in Google Cloud Console');
-    console.error('5. Restart your development server');
+  try {
+    // We only use Whisper-optimized method now
+    console.log(`Using audio extraction + Whisper transcription...`);
     
-    // Try fallback strategies if available
-    const fallbackStrategies = strategies.filter(s => s.method !== 'google-video-intelligence');
-    if (fallbackStrategies.length === 0) {
-      throw new Error('No Google Cloud API key configured. Please set GOOGLE_CLOUD_API_KEY in .env.local file.');
+    const result = await getOptimizedWhisperTranscript(videoInfo);
+    
+    if (result && result.segments.length > 0) {
+      console.log(`✓ Whisper transcription successful: ${result.segments.length} segments`);
+      return result;
     }
-    console.log('⚠️ Attempting fallback strategies...');
-    strategies.splice(0, 1); // Remove Google Video Intelligence from strategies
+    
+    throw new Error('Whisper transcription returned no segments');
+    
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Transcription failed: ${errorMsg}`);
+    throw error;
   }
-  
-  let lastError: Error | null = null;
-  
-  // Try each strategy in order
-  for (const [index, strategy] of strategies.entries()) {
-    try {
-      console.log(`Trying ${videoInfo.platform} strategy ${index + 1}/${strategies.length}: ${strategy.method}`);
-      
-      const result = await executeTranscriptStrategy(strategy, videoInfo);
-      
-      if (result && result.segments.length > 0) {
-        console.log(`✓ Strategy succeeded: ${strategy.method}, ${result.segments.length} segments`);
-        
-        // PHASE 2B: Apply AI-powered quality enhancement
-        if (result.quality !== 'high' || result.source === 'youtube-transcript') {
-          console.log('🤖 Applying AI-powered transcript enhancement...');
-          const enhanced = await enhanceTranscriptQuality(result);
-          return enhanced;
-        }
-        
-        return result;
-        }
-        
-      } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown error');
-      console.warn(`Strategy ${strategy.method} failed:`, lastError.message);
-      
-      // If YouTube transcript fails due to disabled captions, skip other YouTube methods
-      if (videoInfo.platform === 'youtube' && lastError.message.includes('Transcript is disabled')) {
-        console.log('YouTube transcripts are disabled for this video, trying audio extraction...');
-        // Skip to audio extraction strategies
-        const audioStrategies = strategies.filter(s => s.method.includes('whisper'));
-        if (audioStrategies.length > 0) {
-          const audioStrategy = audioStrategies[0];
-          try {
-            const result = await executeTranscriptStrategy(audioStrategy, videoInfo);
-            if (result && result.segments.length > 0) {
-              console.log(`✓ Audio extraction succeeded: ${result.segments.length} segments`);
-              return result;
-            }
-          } catch (audioError) {
-            console.error('Audio extraction also failed:', audioError);
-          }
-        }
-        break;
-      }
-    }
-  }
-  
-  throw lastError || new Error('All transcript strategies failed');
 }
 
 /**
  * PHASE 2A: Get platform-specific transcript strategies in priority order
  */
 function getPlatformStrategies(videoInfo: VideoInfo): Array<{ method: string; priority: number }> {
-  const strategies = [];
-  
-  switch (videoInfo.platform) {
-    case 'youtube':
-      strategies.push(
-        // PRIORITY 1: Audio extraction with Whisper - most reliable method
-        { method: 'whisper-optimized', priority: 1 },
-        // PRIORITY 2: YouTube transcript library - fallback if Whisper fails
-        { method: 'youtube-transcript-lib', priority: 2 },
-        // PRIORITY 3: YouTube API captions if available
-        { method: 'youtube-api-captions', priority: 3 }
-      );
-      break;
-      
-    case 'vimeo':
-      strategies.push(
-        { method: 'vimeo-captions', priority: 1 },
-        { method: 'whisper-optimized', priority: 2 }
-      );
-      break;
-      
-    case 'twitter':
-    case 'tiktok':
-    case 'instagram':
-      strategies.push(
-        { method: 'whisper-optimized', priority: 1 }
-      );
-      break;
-      
-    case 'direct':
-      // For direct MP4 files, use Google Video Intelligence
-      strategies.push(
-        { method: 'google-video-intelligence', priority: 1 },
-        { method: 'whisper-optimized', priority: 2 }
-      );
-      break;
-      
-    case 'generic':
-      strategies.push(
-        { method: 'google-video-intelligence', priority: 1 },
-        { method: 'whisper-optimized', priority: 2 }
-      );
-      break;
-      
-    default:
-      strategies.push(
-        { method: 'whisper-optimized', priority: 1 }
-      );
-  }
-  
-  return strategies.sort((a, b) => a.priority - b.priority);
+  // Always use audio extraction + Whisper for all platforms
+  // This is the most reliable method that works consistently
+  return [
+    { method: 'whisper-optimized', priority: 1 }
+  ];
 }
 
 /**
@@ -537,13 +447,20 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
       console.log(`Trying audio extraction strategy ${index + 1}/${strategies.length}`);
       console.log(`Command: ${strategy.command.substring(0, 100)}...`);
       
+      // Log the full command for debugging
+      console.log(`Executing: ${strategy.command}`);
+      
       const { stdout, stderr } = await execAsync(strategy.command, {
         timeout: strategy.timeout || 30000,
         maxBuffer: 1024 * 1024 * 50, // 50MB buffer
-        cwd: outputDir // Run in the temp directory
+        cwd: outputDir, // Run in the temp directory
+        shell: '/bin/sh' // Use shell explicitly for Railway/Docker
       });
       
-      // Log any stderr output for debugging
+      // Log any output for debugging
+      if (stdout) {
+        console.log(`Command stdout: ${stdout.substring(0, 200)}`);
+      }
       if (stderr) {
         console.log(`Command stderr: ${stderr.substring(0, 200)}`);
       }
@@ -606,6 +523,20 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
     }
   }
   
+  // If all yt-dlp strategies failed and it's a YouTube video, try Invidious as last resort
+  if (videoInfo.platform === 'youtube') {
+    console.log('🔄 All yt-dlp strategies failed. Attempting Invidious fallback...');
+    try {
+      const success = await downloadViaInvidious(videoInfo.url, outputPath);
+      if (success) {
+        console.log('✅ Invidious fallback successful!');
+        return true;
+      }
+    } catch (invidiousError) {
+      console.error('❌ Invidious fallback also failed:', invidiousError);
+    }
+  }
+  
   return false;
 }
 
@@ -622,33 +553,58 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
   const outputPattern = `${outputFilename}.%(ext)s`;
   
   // Get FFmpeg path (will be set during initialization)
-  // On Railway/Docker, use the commands directly without full paths
+  // On Railway/Docker, use the full paths if available
   const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
-  const ffmpegPath = isDocker ? 'ffmpeg' : (workingFFmpegCommand || 'ffmpeg');
-  const ytDlpPath = isDocker ? 'yt-dlp' : (workingYtDlpCommand || 'yt-dlp');
+  const ffmpegPath = workingFFmpegCommand || 'ffmpeg';
+  const ytDlpPath = workingYtDlpCommand || '/usr/local/bin/yt-dlp';
+  
+  // Check for YouTube authentication
+  const cookieFile = path.join(process.cwd(), 'temp', 'youtube_auth.txt');
+  const hasYouTubeAuth = videoInfo.platform === 'youtube' && require('fs').existsSync(cookieFile);
   
   switch (videoInfo.platform) {
     case 'youtube':
-      // On Docker/Railway, don't quote the command paths
+      // On Docker/Railway, use simpler commands without complex quoting
       if (isDocker) {
+        // If user is authenticated, use cookies first
+        if (hasYouTubeAuth) {
+          strategies.push({
+            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v --cookies "${cookieFile}" -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 180000
+          });
+        }
+        
         strategies.push(
-          // Strategy 1: Simple audio extraction
+          // Strategy 1: Simple audio extraction with verbose output
           {
-            command: `${ytDlpPath} -x --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-            timeout: 120000 // 2 minutes
+            command: `${ytDlpPath} -x --audio-format m4a --no-playlist -v -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 180000 // 3 minutes for Railway
           },
-          // Strategy 2: Direct audio download
+          // Strategy 2: Direct audio download without format specification
           {
-            command: `${ytDlpPath} -f bestaudio --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-            timeout: 120000
+            command: `${ytDlpPath} --no-playlist -v -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 180000
           },
-          // Strategy 3: Worst audio for smaller size
+          // Strategy 3: Try with cookies and user agent
           {
-            command: `${ytDlpPath} -f worstaudio --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
-            timeout: 120000
+            command: `${ytDlpPath} --no-playlist -v --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 180000
+          },
+          // Strategy 4: Absolute minimal command
+          {
+            command: `${ytDlpPath} "${videoUrl}" -o "${outputPattern}"`,
+            timeout: 180000
           }
         );
       } else {
+        // If user is authenticated, use cookies first
+        if (hasYouTubeAuth) {
+          strategies.push({
+            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --cookies "${cookieFile}" -o "${outputPattern}" "${videoUrl}"`,
+            timeout: 120000
+          });
+        }
+        
         strategies.push(
           // Strategy 1: Download best audio (let yt-dlp choose format)
           {
@@ -767,32 +723,12 @@ async function getDetailedVideoInfo(videoInfo: VideoInfo): Promise<VideoInfo | n
  * PHASE 2A: Execute transcript strategy based on method
  */
 async function executeTranscriptStrategy(strategy: { method: string; priority: number }, videoInfo: VideoInfo): Promise<TranscriptResult | null> {
-  switch (strategy.method) {
-    case 'whisper-optimized':
-    case 'direct-whisper':
-      return await getOptimizedWhisperTranscript(videoInfo);
-      
-    case 'youtube-transcript-lib':
-      return await getYouTubeTranscriptLibrary(videoInfo.id);
-      
-    case 'youtube-api-captions':
-      return await getYouTubeAPITranscript(videoInfo.id);
-      
-    case 'google-video-intelligence':
-      return await getGoogleVideoIntelligenceTranscript(videoInfo);
-      
-    case 'google-video-intelligence-downloaded':
-      return await getGoogleVideoIntelligenceWithDownload(videoInfo);
-      
-    case 'vimeo-captions':
-      return await getVimeoTranscript(videoInfo.id);
-      
-    case 'whisper-fallback':
-      return await getWhisperFallback(videoInfo);
-      
-    default:
-      throw new Error(`Unknown transcript strategy: ${strategy.method}`);
+  // Only use Whisper-optimized method
+  if (strategy.method === 'whisper-optimized' || strategy.method === 'direct-whisper') {
+    return await getOptimizedWhisperTranscript(videoInfo);
   }
+  
+  throw new Error(`Unsupported transcript strategy: ${strategy.method}`);
 }
 
 /**
@@ -940,203 +876,6 @@ async function optimizeAudioForWhisper(audioPath: string, tempDir: string): Prom
     console.error('Audio optimization failed:', error);
     throw error;
   }
-}
-
-/**
- * PHASE 2A: Fallback transcript methods
- */
-async function getYouTubeTranscriptLibrary(videoId: string): Promise<TranscriptResult | null> {
-  try {
-    console.log('Fetching YouTube transcript using youtube-transcript library...');
-    
-    // First, check if video exists and get metadata
-    if (process.env.YOUTUBE_API_KEY) {
-      try {
-        const videoInfo = await getVideoInfo(videoId);
-        if (!videoInfo) {
-          throw new Error('Video not found or inaccessible');
-        }
-        console.log(`Video found: "${videoInfo.snippet?.title || 'Unknown title'}" (${videoInfo.contentDetails?.duration || 'Unknown duration'})`);
-      } catch (e) {
-        console.warn('Could not fetch video metadata, continuing anyway...');
-      }
-    }
-    
-    // Try to fetch transcript with multiple language options
-    let transcriptItems: any[] = [];
-    const languagesToTry = ['en', 'en-US', 'en-GB'];
-    
-    for (const lang of languagesToTry) {
-      try {
-        console.log(`Trying language: ${lang}`);
-        transcriptItems = await Promise.race([
-          YoutubeTranscript.fetchTranscript(videoId, {
-            lang: lang,
-            // @ts-ignore - Types are incomplete
-            cookies: undefined
-          }),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('YouTube transcript fetch timeout')), 15000)
-          )
-        ]) as any[];
-        
-        if (transcriptItems && transcriptItems.length > 0) {
-          console.log(`✓ Found transcript in ${lang}: ${transcriptItems.length} items`);
-          break;
-        }
-      } catch (langError) {
-        console.log(`No transcript found for language ${lang}`);
-      }
-    }
-    
-    // If still no transcript, try without language specification (gets auto-generated)
-    if (!transcriptItems || transcriptItems.length === 0) {
-      console.log('Trying to fetch auto-generated transcript...');
-      try {
-        transcriptItems = await Promise.race([
-          YoutubeTranscript.fetchTranscript(videoId),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('YouTube transcript fetch timeout')), 15000)
-          )
-        ]) as any[];
-        
-        if (transcriptItems && transcriptItems.length > 0) {
-          console.log(`✓ Found auto-generated transcript: ${transcriptItems.length} items`);
-        }
-      } catch (e) {
-        console.log('Failed to fetch auto-generated transcript');
-        
-        // Last attempt: try with different options
-        try {
-          console.log('Final attempt: trying all available transcripts...');
-          transcriptItems = await Promise.race([
-            YoutubeTranscript.fetchTranscript(videoId, {
-              // @ts-ignore
-              lang: undefined
-            }),
-            new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error('YouTube transcript fetch timeout')), 15000)
-            )
-          ]) as any[];
-        } catch (finalError) {
-          console.log('All transcript fetch attempts failed');
-        }
-      }
-    }
-    
-    if (!transcriptItems || transcriptItems.length === 0) {
-      throw new Error('No transcript available in any language');
-    }
-    
-    console.log(`✓ YouTube transcript fetched: ${transcriptItems.length} items`);
-    
-    const segments: TranscriptSegment[] = transcriptItems.map(item => ({
-      text: item.text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(),
-      offset: item.offset / 1000, // Convert ms to seconds
-      duration: item.duration / 1000 // Convert ms to seconds
-    }));
-    
-    // Merge very short segments (less than 2 seconds) with adjacent ones
-    const mergedSegments: TranscriptSegment[] = [];
-    let currentSegment: TranscriptSegment | null = null;
-    
-    for (const segment of segments) {
-      if (!currentSegment) {
-        currentSegment = { ...segment };
-      } else if (segment.duration < 2 && currentSegment.duration < 10) {
-        // Merge with current segment
-        currentSegment.text += ' ' + segment.text;
-        currentSegment.duration = (segment.offset + segment.duration) - currentSegment.offset;
-      } else {
-        mergedSegments.push(currentSegment);
-        currentSegment = { ...segment };
-      }
-    }
-    
-    if (currentSegment) {
-      mergedSegments.push(currentSegment);
-    }
-    
-    // If we end up with just 1 segment, break it into smaller chunks
-    if (mergedSegments.length === 1 && segments.length > 10) {
-      console.log(`⚠️ Segment merging too aggressive, breaking into chunks...`);
-      const singleSegment = mergedSegments[0];
-      const words = singleSegment.text.split(' ');
-      const wordsPerSegment = Math.ceil(words.length / Math.ceil(segments.length / 10));
-      
-      const chunkedSegments: TranscriptSegment[] = [];
-      for (let i = 0; i < words.length; i += wordsPerSegment) {
-        const chunk = words.slice(i, i + wordsPerSegment).join(' ');
-        const segmentIndex = Math.floor(i / wordsPerSegment);
-        const timePerChunk = singleSegment.duration / Math.ceil(words.length / wordsPerSegment);
-        
-        chunkedSegments.push({
-          text: chunk,
-          offset: singleSegment.offset + (segmentIndex * timePerChunk),
-          duration: timePerChunk
-        });
-      }
-      
-      console.log(`✓ Split into ${chunkedSegments.length} segments`);
-    return {
-        segments: chunkedSegments,
-        source: 'youtube-transcript',
-        quality: 'medium',
-        language: 'en',
-        confidence: 0.8,
-        platform: 'youtube'
-      };
-    }
-    
-    console.log(`✓ Segments merged: ${segments.length} → ${mergedSegments.length} segments`);
-    
-    return {
-      segments: mergedSegments,
-      source: 'youtube-transcript',
-      quality: 'medium',
-      language: 'en',
-      confidence: 0.8,
-      platform: 'youtube'
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Check for specific error types
-    if (errorMessage.includes('Transcript is disabled') || 
-        errorMessage.includes('Transcripts are disabled') ||
-        errorMessage.includes('Subtitles are disabled')) {
-      throw new Error(`YouTube transcripts/captions are disabled for this video`);
-    }
-    
-    if (errorMessage.includes('Could not find') || 
-        errorMessage.includes('Video unavailable')) {
-      throw new Error(`YouTube video not found or unavailable`);
-    }
-    
-    if (errorMessage.includes('No transcript available')) {
-      throw new Error(`No transcript/captions available for this YouTube video`);
-    }
-    
-    throw new Error(`YouTube transcript library failed: ${errorMessage}`);
-  }
-}
-
-async function getYouTubeAPITranscript(videoId: string): Promise<TranscriptResult | null> {
-  // Placeholder for YouTube API captions - implement when needed
-  console.warn('YouTube API captions not yet implemented, falling back');
-  return null;
-}
-
-async function getVimeoTranscript(videoId: string): Promise<TranscriptResult | null> {
-  // Placeholder for Vimeo captions - implement when needed
-  console.warn('Vimeo captions not yet implemented, falling back');
-  return null;
-}
-
-async function getWhisperFallback(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
-  // Placeholder for local Whisper fallback - implement when needed
-  console.warn('Local Whisper fallback not yet implemented, falling back');
-  return null;
 }
 
 /**
@@ -1327,373 +1066,3 @@ export function clearTranscriptCache(): void {
   videoInfoCache.clear();
   console.log('✅ Transcript cache cleared!');
 }
-
-/**
- * PHASE 2A: Google Video Intelligence API transcription
- * Handles videos up to 10GB!
- */
-async function getGoogleVideoIntelligenceTranscript(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
-  if (!googleApiKey) {
-    console.error('❌ Google Cloud API key is not configured!');
-    console.error('Please set GOOGLE_CLOUD_API_KEY in your environment variables');
-    throw new Error('Google Cloud API key not available');
-  }
-  
-  console.log(`🎬 Using Google Video Intelligence API for ${videoInfo.platform}:${videoInfo.id}...`);
-  console.log(`📺 Video URL: ${videoInfo.url}`);
-  console.log(`🔑 API Key available: ${googleApiKey.substring(0, 10)}...`);
-  
-  try {
-    // Prepare video URI based on platform
-    let videoUri = videoInfo.url;
-    
-    // Special handling for different platforms
-    switch (videoInfo.platform) {
-      case 'youtube':
-        // YouTube URLs need special handling for Google Video Intelligence
-        // Try different URL formats that might work with Google Video Intelligence
-        
-        // First, try the standard watch URL
-        videoUri = `https://www.youtube.com/watch?v=${videoInfo.id}`;
-        
-        console.log(`📹 Processing YouTube video: ${videoUri}`);
-        console.log(`⚠️ Trying different YouTube URL formats for Google Video Intelligence...`);
-        
-        // We'll try the request, and if it fails, we'll try other formats
-        // in the error handling
-        break;
-        
-      case 'vimeo':
-        // Vimeo may need the direct video file URL
-        // Public Vimeo videos should work with the standard URL
-        break;
-        
-      case 'twitter':
-      case 'tiktok':
-      case 'instagram':
-        // These platforms might have restrictions
-        console.warn(`⚠️ ${videoInfo.platform} videos may have access restrictions for Google Video Intelligence`);
-        break;
-        
-      case 'direct':
-        // Direct video URLs should work if publicly accessible
-        break;
-    }
-    
-    console.log(`🔗 Processing video URI: ${videoUri}`);
-
-    // Call Google Video Intelligence API
-    const response = await axios.post(
-      `https://videointelligence.googleapis.com/v1/videos:annotate?key=${googleApiKey}`,
-      {
-        inputUri: videoUri,
-        features: ['SPEECH_TRANSCRIPTION'],
-        videoContext: {
-          speechTranscriptionConfig: {
-            languageCode: 'en-US',
-            enableAutomaticPunctuation: true,
-            enableWordTimeOffsets: true,
-            enableWordConfidence: true,
-            maxAlternatives: 1,
-            filterProfanity: false,
-            speechContexts: [{
-              phrases: [] // Can add context phrases here for better accuracy
-            }],
-            // Additional settings for better quality
-            model: 'latest_long', // Use the latest model for long videos
-            useEnhanced: true, // Use enhanced model if available
-            // Handle multiple speakers
-            enableSpeakerDiarization: true,
-            diarizationSpeakerCount: 2, // Assume 2 speakers for interviews/conversations
-          }
-        }
-      },
-      {
-        timeout: 30000, // 30 second timeout for API call
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    // This returns an operation name for async processing
-    const operationName = response.data.name;
-    console.log(`⏳ Google Video Intelligence operation started: ${operationName}`);
-    
-    // Poll for operation completion
-    let operationComplete = false;
-    let operationResult: any = null;
-    let pollAttempts = 0;
-    const maxPollAttempts = 120; // 10 minutes max wait for long videos
-    
-    while (!operationComplete && pollAttempts < maxPollAttempts) {
-      pollAttempts++;
-      
-      // Wait 5 seconds between polls
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      const statusResponse = await axios.get(
-        `https://videointelligence.googleapis.com/v1/operations/${operationName}?key=${googleApiKey}`,
-        { timeout: 10000 }
-      );
-      
-      if (statusResponse.data.done) {
-        operationComplete = true;
-        operationResult = statusResponse.data;
-        
-        if (operationResult.error) {
-          throw new Error(`Google Video Intelligence error: ${operationResult.error.message}`);
-        }
-      } else {
-        const progress = statusResponse.data.metadata?.annotationProgress?.[0]?.progressPercent || 0;
-        console.log(`⏳ Transcription progress: ${progress}% (${pollAttempts * 5}s elapsed)`);
-      }
-    }
-    
-    if (!operationComplete) {
-      throw new Error('Google Video Intelligence operation timed out');
-    }
-    
-    console.log(`✅ Transcription operation completed in ${pollAttempts * 5} seconds`);
-    
-    // Extract transcript segments
-    const segments: TranscriptSegment[] = [];
-    const annotationResults = operationResult.response?.annotationResults?.[0];
-    
-    if (!annotationResults?.speechTranscriptions?.length) {
-      throw new Error('No speech transcriptions found in video');
-    }
-    
-    // Process each speech transcription
-    for (const transcription of annotationResults.speechTranscriptions) {
-      if (transcription.alternatives?.[0]?.transcript) {
-        const alternative = transcription.alternatives[0];
-        
-        // If we have word-level timestamps
-        if (alternative.words?.length > 0) {
-          // Group words into segments of ~10-15 seconds for better context
-          let currentSegment: any = null;
-          const maxSegmentDuration = 15; // seconds
-          
-          for (const word of alternative.words) {
-            const startTime = parseFloat(word.startTime?.replace('s', '') || '0');
-            const endTime = parseFloat(word.endTime?.replace('s', '') || '0');
-            
-            // Start new segment if:
-            // 1. No current segment
-            // 2. Current segment is too long
-            // 3. There's a significant pause (> 2 seconds)
-            const shouldStartNewSegment = !currentSegment || 
-              (startTime - currentSegment.startTime > maxSegmentDuration) ||
-              (startTime - currentSegment.endTime > 2);
-            
-            if (shouldStartNewSegment) {
-              if (currentSegment) {
-                segments.push({
-                  text: currentSegment.text.trim(),
-                  offset: currentSegment.startTime,
-                  duration: currentSegment.endTime - currentSegment.startTime
-                });
-              }
-              
-              currentSegment = {
-                text: word.word || '',
-                startTime: startTime,
-                endTime: endTime,
-                speakerTag: word.speakerTag || 0
-              };
-            } else {
-              // Add word to current segment
-              currentSegment.text += ' ' + (word.word || '');
-              currentSegment.endTime = endTime;
-            }
-          }
-          
-          // Add last segment
-          if (currentSegment) {
-            segments.push({
-              text: currentSegment.text.trim(),
-              offset: currentSegment.startTime,
-              duration: currentSegment.endTime - currentSegment.startTime
-            });
-          }
-        } else {
-          // Fallback: use the whole transcript as one segment
-          segments.push({
-            text: alternative.transcript,
-            offset: 0,
-            duration: 300 // Default 5 minutes
-          });
-        }
-      }
-    }
-    
-    console.log(`✅ Google Video Intelligence transcription complete: ${segments.length} segments`);
-    
-    // Log some stats
-    const totalDuration = segments.reduce((sum, seg) => sum + seg.duration, 0);
-    const avgSegmentLength = segments.length > 0 ? totalDuration / segments.length : 0;
-    console.log(`📊 Stats: Total duration: ${totalDuration.toFixed(1)}s, Avg segment: ${avgSegmentLength.toFixed(1)}s`);
-    
-    return {
-      segments,
-      source: 'google-video-intelligence',
-      quality: 'high',
-      language: 'en',
-      confidence: 0.9,
-      platform: videoInfo.platform as any
-    };
-    
-  } catch (error) {
-    console.error('❌ Google Video Intelligence transcription failed:', error);
-    
-    // If it's a YouTube video and we got an error, try alternative URL formats
-    if (videoInfo.platform === 'youtube' && error instanceof Error) {
-      if (error.message.includes('INVALID_ARGUMENT') || error.message.includes('403')) {
-        console.log('🔄 Trying alternative YouTube URL formats...');
-        
-        // Try YouTube embed URL
-        try {
-          const embedUri = `https://www.youtube.com/embed/${videoInfo.id}`;
-          console.log(`🔗 Trying embed URL: ${embedUri}`);
-          
-          const embedResponse = await axios.post(
-            `https://videointelligence.googleapis.com/v1/videos:annotate?key=${googleApiKey}`,
-            {
-              inputUri: embedUri,
-              features: ['SPEECH_TRANSCRIPTION'],
-              videoContext: {
-                speechTranscriptionConfig: {
-                  languageCode: 'en-US',
-                  enableAutomaticPunctuation: true,
-                  enableWordTimeOffsets: true,
-                  maxAlternatives: 1
-                }
-              }
-            },
-            { timeout: 30000 }
-          );
-          
-          // If we got here, it worked! Process the response...
-          console.log('✅ Embed URL worked! Processing...');
-          // ... continue with the same processing logic as above
-          
-        } catch (embedError) {
-          console.log('❌ Embed URL also failed');
-        }
-      }
-    }
-    
-    throw error;
-  }
-}
-
-/**
- * Download YouTube video and process with Google Video Intelligence
- * This downloads the video and creates a temporary public URL
- */
-async function getGoogleVideoIntelligenceWithDownload(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
-  if (videoInfo.platform !== 'youtube') {
-    return null; // This method is only for YouTube
-  }
-  
-  console.log(`📥 Attempting to download YouTube video for Google Video Intelligence...`);
-  
-  let tempDir: string | null = null;
-  let videoPath: string | null = null;
-  
-  try {
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twipclip-video-'));
-    videoPath = path.join(tempDir, `${videoInfo.id}.mp4`);
-    
-    console.log(`📹 Downloading video to: ${videoPath}`);
-    
-    // Download the video using yt-dlp
-    const downloadCmd = `python -m yt_dlp -f "best[ext=mp4]/best" --no-playlist --quiet -o "${videoPath}" "${videoInfo.url}"`;
-    
-    await execAsync(downloadCmd, {
-      timeout: 300000, // 5 minutes for video download
-      maxBuffer: 1024 * 1024 * 100 // 100MB buffer
-    });
-    
-    // Check if video was downloaded
-    const stats = await fs.stat(videoPath);
-    console.log(`✅ Video downloaded: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
-    
-    // Here's where we'd need to upload to a cloud service
-    // Since we can't create public URLs from local files,
-    // we have several options:
-    
-    console.log(`⚠️ Google Video Intelligence requires a public URL.`);
-    console.log(`💡 Options:`);
-    console.log(`1. Upload to Google Cloud Storage (requires setup)`);
-    console.log(`2. Upload to a temporary file sharing service`);
-    console.log(`3. Use Whisper instead (recommended)`);
-    
-    // For now, fall back to Whisper since it's simpler
-    console.log(`🎵 Using Whisper transcription on the downloaded video...`);
-    
-    // Convert video path to a format Whisper can use
-    const audioPath = videoPath.replace('.mp4', '.m4a');
-    
-    // Extract audio from video
-    const ffmpegCmd = await getFFmpegCommand();
-    await execAsync(`"${ffmpegCmd}" -i "${videoPath}" -vn -acodec copy "${audioPath}" -y`, {
-      timeout: 30000
-    });
-    
-    // Use Whisper on the extracted audio
-    if (!openai) {
-      throw new Error('OpenAI API key not configured');
-    }
-    
-    console.log('Uploading audio to Whisper API...');
-    
-    const audioFile = await fs.readFile(audioPath);
-    const audioBlob = new File([audioFile], `${videoInfo.id}.m4a`, { type: 'audio/m4a' });
-    
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioBlob,
-      model: 'whisper-1',
-      language: 'en',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment']
-    });
-    
-    if (!transcription.segments || transcription.segments.length === 0) {
-      throw new Error('Whisper returned empty transcription');
-    }
-    
-    // Convert Whisper segments to our format
-    const segments: TranscriptSegment[] = transcription.segments.map((segment: any) => ({
-      text: segment.text.trim(),
-      offset: segment.start,
-      duration: segment.end - segment.start
-    }));
-    
-    console.log(`✅ Transcription complete: ${segments.length} segments from downloaded video`);
-    
-    return {
-      segments,
-      source: 'whisper-api',
-      quality: 'high',
-      language: transcription.language || 'en',
-      confidence: 0.95,
-      platform: videoInfo.platform as any
-    };
-    
-  } catch (error) {
-    console.error('Download and transcribe failed:', error);
-    throw error;
-  } finally {
-    // Cleanup
-    if (tempDir) {
-      try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup temp directory:', cleanupError);
-      }
-    }
-  }
-} 

@@ -63,14 +63,14 @@ Be specific and actionable.`
     }]
   });
 
-  const content = response.content[0]?.text || '';
+  const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
   
   return {
     mainTopic: content.match(/MAIN_TOPIC:\s*(.+?)(?=\n|$)/)?.[1]?.trim() || '',
-    keyPhrases: content.match(/KEY_PHRASES:\s*(.+?)(?=\n|$)/)?.[1]?.split(',').map(s => s.trim()) || [],
+    keyPhrases: content.match(/KEY_PHRASES:\s*(.+?)(?=\n|$)/)?.[1]?.split(',').map((s: string) => s.trim()) || [],
     searchIntent: content.match(/SEARCH_INTENT:\s*(.+?)(?=\n|$)/)?.[1]?.trim() || '',
-    expectedContent: content.match(/EXPECTED_CONTENT:\s*(.+?)(?=\n|$)/)?.[1]?.trim() || '',
-    contextClues: content.match(/CONTEXT_CLUES:\s*(.+?)(?=\n|$)/)?.[1]?.split(',').map(s => s.trim()) || []
+    expectedContent: content.match(/EXPECTED_CONTENT:\s*(.+?)(?=\n|$)/)?.[1] || '',
+    contextClues: content.match(/CONTEXT_CLUES:\s*(.+?)(?=\n|$)/)?.[1]?.split(',').map((s: string) => s.trim()) || []
   };
 }
 
@@ -115,7 +115,7 @@ Be strict but fair. Only give high scores to truly relevant content.`
     }]
   });
 
-  const content = response.content[0]?.text || '';
+  const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
   
   const overallScore = parseInt(content.match(/OVERALL_SCORE:\s*(\d+)/)?.[1] || '0');
   const quality = content.match(/QUALITY:\s*(\w+)/)?.[1] || 'poor';
