@@ -428,15 +428,47 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
     
     console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB`);
     
-    // Optimize audio if needed
-    await optimizeAudioForWhisper(audioPath, tempDir);
+    // Check if audio needs optimization or chunking
+    const needsChunking = await optimizeAudioForWhisper(audioPath, tempDir);
     
-    // Transcribe with Whisper
+    if (needsChunking) {
+      // File is too large, use chunking method
+      console.log('Using chunking method for large audio file...');
+      
+      try {
+        const segments = await transcribeLargeAudio(audioPath, tempDir, openai);
+        
+        // If transcribeLargeAudio returns null, it means the file was small enough after all
+        if (!segments) {
+          // This shouldn't happen since we already checked, but handle it gracefully
+          console.warn('Unexpected: transcribeLargeAudio returned null');
+          // Fall through to regular transcription
+        } else {
+          // Clean up
+          await fs.unlink(audioPath).catch(() => {});
+          
+          return {
+            segments: enhancePunctuation(segments),
+            source: 'whisper-api',
+            quality: 'high',
+            language: 'en',
+            confidence: 0.95,
+            platform: videoInfo.platform as any
+          };
+        }
+      } catch (chunkingError) {
+        console.error('Chunking transcription failed:', chunkingError);
+        throw chunkingError;
+      }
+    }
+    
+    // File is small enough for direct transcription
     const audioFile = await fs.readFile(audioPath);
     const audioBlob = new File([audioFile], path.basename(audioPath), { 
       type: 'audio/m4a' 
     });
     
+    // Transcribe with Whisper
     console.log('Sending to Whisper API...');
     const transcription = await openai.audio.transcriptions.create({
       file: audioBlob,
@@ -808,147 +840,50 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
 
 /**
  * PHASE 2A: Optimize audio file for Whisper processing
+ * Returns true if file needs chunking, false if it's ready for direct processing
  */
-async function optimizeAudioForWhisper(audioPath: string, tempDir: string): Promise<void> {
+async function optimizeAudioForWhisper(audioPath: string, tempDir: string): Promise<boolean> {
   try {
     const stats = await fs.stat(audioPath);
     const fileSizeMB = stats.size / (1024 * 1024);
     
     console.log(`Audio file size: ${fileSizeMB.toFixed(1)}MB`);
     
-    // Check if FFmpeg is available
+    // If file is larger than 24MB, return true to indicate chunking is needed
+    if (fileSizeMB > 24) {
+      console.log('Audio file too large for single Whisper API call. Chunking required.');
+      return true; // Needs chunking
+    }
+    
+    // Check if FFmpeg is available for format conversion
     const hasFFmpeg = await checkFFmpegAvailability();
     const ffmpegCmd = await getFFmpegCommand();
     
     // If file is small enough, just convert format if needed
-    if (fileSizeMB <= 24) {
-      const fileExt = path.extname(audioPath).toLowerCase();
-      if (!['.m4a', '.mp3', '.wav'].includes(fileExt) && hasFFmpeg) {
-        console.log('Converting audio to m4a format...');
+    const fileExt = path.extname(audioPath).toLowerCase();
+    if (!['.m4a', '.mp3', '.wav'].includes(fileExt) && hasFFmpeg) {
+      console.log('Converting audio to m4a format...');
+      
+      const convertedPath = audioPath.replace(path.extname(audioPath), '.m4a');
+      
+      try {
+        await execAsync(`"${ffmpegCmd}" -i "${audioPath}" -c:a aac -b:a 128k "${convertedPath}" -y`, {
+          timeout: 30000
+        });
         
-        const convertedPath = audioPath.replace(path.extname(audioPath), '.m4a');
+        await fs.unlink(audioPath);
+        await fs.rename(convertedPath, audioPath);
         
-        try {
-          await execAsync(`"${ffmpegCmd}" -i "${audioPath}" -c:a aac -b:a 128k "${convertedPath}" -y`, {
-            timeout: 30000
-          });
-          
-          await fs.unlink(audioPath);
-          await fs.rename(convertedPath, audioPath);
-          
-          console.log('✓ Audio converted to m4a format');
-        } catch (ffmpegError) {
-          console.warn('Audio conversion failed, using original format');
-        }
+        console.log('✓ Audio converted to m4a format');
+      } catch (ffmpegError) {
+        console.warn('Audio conversion failed, using original format');
       }
-      return;
     }
     
-    // If file is too large (>24MB), we need to handle it differently
-    console.log('Audio file too large for Whisper API, attempting to optimize...');
-    
-    if (!hasFFmpeg) {
-      // Without FFmpeg, we can't trim or compress the audio
-      // Try using yt-dlp to re-download with lower quality
-      console.log('FFmpeg not available, trying alternative methods...');
-      
-      // If we have the video URL, try re-downloading with lower quality
-      const videoInfo = videoInfoCache.get(path.basename(audioPath, path.extname(audioPath)));
-      if (videoInfo) {
-        try {
-          const lowQualityPath = path.join(tempDir, `low_quality_${path.basename(audioPath)}`);
-          const ytDlpCmd = await getYtDlpCommand();
-          // Use very aggressive compression settings
-          const downloadCmd = `"${ytDlpCmd}" -f "worstaudio[abr<64]/worstaudio/worst" --extract-audio --audio-format m4a --audio-quality 9 --postprocessor-args "-ac 1 -ar 16000" -o "${lowQualityPath}" "${videoInfo.url}"`;
-          
-          console.log('Attempting to re-download with very low quality for size reduction...');
-          await execAsync(downloadCmd, { timeout: 60000, cwd: tempDir });
-          
-          const lowQualityStats = await fs.stat(lowQualityPath).catch(() => null);
-          if (lowQualityStats && lowQualityStats.size < 25 * 1024 * 1024) {
-            await fs.unlink(audioPath);
-            await fs.rename(lowQualityPath, audioPath);
-            console.log(`✓ Re-downloaded audio with lower quality: ${(lowQualityStats.size / 1024 / 1024).toFixed(1)}MB`);
-            return;
-        }
-      } catch (error) {
-          console.warn('Low quality re-download failed:', error);
-        }
-      }
-      
-      throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB) and FFmpeg not available for compression. Please install FFmpeg or use shorter videos.`);
-    }
-    
-    // If FFmpeg is available, use aggressive compression strategies
-    console.log('Using FFmpeg for audio compression...');
-    
-    // Strategy 1: Aggressive compression with mono, low sample rate, and limited duration
-    const compressedPath = path.join(tempDir, `compressed_${path.basename(audioPath)}`);
-    
-    try {
-      // First 10 minutes, mono, 16kHz, 32kbps - should be under 4MB
-      await execAsync(`"${ffmpegCmd}" -i "${audioPath}" -t 600 -ac 1 -ar 16000 -b:a 32k "${compressedPath}" -y`, {
-        timeout: 30000
-      });
-      
-      const compressedStats = await fs.stat(compressedPath);
-      if (compressedStats.size < 25 * 1024 * 1024) {
-        await fs.unlink(audioPath);
-        await fs.rename(compressedPath, audioPath);
-        console.log(`✓ Audio compressed to ${(compressedStats.size / 1024 / 1024).toFixed(1)}MB (10 min, mono, 16kHz)`);
-        return;
-      } else {
-        await fs.unlink(compressedPath);
-      }
-    } catch (compressionError) {
-      console.warn('Initial compression failed:', compressionError);
-    }
-    
-    // Strategy 2: Even more aggressive - 5 minutes only
-    try {
-      const shortPath = path.join(tempDir, `short_${path.basename(audioPath)}`);
-      await execAsync(`"${ffmpegCmd}" -i "${audioPath}" -t 300 -ac 1 -ar 16000 -b:a 24k "${shortPath}" -y`, {
-        timeout: 30000
-      });
-      
-      const shortStats = await fs.stat(shortPath);
-      if (shortStats.size < 25 * 1024 * 1024) {
-        await fs.unlink(audioPath);
-        await fs.rename(shortPath, audioPath);
-        console.log(`✓ Audio trimmed to 5 minutes, ${(shortStats.size / 1024 / 1024).toFixed(1)}MB`);
-        return;
-      } else {
-        await fs.unlink(shortPath);
-      }
-  } catch (error) {
-      console.warn('Short trimming failed');
-    }
-    
-    // Strategy 3: Extract middle portion (2-7 minutes) which often has the best content
-    try {
-      const middlePath = path.join(tempDir, `middle_${path.basename(audioPath)}`);
-      await execAsync(`"${ffmpegCmd}" -ss 120 -i "${audioPath}" -t 300 -ac 1 -ar 16000 -b:a 32k "${middlePath}" -y`, {
-        timeout: 30000
-      });
-      
-      const middleStats = await fs.stat(middlePath);
-      if (middleStats.size < 25 * 1024 * 1024) {
-        await fs.unlink(audioPath);
-        await fs.rename(middlePath, audioPath);
-        console.log(`✓ Extracted middle 5 minutes (2-7 min), ${(middleStats.size / 1024 / 1024).toFixed(1)}MB`);
-        return;
-      } else {
-        await fs.unlink(middlePath);
-      }
-    } catch (error) {
-      console.warn('Middle extraction failed');
-    }
-    
-    // If all strategies fail, throw error with helpful message
-    throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB) for Whisper API. Maximum supported size is 25MB. Consider using a shorter video or YouTube transcript API instead.`);
+    return false; // No chunking needed
     
   } catch (error) {
-    console.error('Audio optimization failed:', error);
+    console.error('Audio optimization check failed:', error);
     throw error;
   }
 }
