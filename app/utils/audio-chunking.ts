@@ -139,8 +139,17 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
  */
 async function getAudioDuration(audioPath: string, ffmpegPath: string): Promise<number> {
   try {
-    // Use ffprobe if available for more reliable duration detection
-    const probeCmd = `"${ffmpegPath.replace('ffmpeg', 'ffprobe')}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
+    // First, check if the file exists and is readable
+    const stats = await fs.stat(audioPath);
+    if (stats.size === 0) {
+      throw new Error('Audio file is empty');
+    }
+    
+    console.log(`Getting duration for: ${audioPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+    
+    // Try ffprobe first (more reliable)
+    const probePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+    const probeCmd = `"${probePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
     
     try {
       const { stdout: probeDuration } = await execAsync(probeCmd, {
@@ -149,14 +158,19 @@ async function getAudioDuration(audioPath: string, ffmpegPath: string): Promise<
       });
       
       if (probeDuration && !isNaN(parseFloat(probeDuration.trim()))) {
-        return parseFloat(probeDuration.trim());
+        const duration = parseFloat(probeDuration.trim());
+        console.log(`Duration from ffprobe: ${duration.toFixed(1)}s`);
+        return duration;
       }
-    } catch {
-      // Fall back to ffmpeg if ffprobe fails
+    } catch (probeError) {
+      console.warn('ffprobe failed, trying ffmpeg:', probeError);
     }
     
-    // Fallback to ffmpeg
-    const durationCmd = `"${ffmpegPath}" -i "${audioPath}" 2>&1`;
+    // Fallback to ffmpeg with format detection
+    const fileExt = path.extname(audioPath).toLowerCase();
+    const inputFormat = fileExt === '.webm' ? '-f webm' : '';
+    
+    const durationCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" 2>&1`;
     const { stdout, stderr } = await execAsync(durationCmd, {
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024
@@ -486,14 +500,13 @@ function removeDuplicateSegments(segments: TranscriptSegment[]): TranscriptSegme
 }
 
 /**
- * Main function to handle large audio files with compression-first approach
+ * Main function to handle large audio files with chunking approach
  */
 export async function transcribeLargeAudio(
   audioPath: string, 
   tempDir: string,
   openai: OpenAI
 ): Promise<TranscriptSegment[] | null> {
-  let compressedPath: string | null = null;
   const cleanupFiles: string[] = [];
   
   try {
@@ -504,77 +517,22 @@ export async function transcribeLargeAudio(
     
     await validateAudioFile(audioPath);
     
-  const stats = await fs.stat(audioPath);
-  const sizeMB = stats.size / (1024 * 1024);
-  
-  console.log(`📁 Audio file size: ${sizeMB.toFixed(1)}MB`);
-  
-  if (sizeMB <= 24) {
-      console.log('✅ File size is within Whisper limit, no compression needed');
-    return null; // Let the regular flow handle it
-  }
-  
-    console.log('📢 File exceeds Whisper limit, using two-tier approach...');
+    const stats = await fs.stat(audioPath);
+    const sizeMB = stats.size / (1024 * 1024);
+    
+    console.log(`📁 Audio file size: ${sizeMB.toFixed(1)}MB`);
+    
+    if (sizeMB <= 24) {
+      console.log('✅ File size is within Whisper limit, no chunking needed');
+      return null; // Let the regular flow handle it
+    }
+    
+    console.log('📢 File exceeds Whisper limit, using chunking approach...');
     
     // Ensure temp directory exists
     await fs.mkdir(tempDir, { recursive: true });
     
-    // TIER 1: Try compression first
-    try {
-      compressedPath = await compressAudioFile(audioPath, tempDir);
-      
-      if (compressedPath) {
-        cleanupFiles.push(compressedPath);
-        
-        // Compression successful and file is now small enough
-        console.log('✅ Compression successful! File now within limits');
-        
-        // Validate compressed file
-        const compressedStats = await fs.stat(compressedPath);
-        if (compressedStats.size === 0) {
-          throw new Error('Compressed file is empty');
-        }
-        
-        // Transcribe the compressed file directly
-        const audioFile = await fs.readFile(compressedPath);
-        const audioBlob = new File([audioFile], 'compressed_audio.m4a', { type: 'audio/m4a' });
-        
-        console.log('🎙️ Transcribing compressed audio...');
-        const transcription = await openai.audio.transcriptions.create({
-          file: audioBlob,
-          model: 'whisper-1',
-          language: 'en',
-          response_format: 'verbose_json',
-          timestamp_granularities: ['segment']
-        });
-        
-        if (transcription.segments && Array.isArray(transcription.segments)) {
-          const segments = transcription.segments
-            .filter((seg: any) => seg.text && seg.text.trim().length > 0)
-            .map((seg: any) => ({
-              text: seg.text.trim(),
-              offset: seg.start || 0,
-              duration: (seg.end || seg.start || 0) - (seg.start || 0)
-            }))
-            .filter(seg => seg.duration > 0);
-          
-          if (segments.length > 0) {
-            console.log(`✅ Transcription complete: ${segments.length} segments`);
-            return segments;
-          } else {
-            console.warn('⚠️ No valid segments in compressed audio transcription');
-            // Fall through to chunking
-          }
-        }
-      }
-    } catch (compressionError) {
-      console.error('❌ Compression approach failed:', compressionError);
-      // Fall through to chunking
-    }
-    
-    // TIER 2: Compression didn't work or failed, use chunking with overlap
-    console.log('📢 Compression insufficient, falling back to intelligent chunking...');
-    
+    // Split into chunks directly
     let chunks: AudioChunk[] = [];
     
     try {
@@ -585,17 +543,20 @@ export async function transcribeLargeAudio(
         throw new Error('No chunks were created');
       }
       
+      console.log(`✅ Created ${chunks.length} chunks for transcription`);
+      
       // Add chunk paths to cleanup list
       chunks.forEach(chunk => cleanupFiles.push(chunk.path));
-  
-  // Transcribe all chunks
-  const segments = await transcribeChunks(chunks, openai);
+      
+      // Transcribe all chunks
+      const segments = await transcribeChunks(chunks, openai);
       
       if (segments.length === 0) {
         throw new Error('No segments were transcribed from chunks');
       }
-  
-  return segments;
+      
+      console.log(`✅ Successfully transcribed ${segments.length} segments from ${chunks.length} chunks`);
+      return segments;
       
     } catch (chunkingError) {
       console.error('❌ Chunking approach failed:', chunkingError);

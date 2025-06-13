@@ -303,15 +303,149 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
     // We only use Whisper-optimized method now
     console.log(`Using audio extraction + Whisper transcription...`);
     
-    const result = await getOptimizedWhisperTranscript(videoInfo);
-    
-    if (result && result.segments.length > 0) {
-      console.log(`✓ Whisper transcription successful: ${result.segments.length} segments`);
-      return result;
+    if (!openai) {
+      throw new Error('OpenAI API key not available for Whisper transcription');
     }
     
-    throw new Error('Whisper transcription returned no segments');
+    const tempDir = path.join(process.cwd(), 'temp');
+    await fs.mkdir(tempDir, { recursive: true });
     
+    const audioPath = path.join(tempDir, `${videoInfo.id}_audio.m4a`);
+    let actualAudioPath = audioPath;
+    
+    try {
+      // Extract audio using simple yt-dlp command
+      console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+      
+      const ytDlpCmd = await getYtDlpCommand();
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+      
+      let extractCommand: string;
+      if (isDocker) {
+        // Enhanced command for Docker/Railway with cookies and user-agent
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Check for cookie options
+        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+        const cookieString = process.env.YOUTUBE_COOKIES;
+        let cookieFlag = '';
+        
+        // If cookie string is provided in env, create a temp file
+        if (cookieString) {
+          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+          cookieFlag = `--cookies ${tempCookieFile}`;
+        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+          // Use existing cookie file if it exists
+          cookieFlag = `--cookies ${cookieFile}`;
+        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+          // Try Firefox cookies as fallback
+          cookieFlag = '--cookies-from-browser firefox';
+        }
+        
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
+      } else {
+        // Windows/local command
+        extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
+      }
+      
+      console.log(`Running: ${extractCommand}`);
+      
+      try {
+        await execAsync(extractCommand, {
+          timeout: 120000, // 2 minutes
+          maxBuffer: 10 * 1024 * 1024
+        });
+      } catch (error) {
+        console.error('Audio extraction failed:', error);
+        
+        // Try without audio extraction flag
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Same cookie logic as above
+        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+        const cookieString = process.env.YOUTUBE_COOKIES;
+        let cookieFlag = '';
+        
+        if (cookieString) {
+          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+          cookieFlag = `--cookies ${tempCookieFile}`;
+        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+          cookieFlag = `--cookies ${cookieFile}`;
+        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+          cookieFlag = '--cookies-from-browser firefox';
+        }
+        
+        const fallbackCommand = isDocker 
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
+        
+        console.log('Trying fallback command:', fallbackCommand);
+        await execAsync(fallbackCommand, {
+          timeout: 120000,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      }
+      
+      // Check if audio file was created
+      // yt-dlp might download in a different format than requested
+      try {
+        await fs.stat(audioPath);
+      } catch {
+        // Check for other common audio formats
+        const baseName = path.basename(audioPath, path.extname(audioPath));
+        const possibleExtensions = ['.webm', '.opus', '.m4a', '.mp3', '.mp4'];
+        
+        for (const ext of possibleExtensions) {
+          const possiblePath = path.join(tempDir, baseName + ext);
+          try {
+            const stats = await fs.stat(possiblePath);
+            if (stats.size > 1000) {
+              console.log(`Found audio file at: ${possiblePath}`);
+              actualAudioPath = possiblePath;
+              break;
+            }
+          } catch {
+            // Continue checking other extensions
+          }
+        }
+      }
+      
+      const audioStats = await fs.stat(actualAudioPath);
+      if (audioStats.size < 1000) {
+        throw new Error('Audio file too small, likely corrupted');
+      }
+      
+      console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB at ${actualAudioPath}`);
+      
+      // Get transcript using optimized method
+      const segments = await getOptimizedWhisperTranscript(actualAudioPath, tempDir, openai);
+      
+      // Clean up
+      await fs.unlink(actualAudioPath).catch(() => {});
+      
+      return {
+        segments: enhancePunctuation(segments),
+        source: 'whisper-api',
+        quality: 'high',
+        language: 'en',
+        confidence: 0.95,
+        platform: videoInfo.platform as any
+      };
+      
+    } catch (error) {
+      console.error('Whisper transcription failed:', error);
+      
+      // Clean up on error
+      try {
+        if (actualAudioPath) {
+          await fs.unlink(actualAudioPath);
+        }
+      } catch {}
+      
+      throw error;
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Transcription failed: ${errorMsg}`);
@@ -331,169 +465,40 @@ function getPlatformStrategies(videoInfo: VideoInfo): Array<{ method: string; pr
 }
 
 /**
- * PHASE 2A: Optimized Whisper transcript with audio extraction
+ * Get optimized Whisper transcript with chunking for large files
  */
-async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
-  console.log('Using audio extraction + Whisper transcription...');
-  
-  if (!openai) {
-    throw new Error('OpenAI API key not available for Whisper transcription');
-  }
-  
-  const tempDir = path.join(process.cwd(), 'temp');
-  await fs.mkdir(tempDir, { recursive: true });
-  
-  const audioPath = path.join(tempDir, `${videoInfo.id}_audio.m4a`);
-  let actualAudioPath = audioPath; // Declare at function scope
-  
+async function getOptimizedWhisperTranscript(
+  audioPath: string, 
+  tempDir: string,
+  openai: OpenAI
+): Promise<TranscriptSegment[]> {
   try {
-    // Extract audio using simple yt-dlp command
-    console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+    // Check file size
+    const stats = await fs.stat(audioPath);
+    const sizeMB = stats.size / (1024 * 1024);
     
-    const ytDlpCmd = await getYtDlpCommand();
-    const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+    console.log(`🎵 Audio file size: ${sizeMB.toFixed(1)}MB`);
     
-    let extractCommand: string;
-    if (isDocker) {
-      // Enhanced command for Docker/Railway with cookies and user-agent
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    // If file is larger than 24MB, use chunking
+    if (sizeMB > 24) {
+      console.log('📦 File exceeds 24MB limit, using chunking approach...');
       
-      // Check for cookie options
-      const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-      const cookieString = process.env.YOUTUBE_COOKIES;
-      let cookieFlag = '';
+      const segments = await transcribeLargeAudio(audioPath, tempDir, openai);
       
-      // If cookie string is provided in env, create a temp file
-      if (cookieString) {
-        const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-        await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-        cookieFlag = `--cookies ${tempCookieFile}`;
-      } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-        // Use existing cookie file if it exists
-        cookieFlag = `--cookies ${cookieFile}`;
-      } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-        // Try Firefox cookies as fallback
-        cookieFlag = '--cookies-from-browser firefox';
-      }
-      
-      extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
-    } else {
-      // Windows/local command
-      extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
-    }
-    
-    console.log(`Running: ${extractCommand}`);
-    
-    try {
-      await execAsync(extractCommand, {
-        timeout: 120000, // 2 minutes
-        maxBuffer: 10 * 1024 * 1024
-      });
-    } catch (error) {
-      console.error('Audio extraction failed:', error);
-      
-      // Try without audio extraction flag
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      
-      // Same cookie logic as above
-      const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-      const cookieString = process.env.YOUTUBE_COOKIES;
-      let cookieFlag = '';
-      
-      if (cookieString) {
-        const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-        await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-        cookieFlag = `--cookies ${tempCookieFile}`;
-      } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-        cookieFlag = `--cookies ${cookieFile}`;
-      } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-        cookieFlag = '--cookies-from-browser firefox';
-      }
-      
-      const fallbackCommand = isDocker 
-        ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
-        : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
-      
-      console.log('Trying fallback command:', fallbackCommand);
-      await execAsync(fallbackCommand, {
-        timeout: 120000,
-        maxBuffer: 10 * 1024 * 1024
-      });
-    }
-    
-    // Check if audio file was created
-    // yt-dlp might download in a different format than requested
-    try {
-      await fs.stat(audioPath);
-    } catch {
-      // Check for other common audio formats
-      const baseName = path.basename(audioPath, path.extname(audioPath));
-      const possibleExtensions = ['.webm', '.opus', '.m4a', '.mp3', '.mp4'];
-      
-      for (const ext of possibleExtensions) {
-        const possiblePath = path.join(tempDir, baseName + ext);
-        try {
-          const stats = await fs.stat(possiblePath);
-          if (stats.size > 1000) {
-            console.log(`Found audio file at: ${possiblePath}`);
-            actualAudioPath = possiblePath;
-            break;
-          }
-        } catch {
-          // Continue checking other extensions
-        }
+      if (segments && segments.length > 0) {
+        console.log(`✅ Successfully transcribed ${segments.length} segments using chunking`);
+        return segments;
+      } else {
+        throw new Error('Chunking failed to produce segments');
       }
     }
     
-    const audioStats = await fs.stat(actualAudioPath);
-    if (audioStats.size < 1000) {
-      throw new Error('Audio file too small, likely corrupted');
-    }
+    // File is small enough, transcribe directly
+    console.log('✅ File within size limit, transcribing directly...');
     
-    console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB at ${actualAudioPath}`);
+    const audioFile = await fs.readFile(audioPath);
+    const audioBlob = new File([audioFile], 'audio.m4a', { type: 'audio/m4a' });
     
-    // Check if audio needs optimization or chunking
-    const needsChunking = await optimizeAudioForWhisper(actualAudioPath, tempDir);
-    
-    if (needsChunking) {
-      // File is too large, use chunking method
-      console.log('Using chunking method for large audio file...');
-      
-      try {
-        const segments = await transcribeLargeAudio(actualAudioPath, tempDir, openai);
-        
-        // If transcribeLargeAudio returns null, it means the file was small enough after all
-        if (!segments) {
-          // This shouldn't happen since we already checked, but handle it gracefully
-          console.warn('Unexpected: transcribeLargeAudio returned null');
-          // Fall through to regular transcription
-        } else {
-          // Clean up
-          await fs.unlink(actualAudioPath).catch(() => {});
-          
-          return {
-            segments: enhancePunctuation(segments),
-            source: 'whisper-api',
-            quality: 'high',
-            language: 'en',
-            confidence: 0.95,
-            platform: videoInfo.platform as any
-          };
-        }
-      } catch (chunkingError) {
-        console.error('Chunking transcription failed:', chunkingError);
-        throw chunkingError;
-      }
-    }
-    
-    // File is small enough for direct transcription
-    const audioFile = await fs.readFile(actualAudioPath);
-    const audioBlob = new File([audioFile], path.basename(actualAudioPath), { 
-      type: 'audio/m4a' 
-    });
-    
-    // Transcribe with Whisper
-    console.log('Sending to Whisper API...');
     const transcription = await openai.audio.transcriptions.create({
       file: audioBlob,
       model: 'whisper-1',
@@ -502,38 +507,28 @@ async function getOptimizedWhisperTranscript(videoInfo: VideoInfo): Promise<Tran
       timestamp_granularities: ['segment']
     });
     
-    // Clean up
-    await fs.unlink(actualAudioPath).catch(() => {});
-    
-    if (!transcription.segments || transcription.segments.length === 0) {
-      throw new Error('No segments in transcription');
+    if (!transcription.segments || !Array.isArray(transcription.segments)) {
+      throw new Error('No segments in transcription response');
     }
     
-    const segments: TranscriptSegment[] = transcription.segments.map((seg: any) => ({
-      text: seg.text,
-      offset: seg.start || 0,
-      duration: (seg.end || seg.start || 0) - (seg.start || 0)
-    }));
+    const segments = transcription.segments
+      .filter((seg: any) => seg.text && seg.text.trim().length > 0)
+      .map((seg: any) => ({
+        text: seg.text.trim(),
+        offset: seg.start || 0,
+        duration: (seg.end || seg.start || 0) - (seg.start || 0)
+      }))
+      .filter(seg => seg.duration > 0);
     
-    return {
-      segments: enhancePunctuation(segments),
-      source: 'whisper-api',
-      quality: 'high',
-      language: transcription.language || 'en',
-      confidence: 0.95,
-      platform: videoInfo.platform as any
-    };
+    if (segments.length === 0) {
+      throw new Error('No valid segments found in transcription');
+    }
+    
+    console.log(`✅ Direct transcription complete: ${segments.length} segments`);
+    return segments;
     
   } catch (error) {
-    console.error('Whisper transcription failed:', error);
-    
-    // Clean up on error
-    try {
-      if (actualAudioPath) {
-        await fs.unlink(actualAudioPath);
-      }
-    } catch {}
-    
+    console.error('❌ Optimized transcription failed:', error);
     throw error;
   }
 }
@@ -858,7 +853,149 @@ async function getDetailedVideoInfo(videoInfo: VideoInfo): Promise<VideoInfo | n
 async function executeTranscriptStrategy(strategy: { method: string; priority: number }, videoInfo: VideoInfo): Promise<TranscriptResult | null> {
   // Only use Whisper-optimized method
   if (strategy.method === 'whisper-optimized' || strategy.method === 'direct-whisper') {
-    return await getOptimizedWhisperTranscript(videoInfo);
+    if (!openai) {
+      throw new Error('OpenAI API key not available for Whisper transcription');
+    }
+    
+    const tempDir = path.join(process.cwd(), 'temp');
+    await fs.mkdir(tempDir, { recursive: true });
+    
+    const audioPath = path.join(tempDir, `${videoInfo.id}_audio.m4a`);
+    let actualAudioPath = audioPath;
+    
+    try {
+      // Extract audio using simple yt-dlp command
+      console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+      
+      const ytDlpCmd = await getYtDlpCommand();
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+      
+      let extractCommand: string;
+      if (isDocker) {
+        // Enhanced command for Docker/Railway with cookies and user-agent
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Check for cookie options
+        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+        const cookieString = process.env.YOUTUBE_COOKIES;
+        let cookieFlag = '';
+        
+        // If cookie string is provided in env, create a temp file
+        if (cookieString) {
+          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+          cookieFlag = `--cookies ${tempCookieFile}`;
+        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+          // Use existing cookie file if it exists
+          cookieFlag = `--cookies ${cookieFile}`;
+        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+          // Try Firefox cookies as fallback
+          cookieFlag = '--cookies-from-browser firefox';
+        }
+        
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
+      } else {
+        // Windows/local command
+        extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
+      }
+      
+      console.log(`Running: ${extractCommand}`);
+      
+      try {
+        await execAsync(extractCommand, {
+          timeout: 120000, // 2 minutes
+          maxBuffer: 10 * 1024 * 1024
+        });
+      } catch (error) {
+        console.error('Audio extraction failed:', error);
+        
+        // Try without audio extraction flag
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Same cookie logic as above
+        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
+        const cookieString = process.env.YOUTUBE_COOKIES;
+        let cookieFlag = '';
+        
+        if (cookieString) {
+          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
+          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
+          cookieFlag = `--cookies ${tempCookieFile}`;
+        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+          cookieFlag = `--cookies ${cookieFile}`;
+        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
+          cookieFlag = '--cookies-from-browser firefox';
+        }
+        
+        const fallbackCommand = isDocker 
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
+        
+        console.log('Trying fallback command:', fallbackCommand);
+        await execAsync(fallbackCommand, {
+          timeout: 120000,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      }
+      
+      // Check if audio file was created
+      // yt-dlp might download in a different format than requested
+      try {
+        await fs.stat(audioPath);
+      } catch {
+        // Check for other common audio formats
+        const baseName = path.basename(audioPath, path.extname(audioPath));
+        const possibleExtensions = ['.webm', '.opus', '.m4a', '.mp3', '.mp4'];
+        
+        for (const ext of possibleExtensions) {
+          const possiblePath = path.join(tempDir, baseName + ext);
+          try {
+            const stats = await fs.stat(possiblePath);
+            if (stats.size > 1000) {
+              console.log(`Found audio file at: ${possiblePath}`);
+              actualAudioPath = possiblePath;
+              break;
+            }
+          } catch {
+            // Continue checking other extensions
+          }
+        }
+      }
+      
+      const audioStats = await fs.stat(actualAudioPath);
+      if (audioStats.size < 1000) {
+        throw new Error('Audio file too small, likely corrupted');
+      }
+      
+      console.log(`Audio extracted: ${(audioStats.size / 1024 / 1024).toFixed(1)}MB at ${actualAudioPath}`);
+      
+      // Get transcript using optimized method
+      const segments = await getOptimizedWhisperTranscript(actualAudioPath, tempDir, openai);
+      
+      // Clean up
+      await fs.unlink(actualAudioPath).catch(() => {});
+      
+      return {
+        segments: enhancePunctuation(segments),
+        source: 'whisper-api',
+        quality: 'high',
+        language: 'en',
+        confidence: 0.95,
+        platform: videoInfo.platform as any
+      };
+      
+    } catch (error) {
+      console.error('Whisper transcription failed:', error);
+      
+      // Clean up on error
+      try {
+        if (actualAudioPath) {
+          await fs.unlink(actualAudioPath);
+        }
+      } catch {}
+      
+      throw error;
+    }
   }
   
   throw new Error(`Unsupported transcript strategy: ${strategy.method}`);
