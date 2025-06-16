@@ -361,10 +361,11 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
           cookieFlag = '--cookies-from-browser firefox';
         }
         
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
+        // Download audio-only in lower quality to reduce file size
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
-        // Windows/local command
-        extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
+        // Windows/local command - also use lower quality audio
+        extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
       }
       
       console.log(`Running: ${extractCommand}`);
@@ -377,7 +378,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       } catch (error) {
         console.error('Audio extraction failed:', error);
         
-        // Try without audio extraction flag
+        // Try without audio extraction flag - but still audio only
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Same cookie logic as above
@@ -395,9 +396,10 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
           cookieFlag = '--cookies-from-browser firefox';
         }
         
+        // Fallback: download audio-only without extraction
         const fallbackCommand = isDocker 
-          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" -f "worstaudio" -o "${audioPath}" "${videoInfo.url}"`;
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
@@ -722,24 +724,24 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         }
         
         strategies.push(
-          // Strategy 1: Cookies (if available) + user agent + audio extraction
+          // Strategy 1: Cookies (if available) + user agent + audio extraction with lower quality
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 300000 // 5 minutes for Railway (increased for large files)
           },
-          // Strategy 2: Cookies (if available) + user agent + direct download
+          // Strategy 2: Cookies (if available) + user agent + direct audio download
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 300000
           },
-          // Strategy 3: Just user agent (fallback if cookies fail)
+          // Strategy 3: Just user agent with audio extraction (fallback if cookies fail)
           {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -v -o ${outputPattern} ${videoUrl}`,
             timeout: 300000
           },
-          // Strategy 4: Minimal with user agent
+          // Strategy 4: Minimal audio-only
           {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio" -o ${outputPattern} ${videoUrl}`,
             timeout: 300000
           }
         );
@@ -753,24 +755,24 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         }
         
         strategies.push(
-          // Strategy 1: Download best audio (let yt-dlp choose format)
+          // Strategy 1: Download worst audio quality (smaller file size)
           {
-            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -f "worstaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
             timeout: 120000 // 2 minutes
           },
           // Strategy 2: Direct audio download without conversion
           {
-            command: `"${ytDlpPath}" -f "bestaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" -f "worstaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
             timeout: 120000
           },
-          // Strategy 3: Download with worstaudio format for smaller size
+          // Strategy 3: Try bestaudio if worstaudio fails
           {
-            command: `"${ytDlpPath}" -f "worstaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" -f "bestaudio[filesize<50M]/bestaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
             timeout: 120000
           },
-          // Strategy 4: Fallback - download small video
+          // Strategy 4: Fallback - any audio format
           {
-            command: `"${ytDlpPath}" -f "worst[height>=144]" --no-playlist --no-warnings -o "${outputFilename}.mp4" "${videoUrl}"`,
+            command: `"${ytDlpPath}" -f "bestaudio/best" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
             timeout: 180000 // 3 minutes
           }
         );

@@ -175,8 +175,8 @@ function formatFileSize(bytes: number): string {
 /**
  * Check if we should process this video based on metadata
  */
-export function shouldProcessVideo(metadata: VideoMetadata, maxDuration: number = 7200): boolean {
-  // Don't process videos longer than maxDuration (default 2 hours)
+export function shouldProcessVideo(metadata: VideoMetadata, maxDuration: number = 14400): boolean {
+  // Don't process videos longer than maxDuration (default 4 hours)
   if (metadata.duration > maxDuration) {
     console.warn(`⚠️ Video too long (${formatDuration(metadata.duration)}), max allowed: ${formatDuration(maxDuration)}`);
     return false;
