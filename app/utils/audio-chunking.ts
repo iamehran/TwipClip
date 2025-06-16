@@ -5,6 +5,12 @@ import { promisify } from 'util';
 import OpenAI from 'openai';
 import { getFFmpegPath } from './system-tools';
 
+// Fix for File API in Node.js environment
+if (typeof globalThis.File === 'undefined') {
+  const { File } = require('buffer');
+  globalThis.File = File;
+}
+
 const execAsync = promisify(exec);
 
 interface AudioChunk {
@@ -363,12 +369,12 @@ export async function transcribeChunks(chunks: AudioChunk[], openai: OpenAI): Pr
       // Validate chunk file exists
       await fs.access(chunk.path);
       
-      // Use fs.createReadStream for Node.js compatibility
-      const { createReadStream } = require('fs');
-      const audioStream = createReadStream(chunk.path);
+      // Use our helper for proper file handling
+      const { createFileForUpload } = await import('./file-upload-helper');
+      const audioFile = await createFileForUpload(chunk.path, 'audio/m4a');
       
       const transcription = await openai.audio.transcriptions.create({
-        file: audioStream as any,
+        file: audioFile,
         model: 'whisper-1',
         language: 'en',
         response_format: 'verbose_json',
