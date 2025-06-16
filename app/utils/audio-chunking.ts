@@ -75,8 +75,8 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
     const compressCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" -ac 1 -ar 16000 -b:a 64k -f mp4 "${compressedPath}" -y`;
     
     const { stdout, stderr } = await execAsync(compressCmd, {
-      timeout: 120000, // 2 minutes
-      maxBuffer: 10 * 1024 * 1024
+      timeout: 180000, // 3 minutes (for compression)
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer
     });
     
     // Check if compression succeeded
@@ -99,8 +99,8 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
         const ultraCompressionCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" -ac 1 -ar 16000 -b:a 32k -f mp4 "${ultraCompressedPath}" -y`;
         
         await execAsync(ultraCompressionCmd, { 
-          timeout: 180000,
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 180000, // 3 minutes
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
         
         const ultraStats = await fs.stat(ultraCompressedPath);
@@ -267,8 +267,8 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
       
       try {
         await execAsync(extractCmd, { 
-          timeout: 120000, // 2 minute timeout per chunk
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 180000, // 3 minute timeout per chunk
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
         
         // Verify chunk was created and has valid size
@@ -284,8 +284,8 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
           
           const recompressCmd = `"${ffmpegPath}" -i "${chunkPath}" -ac 1 -ar 16000 -b:a 32k -f mp4 "${recompressedPath}" -y`;
           await execAsync(recompressCmd, {
-            timeout: 60000,
-            maxBuffer: 10 * 1024 * 1024
+            timeout: 120000, // 2 minutes for recompression
+            maxBuffer: 50 * 1024 * 1024 // 50MB buffer
           });
           
       await fs.unlink(chunkPath);
@@ -363,15 +363,12 @@ export async function transcribeChunks(chunks: AudioChunk[], openai: OpenAI): Pr
       // Validate chunk file exists
       await fs.access(chunk.path);
       
-      const audioFile = await fs.readFile(chunk.path);
-      if (audioFile.length === 0) {
-        throw new Error('Chunk file is empty');
-      }
-      
-      const audioBlob = new File([audioFile], `chunk_${chunk.index}.m4a`, { type: 'audio/m4a' });
+      // Use fs.createReadStream for Node.js compatibility
+      const { createReadStream } = require('fs');
+      const audioStream = createReadStream(chunk.path);
       
       const transcription = await openai.audio.transcriptions.create({
-        file: audioBlob,
+        file: audioStream as any,
         model: 'whisper-1',
         language: 'en',
         response_format: 'verbose_json',

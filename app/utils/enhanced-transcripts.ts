@@ -6,6 +6,7 @@ import os from 'os';
 import { promisify } from 'util';
 import OpenAI from 'openai';
 import { transcribeLargeAudio } from './audio-chunking';
+import { getVideoMetadata, determineProcessingStrategy, shouldProcessVideo } from './video-metadata';
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
 import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
 import { downloadViaInvidious } from '../../src/lib/invidious-fallback';
@@ -299,6 +300,18 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
   // Store video info for potential re-download
   videoInfoCache.set(videoInfo.id, videoInfo);
   
+  // Get video metadata to determine processing strategy
+  const metadata = await getVideoMetadata(videoInfo.url);
+  if (metadata) {
+    if (!shouldProcessVideo(metadata)) {
+      throw new Error('Video cannot be processed (too long or live)');
+    }
+    
+    const strategy = determineProcessingStrategy(metadata);
+    console.log(`📋 Processing strategy: ${strategy.strategy} - ${strategy.reason}`);
+    console.log(`📊 Estimated audio size: ${(strategy.estimatedAudioSize / (1024 * 1024)).toFixed(1)}MB`);
+  }
+  
   try {
     // We only use Whisper-optimized method now
     console.log(`Using audio extraction + Whisper transcription...`);
@@ -353,8 +366,8 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       
       try {
         await execAsync(extractCommand, {
-          timeout: 120000, // 2 minutes
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 300000, // 5 minutes (increased for large files)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       } catch (error) {
         console.error('Audio extraction failed:', error);
@@ -383,8 +396,8 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
-          timeout: 120000,
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 300000, // 5 minutes (increased for large files)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       }
       
@@ -496,11 +509,12 @@ async function getOptimizedWhisperTranscript(
     // File is small enough, transcribe directly
     console.log('✅ File within size limit, transcribing directly...');
     
-    const audioFile = await fs.readFile(audioPath);
-    const audioBlob = new File([audioFile], 'audio.m4a', { type: 'audio/m4a' });
+    // Use fs.createReadStream for Node.js compatibility
+    const { createReadStream } = require('fs');
+    const audioStream = createReadStream(audioPath);
     
     const transcription = await openai.audio.transcriptions.create({
-      file: audioBlob,
+      file: audioStream as any,
       model: 'whisper-1',
       language: 'en',
       response_format: 'verbose_json',
@@ -706,22 +720,22 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
           // Strategy 1: Cookies (if available) + user agent + audio extraction
           {
             command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 180000 // 3 minutes for Railway
+            timeout: 300000 // 5 minutes for Railway (increased for large files)
           },
           // Strategy 2: Cookies (if available) + user agent + direct download
           {
             command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 180000
+            timeout: 300000
           },
           // Strategy 3: Just user agent (fallback if cookies fail)
           {
             command: `${ytDlpPath} --user-agent "${userAgent}" -x --audio-format m4a --no-playlist -v -o ${outputPattern} ${videoUrl}`,
-            timeout: 180000
+            timeout: 300000
           },
           // Strategy 4: Minimal with user agent
           {
             command: `${ytDlpPath} --user-agent "${userAgent}" -o ${outputPattern} ${videoUrl}`,
-            timeout: 180000
+            timeout: 300000
           }
         );
       } else {
@@ -903,8 +917,8 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       
       try {
         await execAsync(extractCommand, {
-          timeout: 120000, // 2 minutes
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 300000, // 5 minutes (increased for large files)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       } catch (error) {
         console.error('Audio extraction failed:', error);
@@ -933,8 +947,8 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
-          timeout: 120000,
-          maxBuffer: 10 * 1024 * 1024
+          timeout: 300000, // 5 minutes (increased for large files)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       }
       
