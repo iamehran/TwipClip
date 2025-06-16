@@ -42,7 +42,7 @@ async function ensureAuthFile() {
 export async function POST(request) {
   // Set a longer timeout for this endpoint
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+  const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout (increased from 5)
 
   try {
     const { thread, videos } = await request.json();

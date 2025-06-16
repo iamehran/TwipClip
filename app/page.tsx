@@ -112,7 +112,7 @@ export default function Home() {
       const abortController = new AbortController();
       const fetchTimeout = setTimeout(() => {
         abortController.abort();
-      }, 300000); // 5 minute timeout
+      }, 600000); // 10 minute timeout (increased from 5)
 
       const response = await fetch('/api/process', {
         method: 'POST',

@@ -31,6 +31,7 @@ interface TranscriptSegment {
 const MIN_CHUNK_DURATION = 10; // seconds
 const MAX_CHUNK_DURATION = 300; // 5 minutes
 const TARGET_CHUNK_SIZE = 20 * 1024 * 1024; // 20MB target size
+const CHUNK_OVERLAP = 30; // 30 seconds overlap between chunks for continuity
 
 /**
  * Validate audio file before processing
@@ -247,7 +248,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
     const chunkDuration = Math.max(MIN_CHUNK_DURATION, Math.min(optimalChunkDuration, MAX_CHUNK_DURATION));
   
   console.log(`📊 Optimal chunk duration: ${chunkDuration} seconds (${(chunkDuration/60).toFixed(1)} minutes)`);
-    console.log(`📊 Using ${MAX_CHUNK_DURATION} seconds overlap between chunks`);
+    console.log(`📊 Using ${CHUNK_OVERLAP} seconds overlap between chunks`);
     
     while (currentTime < totalDuration - 1) { // Stop 1 second before end to avoid edge issues
       const remainingDuration = totalDuration - currentTime;
@@ -314,8 +315,11 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
         });
         
         // Move forward by (duration - overlap) to create overlapping chunks
-        // Ensure we move forward at least MIN_CHUNK_DURATION
-        const step = Math.max(MIN_CHUNK_DURATION, duration - MAX_CHUNK_DURATION);
+        // For the last chunk or very short chunks, don't use overlap
+        const step = (duration <= CHUNK_OVERLAP || remainingDuration <= duration) 
+          ? duration  // No overlap for last chunk
+          : duration - CHUNK_OVERLAP;  // Normal overlap
+        
         currentTime += step;
         chunkIndex++;
         
@@ -339,7 +343,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
       throw new Error('No chunks could be extracted from the audio file');
   }
   
-    console.log(`✅ Split into ${chunks.length} chunks with ${MAX_CHUNK_DURATION}s overlap`);
+    console.log(`✅ Split into ${chunks.length} chunks with ${CHUNK_OVERLAP}s overlap`);
   return chunks;
     
   } catch (error) {
