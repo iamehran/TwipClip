@@ -1,6 +1,6 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { getEnhancedTranscript } from '../../app/utils/enhanced-transcripts';
-import { findPerfectMatches, PerfectMatch, getMatchStatistics } from '../../app/utils/perfect-matching';
+import { findPerfectMatchesOptimized as findPerfectMatches, PerfectMatch, getMatchStatistics } from '../../app/utils/perfect-matching-optimized';
 import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';

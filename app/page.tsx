@@ -108,6 +108,12 @@ export default function Home() {
         });
       }, 500);
 
+      // Create an AbortController for timeout
+      const abortController = new AbortController();
+      const fetchTimeout = setTimeout(() => {
+        abortController.abort();
+      }, 300000); // 5 minute timeout
+
       const response = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,7 +121,10 @@ export default function Home() {
           thread: threadContent,  // Full thread content with dashes
           videos: videoUrls       // Array of video URLs
         }),
+        signal: abortController.signal
       });
+
+      clearTimeout(fetchTimeout);
 
       // Update status based on progress
       setLoadingProgress(40);
@@ -133,33 +142,42 @@ export default function Home() {
 
       // Convert the new format to match the UI expectations
       const formattedResults: SearchResults = {};
+      
+      // First, initialize all tweets with empty clips arrays
+      const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
+      tweetTexts.forEach((text, index) => {
+        const tweetKey = `tweet-${index + 1}`;
+        formattedResults[tweetKey] = {
+          tweet: text,
+          clips: []
+        };
+      });
+      
+      // Then populate with actual matches
       if (data.matches && data.matches.length > 0) {
-        data.matches.forEach((match: any, index: number) => {
-          const tweetKey = `tweet-${index + 1}`;
-          if (!formattedResults[tweetKey]) {
-            formattedResults[tweetKey] = {
-              tweet: match.tweet || '',
-              clips: []
-            };
+        data.matches.forEach((match: any) => {
+          // Find which tweet this match belongs to
+          const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+          if (tweetIndex !== -1) {
+            const tweetKey = `tweet-${tweetIndex + 1}`;
+            formattedResults[tweetKey].clips.push({
+              videoId: match.videoUrl,
+              title: 'AI Matched Clip',
+              thumbnail: '/default-thumbnail.jpg',
+              startTime: match.startTime,
+              endTime: match.endTime,
+              matchScore: match.confidence || 0,
+              transcriptText: match.text || '',
+              channelTitle: 'Video',
+              clipDuration: `${match.endTime - match.startTime}s`,
+              matchMethod: 'semantic' as const,
+              confidence: match.confidence || 0,
+              transcriptQuality: 'high' as const,
+              transcriptSource: 'whisper',
+              downloadPath: match.downloadPath,
+              downloadSuccess: match.downloadSuccess
+            });
           }
-          
-          formattedResults[tweetKey].clips.push({
-            videoId: match.videoUrl,
-            title: 'AI Matched Clip',
-            thumbnail: '/default-thumbnail.jpg',
-            startTime: match.startTime,
-            endTime: match.endTime,
-            matchScore: match.confidence || 0,
-            transcriptText: match.text || '',
-            channelTitle: 'Video',
-            clipDuration: `${match.endTime - match.startTime}s`,
-            matchMethod: 'semantic' as const,
-            confidence: match.confidence || 0,
-            transcriptQuality: 'high' as const,
-            transcriptSource: 'whisper',
-            downloadPath: match.downloadPath,
-            downloadSuccess: match.downloadSuccess
-          });
         });
       }
 
@@ -180,7 +198,20 @@ export default function Home() {
       }, 1000);
     } catch (err) {
       clearInterval(progressInterval);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      
+      let errorMessage = 'An error occurred';
+      
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          errorMessage = 'Request timed out. This usually happens with very long videos or many clips. Try processing fewer videos at once.';
+        } else if (err.message.includes('Failed to fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
       console.error('Processing error:', err);
       setShowSearchForm(true); // Show form again on error
     } finally {
@@ -347,17 +378,11 @@ export default function Home() {
                 </div>
 
                 {/* Video Clips */}
-                {tweetData.clips.length > 0 ? (
-                  <div className="grid gap-4">
-                    {tweetData.clips.map((clip, index) => (
-                      <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">
-                    No matching clips found for this tweet
-                  </p>
-                )}
+                <div className="grid gap-4">
+                  {tweetData.clips.map((clip, index) => (
+                    <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
+                  ))}
+                </div>
               </div>
             </div>
           ))}

@@ -40,10 +40,15 @@ async function ensureAuthFile() {
 }
 
 export async function POST(request) {
+  // Set a longer timeout for this endpoint
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
   try {
     const { thread, videos } = await request.json();
 
     if (!thread || !videos || videos.length === 0) {
+      clearTimeout(timeoutId);
       return NextResponse.json(
         { error: 'Thread and videos are required' },
         { status: 400 }
@@ -52,6 +57,7 @@ export async function POST(request) {
 
     // Add request validation
     if (videos.length > 5) {
+      clearTimeout(timeoutId);
       return NextResponse.json(
         { error: 'Maximum 5 videos allowed per request' },
         { status: 400 }
@@ -66,6 +72,7 @@ export async function POST(request) {
     // Ensure tools are available
     const ready = await ensureToolsAvailable();
     if (!ready) {
+      clearTimeout(timeoutId);
       return NextResponse.json(
         { 
           error: 'System requirements not met',
@@ -76,7 +83,9 @@ export async function POST(request) {
     }
 
     // Process videos with our intelligent system
+    const startTime = Date.now();
     const results = await processVideosIntelligently(thread, videos);
+    const processingTime = Date.now() - startTime;
 
     // Format response similar to media-matcher
     const matches = [];
@@ -104,6 +113,8 @@ export async function POST(request) {
       ? matches.reduce((sum, m) => sum + (m.confidence || 0), 0) / matches.length
       : 0;
 
+    clearTimeout(timeoutId);
+
     return NextResponse.json({
       success: true,
       matches: matches,
@@ -113,11 +124,22 @@ export async function POST(request) {
         clipsFound: matches.length,
         clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
         avgConfidence: avgConfidence,
-        aiModel: 'Claude Opus 4'
+        aiModel: 'Claude Opus 4',
+        processingTimeMs: processingTime
       }
     });
 
   } catch (error) {
+    clearTimeout(timeoutId);
+    
+    // Check if it's a timeout error
+    if (error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timeout - processing took too long. Try with fewer videos or shorter content.' },
+        { status: 504 }
+      );
+    }
+    
     logError(error, 'process-endpoint');
     const { message, statusCode } = handleError(error);
     
