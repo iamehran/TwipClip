@@ -352,12 +352,22 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
           cookieFlag = `--cookies ${cookieFile}`;
           console.log('Using YouTube cookies from:', cookieFile);
+          
+          // Debug: Check first few lines of cookie file
+          try {
+            const cookieContent = await fs.readFile(cookieFile, 'utf-8');
+            const lines = cookieContent.split('\n').slice(0, 3);
+            console.log('Cookie file preview:', lines.join(' | '));
+          } catch (e) {
+            console.log('Could not read cookie file for preview');
+          }
         } else {
           console.log('No YouTube cookies file found at:', cookieFile);
         }
         
         // Download audio-only in lower quality to reduce file size
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o ${audioPath} ${videoInfo.url}`.trim();
+        // Remove -v flag which might cause issues
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
         // Windows/local command - also use lower quality audio
         extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
@@ -711,20 +721,20 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         strategies.push(
           // Strategy 1: Cookies (if available) + user agent + audio extraction with lower quality
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 300000 // 5 minutes for Railway (increased for large files)
           },
-          // Strategy 2: Cookies (if available) + user agent + direct audio download
+          // Strategy 2: Without cookies - sometimes cookies cause issues
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist -v -o ${outputPattern} ${videoUrl}`.trim(),
+            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${outputPattern} ${videoUrl}`,
             timeout: 300000
           },
-          // Strategy 3: Just user agent with audio extraction (fallback if cookies fail)
+          // Strategy 3: Cookies + direct audio download (no extraction)
           {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -v -o ${outputPattern} ${videoUrl}`,
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
             timeout: 300000
           },
-          // Strategy 4: Minimal audio-only
+          // Strategy 4: Minimal without cookies
           {
             command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio" -o ${outputPattern} ${videoUrl}`,
             timeout: 300000
