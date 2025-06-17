@@ -9,6 +9,7 @@ import { getVideoMetadata, determineProcessingStrategy, shouldProcessVideo } fro
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
 import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
 import { downloadViaInvidious } from '../../src/lib/invidious-fallback';
+import { setupYouTubeCookies } from '../../src/lib/cookie-setup';
 
 // Fix for File API in Node.js environment
 if (typeof globalThis.File === 'undefined') {
@@ -344,21 +345,15 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Check for cookie options
-        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-        const cookieString = process.env.YOUTUBE_COOKIES;
         let cookieFlag = '';
         
-        // If cookie string is provided in env, create a temp file
-        if (cookieString) {
-          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-          cookieFlag = `--cookies ${tempCookieFile}`;
-        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          // Use existing cookie file if it exists
+        // Check if cookie file exists (created by startup script)
+        const cookieFile = '/app/temp/youtube_cookies.txt';
+        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
           cookieFlag = `--cookies ${cookieFile}`;
-        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-          // Try Firefox cookies as fallback
-          cookieFlag = '--cookies-from-browser firefox';
+          console.log('Using YouTube cookies from:', cookieFile);
+        } else {
+          console.log('No YouTube cookies file found at:', cookieFile);
         }
         
         // Download audio-only in lower quality to reduce file size
@@ -382,18 +377,12 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Same cookie logic as above
-        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-        const cookieString = process.env.YOUTUBE_COOKIES;
         let cookieFlag = '';
         
-        if (cookieString) {
-          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-          cookieFlag = `--cookies ${tempCookieFile}`;
-        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+        // Check if cookie file exists (created by startup script)
+        const cookieFile = '/app/temp/youtube_cookies.txt';
+        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
           cookieFlag = `--cookies ${cookieFile}`;
-        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-          cookieFlag = '--cookies-from-browser firefox';
         }
         
         // Fallback: download audio-only without extraction
@@ -708,19 +697,15 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Cookie handling
-        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-        const cookieString = process.env.YOUTUBE_COOKIES;
         let cookieFlag = '';
         
-        // Create temp cookie file if string provided
-        if (cookieString) {
-          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-          require('fs').writeFileSync(tempCookieFile, cookieString, 'utf-8');
-          cookieFlag = `--cookies ${tempCookieFile}`;
-        } else if (require('fs').existsSync(cookieFile)) {
+        // Check if cookie file exists (created by startup script)
+        const cookieFile = '/app/temp/youtube_cookies.txt';
+        if (require('fs').existsSync(cookieFile)) {
           cookieFlag = `--cookies ${cookieFile}`;
-        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-          cookieFlag = '--cookies-from-browser firefox';
+          console.log('Using YouTube cookies from:', cookieFile);
+        } else {
+          console.log('No YouTube cookies file found at:', cookieFile);
         }
         
         strategies.push(
@@ -897,21 +882,15 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Check for cookie options
-        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-        const cookieString = process.env.YOUTUBE_COOKIES;
         let cookieFlag = '';
         
-        // If cookie string is provided in env, create a temp file
-        if (cookieString) {
-          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-          cookieFlag = `--cookies ${tempCookieFile}`;
-        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          // Use existing cookie file if it exists
+        // Check if cookie file exists (created by startup script)
+        const cookieFile = '/app/temp/youtube_cookies.txt';
+        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
           cookieFlag = `--cookies ${cookieFile}`;
-        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-          // Try Firefox cookies as fallback
-          cookieFlag = '--cookies-from-browser firefox';
+          console.log('Using YouTube cookies from:', cookieFile);
+        } else {
+          console.log('No YouTube cookies file found at:', cookieFile);
         }
         
         extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
@@ -934,18 +913,12 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Same cookie logic as above
-        const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
-        const cookieString = process.env.YOUTUBE_COOKIES;
         let cookieFlag = '';
         
-        if (cookieString) {
-          const tempCookieFile = path.join(tempDir, 'youtube_cookies.txt');
-          await fs.writeFile(tempCookieFile, cookieString, 'utf-8');
-          cookieFlag = `--cookies ${tempCookieFile}`;
-        } else if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
+        // Check if cookie file exists (created by startup script)
+        const cookieFile = '/app/temp/youtube_cookies.txt';
+        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
           cookieFlag = `--cookies ${cookieFile}`;
-        } else if (process.env.USE_FIREFOX_COOKIES !== 'false') {
-          cookieFlag = '--cookies-from-browser firefox';
         }
         
         const fallbackCommand = isDocker 

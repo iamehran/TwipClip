@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
 import { getYtDlpCommand } from '../../src/lib/system-tools';
 
 const execAsync = promisify(exec);
@@ -36,11 +37,13 @@ export async function getVideoMetadata(videoUrl: string): Promise<VideoMetadata 
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       
       // Check for cookies
-      const cookieFile = process.env.YOUTUBE_COOKIE_FILE || '/app/temp/youtube_cookies.txt';
       let cookieFlag = '';
       
+      // Check if cookie file exists (created by startup script)
+      const cookieFile = '/app/temp/youtube_cookies.txt';
       if (require('fs').existsSync(cookieFile)) {
         cookieFlag = `--cookies ${cookieFile}`;
+        console.log('Using YouTube cookies from:', cookieFile);
       }
       
       command = `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --dump-json --no-warnings "${videoUrl}"`;

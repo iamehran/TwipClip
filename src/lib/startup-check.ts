@@ -1,7 +1,11 @@
 import { checkSystemTools } from './system-tools';
+import { setupYouTubeCookies } from './cookie-setup';
 
 export async function performStartupCheck(): Promise<boolean> {
   console.log('🚀 TwipClip Starting Up...\n');
+  
+  // Set up YouTube cookies from environment variable
+  await setupYouTubeCookies();
   
   // Check system tools
   const tools = await checkSystemTools();
