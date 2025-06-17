@@ -1,9 +1,17 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { getEnhancedTranscript } from '../../app/utils/enhanced-transcripts';
-import { findPerfectMatchesOptimized as findPerfectMatches, PerfectMatch, getMatchStatistics } from '../../app/utils/perfect-matching-optimized';
+import { 
+  findPerfectMatchesIndividual, 
+  findPerfectMatchesOptimized,
+  PerfectMatch, 
+  getMatchStatistics 
+} from '../../app/utils/perfect-matching-optimized';
 import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
+
+// Configuration: Use individual processing for better quality
+const USE_INDIVIDUAL_PROCESSING = true;
 
 export interface VideoClip {
   startTime: number;
@@ -29,6 +37,7 @@ export interface ProcessingOptions {
   downloadClips?: boolean;
   createZip?: boolean;
   outputDir?: string;
+  quality?: string;
 }
 
 /**
@@ -56,6 +65,10 @@ export async function processVideosWithPerfectMatching(
   }));
   
   console.log(`📊 Parsed ${tweets.length} tweets from thread`);
+  
+  if (tweets.length === 0) {
+    throw new Error('No tweets found in the thread. Please ensure tweets are separated by "---"');
+  }
 
   const results: VideoProcessingResult[] = [];
   const videoTranscripts: any[] = [];
@@ -108,6 +121,11 @@ export async function processVideosWithPerfectMatching(
   // Step 2: Find perfect matches - ONE per tweet
   console.log('\n🎯 Finding perfect matches...');
   
+  // Use individual or batch processing based on configuration
+  const findPerfectMatches = USE_INDIVIDUAL_PROCESSING 
+    ? findPerfectMatchesIndividual 
+    : findPerfectMatchesOptimized;
+  
   const matches = await findPerfectMatches(tweets, videoTranscripts);
   
   // Step 3: Convert matches to results format
@@ -138,6 +156,7 @@ export async function processVideosWithPerfectMatching(
     const downloadResults = await downloadAllClips(matches, {
       outputDir: options.outputDir,
       maxConcurrent: 3,
+      quality: options.quality || '720p',
       onProgress: (progress) => {
         console.log(`  Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(0)}%)`);
       }

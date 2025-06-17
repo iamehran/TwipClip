@@ -112,7 +112,7 @@ export default function Home() {
       const abortController = new AbortController();
       const fetchTimeout = setTimeout(() => {
         abortController.abort();
-      }, 600000); // 10 minute timeout (increased from 5)
+      }, 1800000); // 30 minute timeout (increased from 10)
 
       const response = await fetch('/api/process', {
         method: 'POST',
@@ -406,7 +406,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-gray-400">AI Model Used</p>
-                  <p className="text-white font-mono">{stats.aiModel || 'Claude Opus 4'}</p>
+                  <p className="text-white font-mono">{stats.aiModel || 'Claude 3.7 Sonnet'}</p>
                 </div>
                 <div>
                   <p className="text-gray-400">Transcription Quality</p>

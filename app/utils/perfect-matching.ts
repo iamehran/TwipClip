@@ -43,7 +43,7 @@ async function analyzeTweet(tweetText: string): Promise<TweetAnalysis> {
   }
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-7-sonnet-latest',
     max_tokens: 400,
     temperature: 0.2,
     messages: [{
@@ -87,7 +87,7 @@ async function scoreSegment(
   }
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-7-sonnet-latest',
     max_tokens: 300,
     temperature: 0.2,
     messages: [{

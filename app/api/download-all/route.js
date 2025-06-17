@@ -6,11 +6,19 @@ import fs from 'fs/promises';
 
 export async function POST(request) {
   try {
-    const { thread, videos } = await request.json();
+    const { thread, videos, quality = '720p' } = await request.json();
 
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
         { error: 'Thread and videos are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate quality parameter
+    if (quality && !['720p', '1080p'].includes(quality)) {
+      return NextResponse.json(
+        { error: 'Invalid quality. Must be 720p or 1080p' },
         { status: 400 }
       );
     }
@@ -28,6 +36,7 @@ export async function POST(request) {
     }
 
     console.log('🎯 Processing bulk download request...');
+    console.log(`📹 Quality: ${quality}`);
 
     // Process videos with perfect matching and download
     const { results, matches, downloadZipPath, statistics } = await processVideosWithPerfectMatching(
@@ -36,7 +45,8 @@ export async function POST(request) {
       {
         downloadClips: true,
         createZip: true,
-        outputDir: path.join(process.cwd(), 'temp', 'downloads')
+        outputDir: path.join(process.cwd(), 'temp', 'downloads'),
+        quality: quality
       }
     );
 

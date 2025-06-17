@@ -119,7 +119,7 @@ export async function processVideosIntelligently(thread: string, videos: string[
 
   // Match tweets to transcripts using Claude
   if (allTranscripts.length > 0) {
-    console.log('\n=== Starting AI Matching with Claude Opus 4 (Max Thinking) ===');
+    console.log('\n=== Starting AI Matching with Claude 3.7 Sonnet ===');
     const matches = await matchTweetsToTranscripts(tweets, allTranscripts, anthropicClient);
     
     // Add matches to results

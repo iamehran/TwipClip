@@ -35,6 +35,7 @@ export interface BulkDownloadProgress {
 async function downloadClip(
   match: PerfectMatch,
   outputDir: string,
+  quality: string = '720p',
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
   const ytDlpPath = await getYtDlpCommand();
@@ -56,7 +57,9 @@ async function downloadClip(
     const durationStr = formatTime(duration);
     
     // Try to download only the needed portion using yt-dlp's download sections
-    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" --download-sections "*${startTimeStr}-${formatTime(match.endTime)}" --force-keyframes-at-cuts -f "best[height<=720]" --no-warnings --quiet`;
+    const heightLimit = quality === '1080p' ? '1080' : '720';
+    // Note: download-sections might not work for all videos, so we have a fallback
+    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" --download-sections "*${startTimeStr}-${formatTime(match.endTime)}" --force-keyframes-at-cuts -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
     
     try {
       await execAsync(downloadCmd, { 
@@ -66,22 +69,35 @@ async function downloadClip(
     } catch (downloadError) {
       // If section download fails, download the full video
       onProgress?.(`Section download failed, downloading full video...`);
-      const fullDownloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "best[height<=720]" --no-warnings --quiet`;
+      const fullDownloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
       await execAsync(fullDownloadCmd, { 
         timeout: 300000, // 5 minute timeout for full video
         maxBuffer: 10 * 1024 * 1024 
       });
     }
     
-    // Step 2: Extract the specific clip using FFmpeg
+    // Step 2: Extract the specific clip using FFmpeg with proper codec settings
     onProgress?.(`Extracting clip (${startTimeStr} - ${formatTime(match.endTime)})...`);
     
-    const extractCmd = `"${ffmpegPath}" -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration} -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k "${outputPath}" -y`;
+    // Use copy codec first for faster extraction and better compatibility
+    // If that fails, re-encode with proper settings
+    let extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -i "${tempVideoPath}" -t ${duration} -c:v copy -c:a copy -avoid_negative_ts make_zero -fflags +genpts "${outputPath}" -y`;
     
-    await execAsync(extractCmd, {
-      timeout: 60000, // 1 minute timeout
-      maxBuffer: 10 * 1024 * 1024
-    });
+    try {
+      await execAsync(extractCmd, {
+        timeout: 60000, // 1 minute timeout
+        maxBuffer: 10 * 1024 * 1024
+      });
+    } catch (copyError) {
+      // If copy fails, re-encode with proper settings
+      onProgress?.(`Copy failed, re-encoding video...`);
+      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}" -y`;
+      
+      await execAsync(extractCmd, {
+        timeout: 120000, // 2 minute timeout for re-encoding
+        maxBuffer: 10 * 1024 * 1024
+      });
+    }
     
     // Step 3: Clean up temp file
     try {
@@ -92,6 +108,19 @@ async function downloadClip(
     
     // Step 4: Verify the output file
     const stats = await fs.stat(outputPath);
+    
+    // Step 5: Verify video integrity using ffprobe
+    try {
+      const probeCmd = `"${ffmpegPath}" -v error -i "${outputPath}" -f null -`;
+      await execAsync(probeCmd, {
+        timeout: 30000,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      onProgress?.(`✅ Video clip verified successfully`);
+    } catch (verifyError) {
+      console.warn(`⚠️ Video verification warning: ${verifyError}`);
+      // Continue anyway - the file might still be playable
+    }
     
     return {
       tweetId: match.tweetId,
@@ -142,6 +171,7 @@ export async function downloadAllClips(
   options: {
     outputDir?: string;
     maxConcurrent?: number;
+    quality?: string;
     onProgress?: (progress: BulkDownloadProgress) => void;
     onClipComplete?: (result: DownloadResult) => void;
   } = {}
@@ -149,6 +179,7 @@ export async function downloadAllClips(
   const {
     outputDir = path.join(os.tmpdir(), 'twipclip-downloads', Date.now().toString()),
     maxConcurrent = 3,
+    quality = '720p',
     onProgress,
     onClipComplete
   } = options;
@@ -174,7 +205,7 @@ export async function downloadAllClips(
       progress.currentFile = `Tweet ${match.tweetId}`;
       onProgress?.(progress);
       
-      const result = await downloadClip(match, outputDir, (status) => {
+      const result = await downloadClip(match, outputDir, quality, (status) => {
         console.log(`  ${status}`);
       });
       

@@ -109,7 +109,7 @@ async function batchAnalyzeMatches(
   const apiStartTime = Date.now();
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-7-sonnet-latest',
     max_tokens: 2000,
     temperature: 0.2,
     messages: [{
@@ -314,4 +314,192 @@ export function getMatchStatistics(matches: PerfectMatch[]) {
       ? Math.max(...matches.map(m => m.confidence)) 
       : 0
   };
+}
+
+/**
+ * Process each tweet individually for better matching quality
+ */
+async function findBestMatchForSingleTweet(
+  tweet: { id: string; text: string },
+  videoTranscripts: VideoTranscript[]
+): Promise<PerfectMatch | null> {
+  if (!anthropic) {
+    throw new Error('Anthropic API key not configured');
+  }
+
+  console.log(`\n🎯 Finding best match for tweet: "${tweet.text.substring(0, 50)}..."`);
+  
+  // Create candidate segments for all videos
+  const candidates: Array<{
+    videoUrl: string;
+    segmentIndex: number;
+    windowSize: number;
+    text: string;
+    startTime: number;
+    endTime: number;
+  }> = [];
+
+  // Use fewer, larger windows for efficiency
+  const windowSizes = [10, 20];
+  
+  for (const video of videoTranscripts) {
+    for (const windowSize of windowSizes) {
+      const stepSize = Math.floor(windowSize / 2);
+      
+      for (let i = 0; i <= video.segments.length - windowSize; i += stepSize) {
+        const window = video.segments.slice(i, Math.min(i + windowSize, video.segments.length));
+        const windowText = window.map(s => s.text).join(' ');
+        
+        if (windowText.length < 100) continue;
+        
+        candidates.push({
+          videoUrl: video.videoUrl,
+          segmentIndex: i,
+          windowSize,
+          text: windowText.substring(0, 800), // More context for single tweet
+          startTime: window[0].offset,
+          endTime: window[window.length - 1].offset + window[window.length - 1].duration
+        });
+      }
+    }
+  }
+
+  // Limit candidates but allow more for single tweet processing
+  const maxCandidates = Math.min(candidates.length, 80);
+  const selectedCandidates = candidates.slice(0, maxCandidates);
+  
+  console.log(`📊 Analyzing ${selectedCandidates.length} candidates for this tweet`);
+
+  // Process this single tweet with all candidates
+  const candidatesText = selectedCandidates.map((c, i) => 
+    `SEGMENT_${i} (${c.videoUrl.split('/').pop()}, ${c.startTime.toFixed(1)}-${c.endTime.toFixed(1)}s):\n"${c.text}"`
+  ).join('\n\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-3-7-sonnet-latest',
+    max_tokens: 1000,
+    temperature: 0.2,
+    messages: [{
+      role: 'user',
+      content: `Find the SINGLE BEST video segment that matches this tweet.
+
+TWEET: "${tweet.text}"
+
+VIDEO SEGMENTS:
+${candidatesText}
+
+Select the ONE segment that best matches the tweet's content. Consider:
+- Direct relevance to the tweet's main topic
+- Specific examples or stories mentioned
+- Context that supports the tweet's message
+- Quality of the match over mere keyword presence
+
+Return in this exact format:
+BEST_MATCH: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/acceptable] | REASON:[detailed explanation of why this is the best match]`
+    }]
+  });
+
+  const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+  
+  // Parse the response
+  const matchRegex = /BEST_MATCH:\s*SEGMENT_(\d+)\s*\|\s*SCORE:(\d+)\s*\|\s*QUALITY:(\w+)\s*\|\s*REASON:(.+)/;
+  const match = content.match(matchRegex);
+  
+  if (match) {
+    const segmentIndex = parseInt(match[1]);
+    const score = parseInt(match[2]);
+    const quality = match[3];
+    const reason = match[4].trim();
+    
+    if (segmentIndex < selectedCandidates.length) {
+      const candidate = selectedCandidates[segmentIndex];
+      const video = videoTranscripts.find(v => v.videoUrl === candidate.videoUrl);
+      
+      if (video) {
+        const window = video.segments.slice(
+          candidate.segmentIndex,
+          Math.min(candidate.segmentIndex + candidate.windowSize, video.segments.length)
+        );
+        
+        return {
+          tweetId: tweet.id,
+          tweetText: tweet.text,
+          videoUrl: candidate.videoUrl,
+          startTime: window[0].offset,
+          endTime: window[window.length - 1].offset + window[window.length - 1].duration,
+          transcriptText: window.map(s => s.text).join(' '),
+          confidence: score / 100,
+          matchQuality: quality as any,
+          reasoning: reason
+        };
+      }
+    }
+  }
+
+  // If no match found, return default
+  return createDefaultMatch(tweet, videoTranscripts);
+}
+
+/**
+ * Main function for individual tweet processing (better quality)
+ */
+export async function findPerfectMatchesIndividual(
+  tweets: Array<{ id: string; text: string }>,
+  videoTranscripts: VideoTranscript[]
+): Promise<PerfectMatch[]> {
+  if (!anthropic) {
+    throw new Error('Anthropic API key not configured. Perfect matching requires AI.');
+  }
+  
+  if (videoTranscripts.length === 0) {
+    throw new Error('No video transcripts provided');
+  }
+  
+  console.log(`\n🚀 Starting individual perfect matching for ${tweets.length} tweets across ${videoTranscripts.length} videos`);
+  console.log(`📊 This will make ${tweets.length} separate API calls for best quality`);
+  
+  const matches: PerfectMatch[] = [];
+  
+  // Process each tweet individually
+  for (let i = 0; i < tweets.length; i++) {
+    const tweet = tweets[i];
+    console.log(`\n📍 Processing tweet ${i + 1}/${tweets.length}`);
+    
+    try {
+      const match = await findBestMatchForSingleTweet(tweet, videoTranscripts);
+      
+      if (match) {
+        matches.push(match);
+        console.log(`✅ Tweet ${tweet.id}: ${match.matchQuality} match (${(match.confidence * 100).toFixed(0)}%)`);
+        console.log(`   Reason: ${match.reasoning}`);
+      } else {
+        // Should not happen with createDefaultMatch, but just in case
+        const defaultMatch = createDefaultMatch(tweet, videoTranscripts);
+        if (defaultMatch) {
+          matches.push(defaultMatch);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error processing tweet ${tweet.id}:`, error);
+      
+      // On error, provide a default match
+      const defaultMatch = createDefaultMatch(tweet, videoTranscripts);
+      if (defaultMatch) {
+        matches.push(defaultMatch);
+      }
+    }
+  }
+  
+  // Final validation
+  console.log(`\n📊 Individual Matching Summary:`);
+  console.log(`  Total tweets: ${tweets.length}`);
+  console.log(`  Total matches: ${matches.length}`);
+  console.log(`  Perfect matches: ${matches.filter(m => m.matchQuality === 'perfect').length}`);
+  console.log(`  Excellent matches: ${matches.filter(m => m.matchQuality === 'excellent').length}`);
+  console.log(`  Good matches: ${matches.filter(m => m.matchQuality === 'good').length}`);
+  console.log(`  Acceptable matches: ${matches.filter(m => m.matchQuality === 'acceptable').length}`);
+  console.log(`  Match rate: ${((matches.length / tweets.length) * 100).toFixed(0)}%`);
+  
+  return matches;
 } 

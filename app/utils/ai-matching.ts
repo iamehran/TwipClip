@@ -55,7 +55,7 @@ export async function findAIMatchingSegments(
     try {
       // Ask Claude to analyze the relevance
       const response = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-7-sonnet-latest',
         max_tokens: 200,
         temperature: 0.3,
         messages: [{
@@ -193,7 +193,7 @@ export async function analyzeTweetIntent(tweetText: string): Promise<{
   
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-7-sonnet-latest',
       max_tokens: 150,
       temperature: 0.3,
       messages: [{
@@ -243,7 +243,7 @@ export async function explainMatches(
     ).join('\n');
     
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-7-sonnet-latest',
       max_tokens: 100,
       temperature: 0.3,
       messages: [{

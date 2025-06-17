@@ -372,7 +372,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       
       try {
         await execAsync(extractCommand, {
-          timeout: 300000, // 5 minutes (increased for large files)
+          timeout: 600000, // 10 minutes (increased from 5)
           maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       } catch (error) {
@@ -403,7 +403,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
-          timeout: 300000, // 5 minutes (increased for large files)
+          timeout: 600000, // 10 minutes (increased from 5)
           maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       }
@@ -924,7 +924,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       
       try {
         await execAsync(extractCommand, {
-          timeout: 300000, // 5 minutes (increased for large files)
+          timeout: 600000, // 10 minutes (increased from 5)
           maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       } catch (error) {
@@ -954,7 +954,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
-          timeout: 300000, // 5 minutes (increased for large files)
+          timeout: 600000, // 10 minutes (increased from 5)
           maxBuffer: 50 * 1024 * 1024 // 50MB buffer
         });
       }

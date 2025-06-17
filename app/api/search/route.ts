@@ -315,7 +315,7 @@ export async function POST(request: Request) {
         videosProcessed: totalVideosProcessed,
         videosTranscribed: totalVideosWithTranscripts,
         totalMatches,
-        aiModel: 'Claude 3.5 Sonnet',
+        aiModel: 'Claude 3.7 Sonnet',
         matchingMethod: 'Pure AI Understanding',
         message: totalMatches > 0 
           ? `Found ${totalMatches} relevant clips using AI understanding`

@@ -66,10 +66,10 @@ Return a JSON array with this exact structure:
 Only include matches with confidence > 0.6. Return empty array if no good matches.`;
 
   try {
-    console.log('🤖 Using Claude Opus 4 (Max Thinking) for intelligent matching...');
+    console.log('🤖 Using Claude 3.7 Sonnet for intelligent matching...');
     
     const response = await client.messages.create({
-      model: 'claude-opus-4-20250514',
+      model: 'claude-3-7-sonnet-latest',
       max_tokens: 4000,
       temperature: 0.3,
       system: 'You are an expert at finding semantic connections between social media content and video transcripts. Be thorough but only match content that is genuinely related. Think deeply about the connections.',
@@ -117,10 +117,10 @@ Only include matches with confidence > 0.6. Return empty array if no good matche
       }
     }
     
-    console.log(`Found ${matches.length} high-confidence matches using Claude Opus 4`);
+    console.log(`Found ${matches.length} high-confidence matches using Claude 3.7 Sonnet`);
     
   } catch (error: any) {
-    console.error('Claude Opus 4 matching error:', error.message);
+    console.error('Claude 3.7 Sonnet matching error:', error.message);
     
     // NO FALLBACK - Only use Claude
     console.log('❌ Claude matching failed. No fallback method available.');

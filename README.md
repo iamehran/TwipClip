@@ -2,11 +2,11 @@
 
 **AI-Powered Video Clip Extraction from Social Media Threads**
 
-TwipClip is an intelligent web application that matches social media thread content to video transcripts and extracts relevant clips. Using Claude Opus 4 (Max Thinking) for semantic matching and Whisper for transcription, it finds the perfect video moments that correspond to your tweet threads.
+TwipClip is an intelligent web application that matches social media thread content to video transcripts and extracts relevant clips. Using Claude 3.7 Sonnet (Max Thinking) for semantic matching and Whisper for transcription, it finds the perfect video moments that correspond to your tweet threads.
 
 ## 🌟 Features
 
-- **AI-Powered Matching**: Uses Claude Opus 4 (Max Thinking) for intelligent semantic matching
+- **AI-Powered Matching**: Uses Claude 3.7 Sonnet (Max Thinking) for intelligent semantic matching
 - **Multi-Platform Support**: YouTube, Vimeo, Twitter, TikTok, Instagram, and direct video files
 - **Whisper Transcription**: High-quality audio transcription with YouTube transcript fallback
 - **Parallel Processing**: Processes multiple videos simultaneously for speed
@@ -20,7 +20,7 @@ TwipClip is an intelligent web application that matches social media thread cont
 ### Prerequisites
 
 - Node.js 18+ 
-- Anthropic API key (for Claude Opus 4)
+- Anthropic API key (for Claude 3.7 Sonnet)
 - OpenAI API key (for Whisper transcription)
 - FFmpeg (auto-installed on Railway)
 - yt-dlp (auto-installed on Railway)
@@ -94,7 +94,7 @@ He gave them 2 options: Drop the case—or lose access for 400M users.
 ### Core Components
 
 - **Frontend**: Next.js 15 with React 19 and Tailwind CSS
-- **AI Matching**: Claude Opus 4 (Max Thinking) for semantic analysis
+- **AI Matching**: Claude 3.7 Sonnet (Max Thinking) for semantic analysis
 - **Transcription**: OpenAI Whisper with YouTube transcript fallback
 - **Video Processing**: yt-dlp + FFmpeg for downloading and clipping
 - **Platform Detection**: Automatic video platform recognition
@@ -145,7 +145,7 @@ For other platforms, ensure these system dependencies are installed:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key for Whisper transcription |
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude Opus 4 matching |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude 3.7 Sonnet matching |
 | `NODE_ENV` | No | Environment (development/production) |
 | `CLEANUP_SECRET` | No | Secret for cleanup endpoint security |
 | `FFMPEG_PATH` | No | Custom FFmpeg path (auto-detected) |
@@ -182,7 +182,7 @@ TwipClip/
 - **Next.js 15**: React framework with App Router
 - **TypeScript**: Type-safe development
 - **Tailwind CSS**: Utility-first styling
-- **Claude Opus 4**: Advanced AI reasoning
+- **Claude 3.7 Sonnet Advanced AI reasoning
 - **OpenAI Whisper**: Speech-to-text transcription
 - **yt-dlp**: Video downloading
 - **FFmpeg**: Video processing

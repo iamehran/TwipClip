@@ -2,7 +2,7 @@
 
 ## Overview
 
-TwipClip is an AI-powered YouTube clip extraction tool that helps users create perfect video clips for their Twitter/X threads. It uses advanced AI (Claude Opus 4) for semantic matching and OpenAI's Whisper for transcription to automatically find the most relevant segments of a YouTube video that match your thread content.
+TwipClip is an AI-powered YouTube clip extraction tool that helps users create perfect video clips for their Twitter/X threads. It uses advanced AI (Claude 3.7 Sonnet for semantic matching and OpenAI's Whisper for transcription to automatically find the most relevant segments of a YouTube video that match your thread content.
 
 ## Core Functionality
 
@@ -15,7 +15,7 @@ The app follows a single, streamlined approach:
 - **Frontend**: Next.js 14 with TypeScript
 - **UI**: Tailwind CSS with custom components
 - **AI Models**: 
-  - Claude Opus 4 (Anthropic) for semantic matching
+  - Claude 3.7 Sonnet (Anthropic) for semantic matching
   - Whisper (OpenAI) for audio transcription
 - **Video Processing**: yt-dlp + FFmpeg
 - **Deployment**: Railway (Docker-based)
@@ -31,7 +31,7 @@ Audio Extraction (.m4a format)
     ↓
 Transcription (Whisper API)
     ↓
-Semantic Matching (Claude Opus 4)
+Semantic Matching (Claude 3.7 Sonnet)
     ↓
 Clip Generation (timestamps)
     ↓
@@ -51,7 +51,7 @@ Results (YouTube URLs with start/end times)
 - Handles various audio formats
 
 ### 3. AI Matching (`src/lib/ai-matching.ts`)
-- Uses Claude Opus 4 for semantic understanding
+- Uses Claude 3.7 Sonnet for semantic understanding
 - Analyzes thread content and transcript to find relevant segments
 - Returns confidence scores and precise timestamps
 - Formats results with triple dashes (---) between tweets
@@ -85,7 +85,7 @@ Results (YouTube URLs with start/end times)
 ```env
 # Required
 OPENAI_API_KEY=          # For Whisper transcription
-ANTHROPIC_API_KEY=       # For Claude Opus 4 matching
+ANTHROPIC_API_KEY=       # For Claude 3.7 Sonnet matching
 
 # Optional (for fallback)
 YOUTUBE_API_KEY=         # For YouTube Data API (currently unused)

@@ -42,7 +42,7 @@ async function ensureAuthFile() {
 export async function POST(request) {
   // Set a longer timeout for this endpoint
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout (increased from 5)
+  const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 minute timeout (increased from 10)
 
   try {
     const { thread, videos } = await request.json();
@@ -124,7 +124,7 @@ export async function POST(request) {
         clipsFound: matches.length,
         clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
         avgConfidence: avgConfidence,
-        aiModel: 'Claude Opus 4',
+        aiModel: 'Claude 3.7 Sonnet',
         processingTimeMs: processingTime
       }
     });
