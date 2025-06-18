@@ -48,79 +48,88 @@ async function downloadClip(
   try {
     onProgress?.(`Downloading clip for tweet ${match.tweetId}...`);
     
-    // Step 1: Download the full video (or just the needed portion if possible)
+    // Step 1: Download the full video first (download-sections is unreliable)
     const tempVideoPath = path.join(outputDir, `temp_${safeFilename}`);
     
     // Calculate duration for the clip
     const duration = match.endTime - match.startTime;
     const startTimeStr = formatTime(match.startTime);
-    const durationStr = formatTime(duration);
+    const endTimeStr = formatTime(match.endTime);
     
-    // Try to download only the needed portion using yt-dlp's download sections
+    // Download the video with proper quality settings
     const heightLimit = quality === '1080p' ? '1080' : '720';
-    // Note: download-sections might not work for all videos, so we have a fallback
-    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" --download-sections "*${startTimeStr}-${formatTime(match.endTime)}" --force-keyframes-at-cuts -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
     
-    try {
-      await execAsync(downloadCmd, { 
-        timeout: 120000, // 2 minute timeout
-        maxBuffer: 10 * 1024 * 1024 
-      });
-    } catch (downloadError) {
-      // If section download fails, download the full video
-      onProgress?.(`Section download failed, downloading full video...`);
-      const fullDownloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
-      await execAsync(fullDownloadCmd, { 
-        timeout: 300000, // 5 minute timeout for full video
-        maxBuffer: 10 * 1024 * 1024 
-      });
-    }
+    onProgress?.(`Downloading video (${quality})...`);
+    await execAsync(downloadCmd, { 
+      timeout: 300000, // 5 minute timeout
+      maxBuffer: 10 * 1024 * 1024 
+    });
     
-    // Step 2: Extract the specific clip using FFmpeg with proper codec settings
-    onProgress?.(`Extracting clip (${startTimeStr} - ${formatTime(match.endTime)})...`);
+    // Step 2: Extract the specific clip using FFmpeg with accurate seeking
+    onProgress?.(`Extracting clip (${startTimeStr} - ${endTimeStr})...`);
     
-    // Use copy codec first for faster extraction and better compatibility
-    // If that fails, re-encode with proper settings
-    let extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -i "${tempVideoPath}" -t ${duration} -c:v copy -c:a copy -avoid_negative_ts make_zero -fflags +genpts "${outputPath}" -y`;
+    // Use accurate seeking with re-encoding for precise cuts
+    // First try with fast preset for speed
+    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration} -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -avoid_negative_ts make_zero "${outputPath}" -y`;
     
     try {
       await execAsync(extractCmd, {
-        timeout: 60000, // 1 minute timeout
+        timeout: 180000, // 3 minute timeout
         maxBuffer: 10 * 1024 * 1024
       });
-    } catch (copyError) {
-      // If copy fails, re-encode with proper settings
-      onProgress?.(`Copy failed, re-encoding video...`);
-      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}" -y`;
+    } catch (extractError) {
+      // If that fails, try with input seeking for better compatibility
+      onProgress?.(`Retrying with alternative extraction method...`);
+      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}" -y`;
       
       await execAsync(extractCmd, {
-        timeout: 120000, // 2 minute timeout for re-encoding
+        timeout: 180000, // 3 minute timeout
         maxBuffer: 10 * 1024 * 1024
       });
     }
     
-    // Step 3: Clean up temp file
+    // Step 3: Verify the extracted clip duration
+    try {
+      const durationCmd = `"${ffmpegPath}" -i "${outputPath}" 2>&1`;
+      const durationOutput = await execAsync(durationCmd, {
+        timeout: 10000,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      
+      // Extract duration from output
+      const durationMatch = durationOutput.stdout.match(/Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+      if (durationMatch) {
+        const hours = parseInt(durationMatch[1]);
+        const minutes = parseInt(durationMatch[2]);
+        const seconds = parseFloat(durationMatch[3]);
+        const actualDuration = hours * 3600 + minutes * 60 + seconds;
+        
+        // Check if duration is way off (more than 10% difference)
+        const expectedDuration = match.endTime - match.startTime;
+        const durationDiff = Math.abs(actualDuration - expectedDuration);
+        if (durationDiff > expectedDuration * 0.1 && durationDiff > 2) {
+          console.warn(`⚠️ Duration mismatch: expected ${expectedDuration}s, got ${actualDuration}s`);
+        }
+      }
+    } catch (verifyError) {
+      // Continue anyway
+    }
+    
+    // Step 4: Clean up temp file
     try {
       await fs.unlink(tempVideoPath);
     } catch (cleanupError) {
-      // Ignore cleanup errors
+      console.warn(`Failed to clean up temp file: ${tempVideoPath}`);
     }
     
-    // Step 4: Verify the output file
+    // Step 5: Verify the output file exists and has size
     const stats = await fs.stat(outputPath);
-    
-    // Step 5: Verify video integrity using ffprobe
-    try {
-      const probeCmd = `"${ffmpegPath}" -v error -i "${outputPath}" -f null -`;
-      await execAsync(probeCmd, {
-        timeout: 30000,
-        maxBuffer: 10 * 1024 * 1024
-      });
-      onProgress?.(`✅ Video clip verified successfully`);
-    } catch (verifyError) {
-      console.warn(`⚠️ Video verification warning: ${verifyError}`);
-      // Continue anyway - the file might still be playable
+    if (stats.size < 1000) {
+      throw new Error('Output file is too small, likely corrupted');
     }
+    
+    onProgress?.(`✅ Successfully extracted ${duration}s clip`);
     
     return {
       tweetId: match.tweetId,
@@ -135,7 +144,12 @@ async function downloadClip(
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    onProgress?.(`Failed to download clip: ${errorMessage}`);
+    onProgress?.(`❌ Failed to download clip: ${errorMessage}`);
+    
+    // Clean up any partial files
+    try {
+      await fs.unlink(outputPath).catch(() => {});
+    } catch {}
     
     return {
       tweetId: match.tweetId,

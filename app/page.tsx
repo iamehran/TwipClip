@@ -86,20 +86,33 @@ export default function Home() {
         }),
       });
 
+      console.log('Start response status:', startResponse.status);
+      
       if (!startResponse.ok) {
         const errorData = await startResponse.json();
+        console.error('Start response error:', errorData);
         throw new Error(errorData.error || 'Failed to start processing');
       }
 
-      const { jobId } = await startResponse.json();
+      const startData = await startResponse.json();
+      console.log('Start response data:', startData);
+      
+      const { jobId } = startData;
+      if (!jobId) {
+        console.error('No job ID received:', startData);
+        throw new Error('No job ID received from server');
+      }
+      
       console.log('Processing started with job ID:', jobId);
 
       // Now poll for status updates
       let lastProgress = 0;
       pollInterval = setInterval(async () => {
         try {
+          console.log('Polling status for job:', jobId);
           const statusResponse = await fetch(`/api/process/status?jobId=${jobId}`);
           const statusData = await statusResponse.json();
+          console.log('Status response:', statusData);
 
           if (statusData.status === 'not_found') {
             clearInterval(pollInterval);
@@ -311,12 +324,15 @@ export default function Home() {
 
           {/* Loading State */}
           {loading && (
-            <LoadingState 
-              status={loadingStatus}
-              progress={loadingProgress}
-              currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
-              totalVideos={lastSearch?.videoUrls.length}
-            />
+            <>
+              {console.log('Showing loading state:', { loadingStatus, loadingProgress })}
+              <LoadingState 
+                status={loadingStatus}
+                progress={loadingProgress}
+                currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
+                totalVideos={lastSearch?.videoUrls.length}
+              />
+            </>
           )}
 
           {/* Results Summary */}

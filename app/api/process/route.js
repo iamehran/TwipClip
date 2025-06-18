@@ -43,7 +43,10 @@ async function ensureAuthFile() {
 
 export async function POST(request) {
   try {
-    const { thread, videos, async = false } = await request.json();
+    const body = await request.json();
+    console.log('Process API received:', body);
+    
+    const { thread, videos, async: isAsync = false } = body;
 
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
@@ -77,19 +80,37 @@ export async function POST(request) {
       );
     }
 
-    // If async mode, return job ID immediately
-    if (async) {
-      const jobId = randomUUID();
-      createProcessingJob(jobId);
+    // Check if async mode is requested
+    if (isAsync) {
+      console.log('Async mode requested, generating job ID...');
+      // Generate a unique job ID
+      const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      // Process in background
-      processInBackground(jobId, thread, videos);
-      
-      return NextResponse.json({
-        success: true,
-        jobId,
-        message: 'Processing started. Poll /api/process/status?jobId=' + jobId + ' for updates'
+      // Store initial job state
+      jobs.set(jobId, {
+        status: 'processing',
+        progress: 0,
+        message: 'Starting processing...',
+        createdAt: Date.now()
       });
+      
+      console.log('Created job:', jobId);
+      
+      // Start processing in background
+      processAsync(jobId, thread, videos).catch(error => {
+        console.error('Async processing error:', error);
+        jobs.set(jobId, {
+          status: 'failed',
+          error: error.message,
+          progress: 0,
+          message: 'Processing failed',
+          createdAt: jobs.get(jobId)?.createdAt || Date.now()
+        });
+      });
+      
+      // Return immediately with job ID
+      console.log('Returning job ID to client:', { jobId });
+      return NextResponse.json({ jobId });
     }
 
     // Synchronous processing (original behavior)
