@@ -47,6 +47,7 @@ export default function Home() {
   const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
 
   const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false) => {
+    console.log('handleSearch called, setting loading to true');
     setLoading(true);
     setError(null);
     setResults({});
@@ -186,6 +187,9 @@ export default function Home() {
             setLoadingProgress(100);
             setLoadingStatus('Complete!');
             
+            // Set loading to false when complete
+            setLoading(false);
+            
             // Reset progress after a short delay
             setTimeout(() => {
               setLoadingProgress(0);
@@ -197,6 +201,7 @@ export default function Home() {
           if (statusData.status === 'failed') {
             clearInterval(pollInterval);
             clearInterval(progressInterval);
+            setLoading(false); // Set loading to false on failure
             throw new Error(statusData.error || 'Processing failed');
           }
 
@@ -236,8 +241,7 @@ export default function Home() {
       setError(errorMessage);
       console.error('Processing error:', err);
       setShowSearchForm(true); // Show form again on error
-    } finally {
-      setLoading(false);
+      setLoading(false); // Set loading to false on error
     }
   };
 
@@ -323,6 +327,7 @@ export default function Home() {
           )}
 
           {/* Loading State */}
+          {console.log('Loading state check:', { loading, loadingStatus, loadingProgress })}
           {loading && (
             <>
               {console.log('Showing loading state:', { loadingStatus, loadingProgress })}
