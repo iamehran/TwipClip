@@ -6,7 +6,7 @@ import { cookies } from 'next/headers';
 import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { createProcessingJob, updateProcessingStatus } from './status/route';
+import { createProcessingJob, updateProcessingStatus, jobs } from './status/route';
 import { randomUUID } from 'crypto';
 
 // Run startup check once when module loads
@@ -97,7 +97,7 @@ export async function POST(request) {
       console.log('Created job:', jobId);
       
       // Start processing in background
-      processAsync(jobId, thread, videos).catch(error => {
+      processInBackground(jobId, thread, videos).catch(error => {
         console.error('Async processing error:', error);
         jobs.set(jobId, {
           status: 'failed',

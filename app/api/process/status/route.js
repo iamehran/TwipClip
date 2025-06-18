@@ -1,7 +1,18 @@
 import { NextResponse } from 'next/server';
 
-// Store processing status in memory (in production, use Redis or similar)
-const processingStatus = new Map();
+// In-memory storage for job statuses
+// In production, use Redis or a database
+export const jobs = new Map();
+
+// Helper function to clean up old jobs (older than 1 hour)
+function cleanupOldJobs() {
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  for (const [jobId, job] of jobs.entries()) {
+    if (job.createdAt < oneHourAgo) {
+      jobs.delete(jobId);
+    }
+  }
+}
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -11,7 +22,7 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Job ID required' }, { status: 400 });
   }
   
-  const status = processingStatus.get(jobId);
+  const status = jobs.get(jobId);
   
   if (!status) {
     return NextResponse.json({ 
@@ -25,14 +36,14 @@ export async function GET(request) {
 
 // Helper function to update status (exported for use in process route)
 export function updateProcessingStatus(jobId, update) {
-  const current = processingStatus.get(jobId) || {
+  const current = jobs.get(jobId) || {
     status: 'processing',
     progress: 0,
     message: 'Initializing...',
     startTime: Date.now()
   };
   
-  processingStatus.set(jobId, {
+  jobs.set(jobId, {
     ...current,
     ...update,
     lastUpdate: Date.now()
@@ -40,13 +51,13 @@ export function updateProcessingStatus(jobId, update) {
   
   // Clean up old jobs after 1 hour
   setTimeout(() => {
-    processingStatus.delete(jobId);
+    jobs.delete(jobId);
   }, 3600000);
 }
 
 // Helper to create a new job
 export function createProcessingJob(jobId) {
-  processingStatus.set(jobId, {
+  jobs.set(jobId, {
     status: 'processing',
     progress: 0,
     message: 'Starting processing...',
