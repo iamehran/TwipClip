@@ -342,68 +342,8 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       // Get video metadata first to determine best strategy
       const metadata = await getVideoMetadata(videoInfo.url);
       
-      // Determine if we should use chunked download for very large files
-      if (metadata && metadata.duration && metadata.duration > 3600) { // Over 1 hour
-        console.log('🎯 Using chunked download strategy for large video...');
-        
-        try {
-          const { downloadAudioInChunks } = await import('./audio-chunking');
-          const audioChunks = await downloadAudioInChunks(videoInfo.url, tempDir, 30); // 30-minute chunks
-          
-          if (audioChunks.length > 0) {
-            // Merge chunks into single file
-            const ffmpegPath = await getFFmpegPath();
-            const mergedAudioPath = audioPath;
-            
-            if (audioChunks.length === 1) {
-              // Just rename the single chunk
-              await fs.rename(audioChunks[0], mergedAudioPath);
-            } else {
-              // Create concat file
-              const concatFile = path.join(tempDir, 'concat.txt');
-              const concatContent = audioChunks.map(chunk => `file '${chunk}'`).join('\n');
-              await fs.writeFile(concatFile, concatContent);
-              
-              // Merge chunks
-              const mergeCmd = `"${ffmpegPath}" -f concat -safe 0 -i "${concatFile}" -c copy "${mergedAudioPath}" -y`;
-              await execAsync(mergeCmd, {
-                timeout: 300000,
-                maxBuffer: 50 * 1024 * 1024
-              });
-              
-              // Clean up chunks
-              for (const chunk of audioChunks) {
-                await fs.unlink(chunk).catch(() => {});
-              }
-              await fs.unlink(concatFile).catch(() => {});
-            }
-            
-            console.log('✅ Chunked download successful');
-            const stats = await fs.stat(mergedAudioPath);
-            console.log(`Audio file size: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
-            
-            // Now transcribe the merged audio file
-            const segments = await getOptimizedWhisperTranscript(mergedAudioPath, tempDir, openai);
-            
-            // Clean up the merged audio file
-            await fs.unlink(mergedAudioPath).catch(() => {});
-            
-            // Return the full transcript result object
-            return {
-              segments: enhancePunctuation(segments),
-              source: 'whisper-api' as const,
-              quality: 'high' as const,
-              language: 'en',
-              confidence: 0.95,
-              platform: videoInfo.platform as any
-            };
-          }
-        } catch (chunkError) {
-          console.error('❌ Chunked download failed, falling back to regular download:', chunkError);
-          // Fall through to regular download
-        }
-      }
-      
+      // For very large files, we'll download the full audio and then chunk it locally
+      // This is more efficient than downloading chunks separately
       let extractCommand: string;
       if (isDocker) {
         // Enhanced command for Docker/Railway with cookies and user-agent
@@ -415,7 +355,6 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          // IMPORTANT: Use --no-cookies-from-browser to prevent yt-dlp from overwriting our file
           cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
           console.log('Using YouTube cookies from:', cookieFile);
           
@@ -432,22 +371,24 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
           console.log('No YouTube cookies file found at:', cookieFile);
         }
         
-        // For large files, try different format selection strategies
-        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
-        let formatSelection = '';
+        // For YouTube, format 140 is the most reliable m4a audio format (128kbps)
+        // For very long videos, we don't need to download in chunks - just get the audio efficiently
+        let formatSelection = '-f "140/bestaudio[ext=m4a]/worstaudio"';
         
-        if (videoSizeMB > 1000) { // Over 1GB
-          // For very large files, be more specific about format to avoid 403 errors
-          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
-        } else {
-          formatSelection = '-f "worstaudio/bestaudio"';
+        // Log video duration if available
+        if (metadata && metadata.duration) {
+          console.log(`📺 Video duration: ${(metadata.duration / 60).toFixed(1)} minutes`);
+          if (metadata.duration > 7200) { // Over 2 hours
+            console.log('⚠️ Very long video detected - using most efficient format');
+            // For very long videos, prioritize format 140 which is more stable
+            formatSelection = '-f "140"';
+          }
         }
         
-        // Download audio-only in lower quality to reduce file size
-        // Add --no-check-certificate and other flags to help with 403 errors
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
+        // Build command with optimizations for large files
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --no-playlist --no-check-certificate --socket-timeout 30 --retries 10 --fragment-retries 10 --retry-sleep 3 --buffer-size 16K --concurrent-fragments 4 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
-        // Windows/local command - also use lower quality audio
+        // Windows/local command
         extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
       }
       
@@ -461,7 +402,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       } catch (error) {
         console.error('Audio extraction failed:', error);
         
-        // Try without audio extraction flag - but still audio only
+        // Try without audio extraction flag
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
         // Same cookie logic as above
@@ -470,13 +411,13 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
+          cookieFlag = `--cookies ${cookieFile}`;
         }
         
-        // Fallback: Try direct m4a format which often works better for long videos
+        // Fallback: Try format 140 directly without extraction
         const fallbackCommand = isDocker 
-          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio[ext=m4a]/worstaudio" --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" -f "worstaudio" -o "${audioPath}" "${videoInfo.url}"`;
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`;
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
@@ -797,10 +738,10 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         }
         
         strategies.push(
-          // Strategy 1: Try format 140 (m4a audio) which often works for long videos
+          // Strategy 1: Try format 140 (m4a audio) which is most stable for long videos
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio[ext=m4a]/worstaudio/bestaudio" --no-check-certificate --extractor-retries 3 --fragment-retries 3 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 600000 // 10 minutes for large files
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 --fragment-retries 10 --retry-sleep 3 --buffer-size 16K --concurrent-fragments 4 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
+            timeout: 1200000 // 20 minutes for large files
           },
           // Strategy 2: Extract audio with specific codec
           {
@@ -967,69 +908,8 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       // Get video metadata first to determine best strategy
       const metadata = await getVideoMetadata(videoInfo.url);
       
-      // Determine if we should use chunked download for very large files
-      if (metadata && metadata.duration && metadata.duration > 3600) { // Over 1 hour
-        console.log('🎯 Using chunked download strategy for large video...');
-        
-        try {
-          const { downloadAudioInChunks } = await import('./audio-chunking');
-          const audioChunks = await downloadAudioInChunks(videoInfo.url, tempDir, 30); // 30-minute chunks
-          
-          if (audioChunks.length > 0) {
-            // Merge chunks into single file
-            const ffmpegPath = await getFFmpegPath();
-            const mergedAudioPath = audioPath;
-            
-            if (audioChunks.length === 1) {
-              // Just rename the single chunk
-              await fs.rename(audioChunks[0], mergedAudioPath);
-            } else {
-              // Create concat file
-              const concatFile = path.join(tempDir, 'concat.txt');
-              const concatContent = audioChunks.map(chunk => `file '${chunk}'`).join('\n');
-              await fs.writeFile(concatFile, concatContent);
-              
-              // Merge chunks
-              const mergeCmd = `"${ffmpegPath}" -f concat -safe 0 -i "${concatFile}" -c copy "${mergedAudioPath}" -y`;
-              await execAsync(mergeCmd, {
-                timeout: 300000,
-                maxBuffer: 50 * 1024 * 1024
-              });
-              
-              // Clean up chunks
-              for (const chunk of audioChunks) {
-                await fs.unlink(chunk).catch(() => {});
-              }
-              await fs.unlink(concatFile).catch(() => {});
-            }
-            
-            console.log('✅ Chunked download successful');
-            const stats = await fs.stat(mergedAudioPath);
-            console.log(`Audio file size: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
-            
-            // Now transcribe the merged audio file
-            const segments = await getOptimizedWhisperTranscript(mergedAudioPath, tempDir, openai);
-            
-            // Clean up the merged audio file
-            await fs.unlink(mergedAudioPath).catch(() => {});
-            
-            // Return the full transcript result object
-            return {
-              segments: enhancePunctuation(segments),
-              source: 'whisper-api' as const,
-              quality: 'high' as const,
-              language: 'en',
-              confidence: 0.95,
-              platform: videoInfo.platform as any
-            };
-          }
-        } catch (chunkError) {
-          console.error('❌ Chunked download failed, falling back to regular download:', chunkError);
-          // Fall through to regular download
-        }
-      }
-      
-      // Now continue with regular download if chunked download wasn't used or failed
+      // For very large files, we'll download the full audio and then chunk it locally
+      // This is more efficient than downloading chunks separately
       let extractCommand: string;
       if (isDocker) {
         // Enhanced command for Docker/Railway with cookies and user-agent
@@ -1085,9 +965,10 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
           cookieFlag = `--cookies ${cookieFile}`;
         }
         
+        // Fallback: Try format 140 directly without extraction
         const fallbackCommand = isDocker 
-          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" -f bestaudio -o "${audioPath}" "${videoInfo.url}"`;
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`;
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
