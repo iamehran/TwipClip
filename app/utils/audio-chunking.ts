@@ -4,6 +4,8 @@ import path from 'path';
 import { promisify } from 'util';
 import OpenAI from 'openai';
 import { getFFmpegPath } from './system-tools';
+import { getVideoMetadata } from './video-metadata';
+import { getYtDlpCommand } from '../../src/lib/system-tools';
 
 // Fix for File API in Node.js environment
 if (typeof globalThis.File === 'undefined') {
@@ -591,4 +593,77 @@ export async function transcribeLargeAudio(
       }
     }
   }
+}
+
+/**
+ * Alternative strategy: Download audio in chunks using yt-dlp's time-based download
+ * This can help avoid 403 errors on very long videos
+ */
+export async function downloadAudioInChunks(
+  videoUrl: string,
+  outputDir: string,
+  chunkDurationMinutes: number = 30
+): Promise<string[]> {
+  const ytDlpPath = await getYtDlpCommand();
+  const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+  
+  // Get video metadata to determine duration
+  const metadata = await getVideoMetadata(videoUrl);
+  if (!metadata || !metadata.duration) {
+    throw new Error('Could not get video duration');
+  }
+  
+  const totalMinutes = Math.ceil(metadata.duration / 60);
+  const numChunks = Math.ceil(totalMinutes / chunkDurationMinutes);
+  const audioChunks: string[] = [];
+  
+  console.log(`📦 Downloading ${numChunks} chunks of ${chunkDurationMinutes} minutes each...`);
+  
+  for (let i = 0; i < numChunks; i++) {
+    const startTime = i * chunkDurationMinutes * 60;
+    const endTime = Math.min((i + 1) * chunkDurationMinutes * 60, metadata.duration);
+    const chunkPath = path.join(outputDir, `chunk_${i}.m4a`);
+    
+    console.log(`  Downloading chunk ${i + 1}/${numChunks} (${startTime}s - ${endTime}s)...`);
+    
+    // Build command with time-based download
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    let cookieFlag = '';
+    
+    const cookieFile = '/app/temp/youtube_cookies.txt';
+    if (require('fs').existsSync(cookieFile)) {
+      cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
+    }
+    
+    // Use download-sections to download specific time range
+    const command = isDocker
+      ? `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --download-sections "*${startTime}-${endTime}" -f "140/bestaudio[ext=m4a]/worstaudio" --no-check-certificate -o "${chunkPath}" "${videoUrl}"`
+      : `"${ytDlpPath}" --download-sections "*${startTime}-${endTime}" -f "worstaudio" -o "${chunkPath}" "${videoUrl}"`;
+    
+    try {
+      await execAsync(command, {
+        timeout: 300000, // 5 minutes per chunk
+        maxBuffer: 50 * 1024 * 1024
+      });
+      
+      // Verify chunk was created
+      const stats = await fs.stat(chunkPath);
+      if (stats.size > 1000) {
+        audioChunks.push(chunkPath);
+        console.log(`    ✅ Chunk ${i + 1} downloaded: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+      } else {
+        console.log(`    ⚠️ Chunk ${i + 1} too small, skipping`);
+      }
+    } catch (error) {
+      console.error(`    ❌ Failed to download chunk ${i + 1}:`, error);
+      // Continue with other chunks
+    }
+  }
+  
+  if (audioChunks.length === 0) {
+    throw new Error('Failed to download any audio chunks');
+  }
+  
+  console.log(`✅ Downloaded ${audioChunks.length}/${numChunks} chunks successfully`);
+  return audioChunks;
 } 

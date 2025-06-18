@@ -8,12 +8,10 @@ function validateAndFormatCookies(cookieContent: string): string {
   const lines = cookieContent.split('\n');
   const formattedLines: string[] = [];
   
-  // Ensure header is present
-  if (!lines[0]?.includes('Netscape HTTP Cookie File')) {
-    formattedLines.push('# Netscape HTTP Cookie File');
-    formattedLines.push('# This is a generated file!  Do not edit.');
-    formattedLines.push('');
-  }
+  // Always add header to ensure it's not overwritten
+  formattedLines.push('# Netscape HTTP Cookie File');
+  formattedLines.push('# This is a generated file!  Do not edit.');
+  formattedLines.push('');
   
   for (const line of lines) {
     const trimmed = line.trim();

@@ -339,6 +339,71 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
       const ytDlpCmd = await getYtDlpCommand();
       const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
       
+      // Get video metadata first to determine best strategy
+      const metadata = await getVideoMetadata(videoInfo.url);
+      
+      // Determine if we should use chunked download for very large files
+      if (metadata && metadata.duration && metadata.duration > 3600) { // Over 1 hour
+        console.log('🎯 Using chunked download strategy for large video...');
+        
+        try {
+          const { downloadAudioInChunks } = await import('./audio-chunking');
+          const audioChunks = await downloadAudioInChunks(videoInfo.url, tempDir, 30); // 30-minute chunks
+          
+          if (audioChunks.length > 0) {
+            // Merge chunks into single file
+            const ffmpegPath = await getFFmpegPath();
+            const mergedAudioPath = audioPath;
+            
+            if (audioChunks.length === 1) {
+              // Just rename the single chunk
+              await fs.rename(audioChunks[0], mergedAudioPath);
+            } else {
+              // Create concat file
+              const concatFile = path.join(tempDir, 'concat.txt');
+              const concatContent = audioChunks.map(chunk => `file '${chunk}'`).join('\n');
+              await fs.writeFile(concatFile, concatContent);
+              
+              // Merge chunks
+              const mergeCmd = `"${ffmpegPath}" -f concat -safe 0 -i "${concatFile}" -c copy "${mergedAudioPath}" -y`;
+              await execAsync(mergeCmd, {
+                timeout: 300000,
+                maxBuffer: 50 * 1024 * 1024
+              });
+              
+              // Clean up chunks
+              for (const chunk of audioChunks) {
+                await fs.unlink(chunk).catch(() => {});
+              }
+              await fs.unlink(concatFile).catch(() => {});
+            }
+            
+            console.log('✅ Chunked download successful');
+            const stats = await fs.stat(mergedAudioPath);
+            console.log(`Audio file size: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+            
+            // Now transcribe the merged audio file
+            const segments = await getOptimizedWhisperTranscript(mergedAudioPath, tempDir, openai);
+            
+            // Clean up the merged audio file
+            await fs.unlink(mergedAudioPath).catch(() => {});
+            
+            // Return the full transcript result object
+            return {
+              segments: enhancePunctuation(segments),
+              source: 'whisper-api' as const,
+              quality: 'high' as const,
+              language: 'en',
+              confidence: 0.95,
+              platform: videoInfo.platform as any
+            };
+          }
+        } catch (chunkError) {
+          console.error('❌ Chunked download failed, falling back to regular download:', chunkError);
+          // Fall through to regular download
+        }
+      }
+      
       let extractCommand: string;
       if (isDocker) {
         // Enhanced command for Docker/Railway with cookies and user-agent
@@ -350,7 +415,8 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+          // IMPORTANT: Use --no-cookies-from-browser to prevent yt-dlp from overwriting our file
+          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
           console.log('Using YouTube cookies from:', cookieFile);
           
           // Debug: Check first few lines of cookie file
@@ -358,6 +424,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
             const cookieContent = await fs.readFile(cookieFile, 'utf-8');
             const lines = cookieContent.split('\n').slice(0, 3);
             console.log('Cookie file preview:', lines.join(' | '));
+            console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
           } catch (e) {
             console.log('Could not read cookie file for preview');
           }
@@ -365,9 +432,20 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
           console.log('No YouTube cookies file found at:', cookieFile);
         }
         
+        // For large files, try different format selection strategies
+        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
+        let formatSelection = '';
+        
+        if (videoSizeMB > 1000) { // Over 1GB
+          // For very large files, be more specific about format to avoid 403 errors
+          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
+        } else {
+          formatSelection = '-f "worstaudio/bestaudio"';
+        }
+        
         // Download audio-only in lower quality to reduce file size
-        // Remove -v flag which might cause issues
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${audioPath} ${videoInfo.url}`.trim();
+        // Add --no-check-certificate and other flags to help with 403 errors
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
         // Windows/local command - also use lower quality audio
         extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
@@ -392,12 +470,12 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
         }
         
-        // Fallback: download audio-only without extraction
+        // Fallback: Try direct m4a format which often works better for long videos
         const fallbackCommand = isDocker 
-          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" -o ${audioPath} ${videoInfo.url}`.trim()
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio[ext=m4a]/worstaudio" --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim()
           : `"${ytDlpCmd}" -f "worstaudio" -o "${audioPath}" "${videoInfo.url}"`;
         
         console.log('Trying fallback command:', fallbackCommand);
@@ -712,32 +790,32 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (require('fs').existsSync(cookieFile)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
           console.log('Using YouTube cookies from:', cookieFile);
         } else {
           console.log('No YouTube cookies file found at:', cookieFile);
         }
         
         strategies.push(
-          // Strategy 1: Cookies (if available) + user agent + audio extraction with lower quality
+          // Strategy 1: Try format 140 (m4a audio) which often works for long videos
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 300000 // 5 minutes for Railway (increased for large files)
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio[ext=m4a]/worstaudio/bestaudio" --no-check-certificate --extractor-retries 3 --fragment-retries 3 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
+            timeout: 600000 // 10 minutes for large files
           },
-          // Strategy 2: Without cookies - sometimes cookies cause issues
+          // Strategy 2: Extract audio with specific codec
           {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist -o ${outputPattern} ${videoUrl}`,
-            timeout: 300000
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-check-certificate --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
+            timeout: 600000
           },
-          // Strategy 3: Cookies + direct audio download (no extraction)
+          // Strategy 3: Without cookies but with better format selection
           {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 300000
+            command: `${ytDlpPath} --user-agent "${userAgent}" -f "140/worstaudio" --no-check-certificate --extractor-retries 3 --no-playlist -o ${outputPattern} ${videoUrl}`,
+            timeout: 600000
           },
-          // Strategy 4: Minimal without cookies
+          // Strategy 4: Use sponsorblock to skip segments (might help with some videos)
           {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -f "worstaudio" -o ${outputPattern} ${videoUrl}`,
-            timeout: 300000
+            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --sponsorblock-remove all --no-check-certificate --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
+            timeout: 600000
           }
         );
       } else {
@@ -886,6 +964,72 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       const ytDlpCmd = await getYtDlpCommand();
       const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
       
+      // Get video metadata first to determine best strategy
+      const metadata = await getVideoMetadata(videoInfo.url);
+      
+      // Determine if we should use chunked download for very large files
+      if (metadata && metadata.duration && metadata.duration > 3600) { // Over 1 hour
+        console.log('🎯 Using chunked download strategy for large video...');
+        
+        try {
+          const { downloadAudioInChunks } = await import('./audio-chunking');
+          const audioChunks = await downloadAudioInChunks(videoInfo.url, tempDir, 30); // 30-minute chunks
+          
+          if (audioChunks.length > 0) {
+            // Merge chunks into single file
+            const ffmpegPath = await getFFmpegPath();
+            const mergedAudioPath = audioPath;
+            
+            if (audioChunks.length === 1) {
+              // Just rename the single chunk
+              await fs.rename(audioChunks[0], mergedAudioPath);
+            } else {
+              // Create concat file
+              const concatFile = path.join(tempDir, 'concat.txt');
+              const concatContent = audioChunks.map(chunk => `file '${chunk}'`).join('\n');
+              await fs.writeFile(concatFile, concatContent);
+              
+              // Merge chunks
+              const mergeCmd = `"${ffmpegPath}" -f concat -safe 0 -i "${concatFile}" -c copy "${mergedAudioPath}" -y`;
+              await execAsync(mergeCmd, {
+                timeout: 300000,
+                maxBuffer: 50 * 1024 * 1024
+              });
+              
+              // Clean up chunks
+              for (const chunk of audioChunks) {
+                await fs.unlink(chunk).catch(() => {});
+              }
+              await fs.unlink(concatFile).catch(() => {});
+            }
+            
+            console.log('✅ Chunked download successful');
+            const stats = await fs.stat(mergedAudioPath);
+            console.log(`Audio file size: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+            
+            // Now transcribe the merged audio file
+            const segments = await getOptimizedWhisperTranscript(mergedAudioPath, tempDir, openai);
+            
+            // Clean up the merged audio file
+            await fs.unlink(mergedAudioPath).catch(() => {});
+            
+            // Return the full transcript result object
+            return {
+              segments: enhancePunctuation(segments),
+              source: 'whisper-api' as const,
+              quality: 'high' as const,
+              language: 'en',
+              confidence: 0.95,
+              platform: videoInfo.platform as any
+            };
+          }
+        } catch (chunkError) {
+          console.error('❌ Chunked download failed, falling back to regular download:', chunkError);
+          // Fall through to regular download
+        }
+      }
+      
+      // Now continue with regular download if chunked download wasn't used or failed
       let extractCommand: string;
       if (isDocker) {
         // Enhanced command for Docker/Railway with cookies and user-agent
@@ -897,16 +1041,26 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         // Check if cookie file exists (created by startup script)
         const cookieFile = '/app/temp/youtube_cookies.txt';
         if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
           console.log('Using YouTube cookies from:', cookieFile);
         } else {
           console.log('No YouTube cookies file found at:', cookieFile);
         }
         
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -x --audio-format m4a -o ${audioPath} ${videoInfo.url}`.trim();
+        // Use the format selection strategy based on metadata
+        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
+        let formatSelection = '';
+        
+        if (videoSizeMB > 1000) { // Over 1GB
+          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
+        } else {
+          formatSelection = '-f "worstaudio/bestaudio"';
+        }
+        
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
         // Windows/local command
-        extractCommand = `"${ytDlpCmd}" -x --audio-format m4a -o "${audioPath}" "${videoInfo.url}"`;
+        extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
       }
       
       console.log(`Running: ${extractCommand}`);
