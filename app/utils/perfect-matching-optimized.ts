@@ -459,6 +459,7 @@ export async function findPerfectMatchesIndividual(
   console.log(`📊 This will make ${tweets.length} separate API calls for best quality`);
   
   const matches: PerfectMatch[] = [];
+  const usedSegments = new Set<string>(); // Track used segments to avoid duplicates
   
   // Process each tweet individually
   for (let i = 0; i < tweets.length; i++) {
@@ -466,11 +467,58 @@ export async function findPerfectMatchesIndividual(
     console.log(`\n📍 Processing tweet ${i + 1}/${tweets.length}`);
     
     try {
-      const match = await findBestMatchForSingleTweet(tweet, videoTranscripts);
+      let match = await findBestMatchForSingleTweet(tweet, videoTranscripts);
       
       if (match) {
+        // Check if this segment has already been used
+        const segmentKey = `${match.videoUrl}-${match.startTime}-${match.endTime}`;
+        
+        if (usedSegments.has(segmentKey)) {
+          console.log(`⚠️ Segment already used, finding alternative...`);
+          
+          // Try to find an alternative match by shifting the time window
+          const video = videoTranscripts.find(v => v.videoUrl === match!.videoUrl);
+          if (video) {
+            // Try segments before and after the original match
+            const alternatives = [];
+            
+            // Try 30 seconds before
+            if (match.startTime >= 30) {
+              alternatives.push({
+                ...match,
+                startTime: match.startTime - 30,
+                endTime: match.endTime - 30
+              });
+            }
+            
+            // Try 30 seconds after
+            if (match.endTime + 30 <= video.duration) {
+              alternatives.push({
+                ...match,
+                startTime: match.startTime + 30,
+                endTime: match.endTime + 30
+              });
+            }
+            
+            // Find the first unused alternative
+            for (const alt of alternatives) {
+              const altKey = `${alt.videoUrl}-${alt.startTime}-${alt.endTime}`;
+              if (!usedSegments.has(altKey)) {
+                match = alt;
+                console.log(`✅ Found alternative segment: ${alt.startTime}-${alt.endTime}`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // Mark this segment as used
+        const finalSegmentKey = `${match.videoUrl}-${match.startTime}-${match.endTime}`;
+        usedSegments.add(finalSegmentKey);
+        
         matches.push(match);
         console.log(`✅ Tweet ${tweet.id}: ${match.matchQuality} match (${(match.confidence * 100).toFixed(0)}%)`);
+        console.log(`   Video: ${match.videoUrl.split('/').pop()}, Time: ${match.startTime}-${match.endTime}`);
         console.log(`   Reason: ${match.reasoning}`);
       } else {
         // Should not happen with createDefaultMatch, but just in case
@@ -495,6 +543,7 @@ export async function findPerfectMatchesIndividual(
   console.log(`\n📊 Individual Matching Summary:`);
   console.log(`  Total tweets: ${tweets.length}`);
   console.log(`  Total matches: ${matches.length}`);
+  console.log(`  Unique segments: ${usedSegments.size}`);
   console.log(`  Perfect matches: ${matches.filter(m => m.matchQuality === 'perfect').length}`);
   console.log(`  Excellent matches: ${matches.filter(m => m.matchQuality === 'excellent').length}`);
   console.log(`  Good matches: ${matches.filter(m => m.matchQuality === 'good').length}`);

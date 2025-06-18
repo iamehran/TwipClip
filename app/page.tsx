@@ -44,6 +44,7 @@ export default function Home() {
   const [loadingStatus, setLoadingStatus] = useState('');
   const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[] } | null>(null);
   const [showSearchForm, setShowSearchForm] = useState(true);
+  const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
 
   const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false) => {
     setLoading(true);
@@ -187,6 +188,7 @@ export default function Home() {
 
       setResults(formattedResults);
       setStats(data.summary || null);
+      setRawMatches(data.matches || []); // Store raw matches
       
       setLoadingProgress(100);
       setLoadingStatus('Complete!');
@@ -319,6 +321,7 @@ export default function Home() {
                   <BulkDownloadButton 
                     threadContent={lastSearch?.threadContent || ''}
                     videoUrls={lastSearch?.videoUrls || []}
+                    matches={rawMatches}
                     disabled={!lastSearch}
                   />
                   <ExportButton data={results} />

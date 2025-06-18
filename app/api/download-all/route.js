@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { processVideosWithPerfectMatching } from '../../../src/lib/intelligent-processor-v3';
+import { downloadAllClips, createDownloadZip } from '../../../app/utils/bulk-download';
 import { performStartupCheck } from '../../../src/lib/startup-check';
 import path from 'path';
 import fs from 'fs/promises';
+import os from 'os';
 
 export async function POST(request) {
   try {
-    const { thread, videos, quality = '720p' } = await request.json();
+    const { thread, videos, matches, quality = '720p' } = await request.json();
 
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
@@ -38,17 +40,59 @@ export async function POST(request) {
     console.log('🎯 Processing bulk download request...');
     console.log(`📹 Quality: ${quality}`);
 
-    // Process videos with perfect matching and download
-    const { results, matches, downloadZipPath, statistics } = await processVideosWithPerfectMatching(
-      thread, 
-      videos,
-      {
-        downloadClips: true,
-        createZip: true,
-        outputDir: path.join(process.cwd(), 'temp', 'downloads'),
-        quality: quality
-      }
-    );
+    let downloadZipPath;
+
+    // If matches are provided, use them directly
+    if (matches && matches.length > 0) {
+      console.log('📊 Using provided matches:', matches.length);
+      
+      // Convert matches to the format expected by downloadAllClips
+      const formattedMatches = matches.map((match, index) => ({
+        tweetId: match.tweetId || `tweet-${index + 1}`,
+        tweetText: match.tweet || '',
+        videoUrl: match.videoUrl,
+        startTime: match.startTime,
+        endTime: match.endTime,
+        transcriptText: match.text || '',
+        confidence: match.confidence || 0,
+        matchQuality: match.matchQuality || 'good',
+        reasoning: match.reasoning || ''
+      }));
+
+      // Download clips directly
+      const outputDir = path.join(process.cwd(), 'temp', 'downloads', Date.now().toString());
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const downloadResults = await downloadAllClips(formattedMatches, {
+        outputDir,
+        maxConcurrent: 3,
+        quality,
+        onProgress: (progress) => {
+          console.log(`  Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(0)}%)`);
+        }
+      });
+
+      // Create ZIP
+      const zipPath = path.join(outputDir, `twipclip-${Date.now()}.zip`);
+      downloadZipPath = await createDownloadZip(downloadResults, zipPath);
+
+    } else {
+      // Fallback: Process videos with perfect matching
+      console.log('⚠️ No matches provided, re-processing videos...');
+      
+      const { results, matches: newMatches, downloadZipPath: zipPath, statistics } = await processVideosWithPerfectMatching(
+        thread, 
+        videos,
+        {
+          downloadClips: true,
+          createZip: true,
+          outputDir: path.join(process.cwd(), 'temp', 'downloads'),
+          quality: quality
+        }
+      );
+
+      downloadZipPath = zipPath;
+    }
 
     if (!downloadZipPath) {
       return NextResponse.json(
@@ -64,6 +108,9 @@ export async function POST(request) {
     setTimeout(async () => {
       try {
         await fs.unlink(downloadZipPath);
+        // Also clean up the parent directory
+        const parentDir = path.dirname(downloadZipPath);
+        await fs.rmdir(parentDir).catch(() => {}); // Ignore errors if not empty
       } catch (error) {
         console.error('Failed to clean up ZIP:', error);
       }

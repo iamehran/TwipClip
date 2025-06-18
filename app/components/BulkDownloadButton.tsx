@@ -5,12 +5,14 @@ import { useState, useEffect, useRef } from 'react';
 interface BulkDownloadButtonProps {
   threadContent: string;
   videoUrls: string[];
+  matches?: any[];
   disabled?: boolean;
 }
 
 export default function BulkDownloadButton({ 
   threadContent, 
-  videoUrls, 
+  videoUrls,
+  matches,
   disabled = false 
 }: BulkDownloadButtonProps) {
   const [downloading, setDownloading] = useState(false);
@@ -47,6 +49,7 @@ export default function BulkDownloadButton({
         body: JSON.stringify({
           thread: threadContent,
           videos: videoUrls,
+          matches: matches,
           quality: quality // Pass selected quality
         })
       });
