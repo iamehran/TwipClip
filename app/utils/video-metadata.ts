@@ -42,8 +42,24 @@ export async function getVideoMetadata(videoUrl: string): Promise<VideoMetadata 
       // Check if cookie file exists (created by startup script)
       const cookieFile = '/app/temp/youtube_cookies.txt';
       if (require('fs').existsSync(cookieFile)) {
-        cookieFlag = `--cookies ${cookieFile}`;
+        cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
         console.log('Using YouTube cookies from:', cookieFile);
+        
+        // Debug: Check cookie file content
+        try {
+          const fs = require('fs');
+          const cookieContent = fs.readFileSync(cookieFile, 'utf-8');
+          const lines = cookieContent.split('\n');
+          const cookieLines = lines.filter(l => l.trim() && !l.startsWith('#'));
+          console.log(`Cookie file has ${cookieLines.length} cookie entries`);
+          if (cookieLines.length === 0) {
+            console.warn('⚠️ Cookie file exists but contains no valid cookies!');
+          }
+        } catch (e) {
+          console.error('Failed to read cookie file:', e);
+        }
+      } else {
+        console.log('No YouTube cookies file found at:', cookieFile);
       }
       
       command = `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --dump-json --no-warnings "${videoUrl}"`;
