@@ -57,6 +57,7 @@ export default function Home() {
     setShowSearchForm(false); // Hide search form when processing starts
 
     let progressInterval: NodeJS.Timeout | undefined;
+    let pollInterval: NodeJS.Timeout | undefined;
 
     try {
       // No need to parse - send the full thread content
@@ -74,143 +75,149 @@ export default function Home() {
       setLoadingStatus('Initializing search...');
       setLoadingProgress(5);
 
-      // Simulate realistic progress updates
-      progressInterval = setInterval(() => {
-        setLoadingProgress(prev => {
-          if (prev < 85) {
-            // Gradually increase progress
-            const increment = Math.random() * 3 + 1; // 1-4% increment
-            const newProgress = Math.min(prev + increment, 85);
-            
-            // Update status message based on progress
-            if (newProgress >= 5 && newProgress < 15) {
-              setLoadingStatus('Preparing video processing...');
-            } else if (newProgress >= 15 && newProgress < 25) {
-              setLoadingStatus('Connecting to video sources...');
-            } else if (newProgress >= 25 && newProgress < 35) {
-              setLoadingStatus('Downloading video data...');
-            } else if (newProgress >= 35 && newProgress < 40) {
-              setLoadingStatus('Extracting audio tracks...');
-            } else if (newProgress >= 40 && newProgress < 50) {
-              setLoadingStatus('Processing audio with Whisper AI...');
-            } else if (newProgress >= 50 && newProgress < 60) {
-              setLoadingStatus('Generating high-quality transcripts...');
-            } else if (newProgress >= 60 && newProgress < 70) {
-              setLoadingStatus('Analyzing content with Claude AI...');
-            } else if (newProgress >= 70 && newProgress < 80) {
-              setLoadingStatus('Matching clips to your content...');
-            } else if (newProgress >= 80 && newProgress < 85) {
-              setLoadingStatus('Optimizing clip boundaries...');
-            }
-            
-            return newProgress;
-          }
-          return prev;
-        });
-      }, 500);
-
-      // Create an AbortController for timeout
-      const abortController = new AbortController();
-      const fetchTimeout = setTimeout(() => {
-        abortController.abort();
-      }, 1800000); // 30 minute timeout (increased from 10)
-
-      const response = await fetch('/api/process', {
+      // First, start the async processing
+      const startResponse = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          thread: threadContent,  // Full thread content with dashes
-          videos: videoUrls       // Array of video URLs
+          thread: threadContent,
+          videos: videoUrls,
+          async: true  // Enable async mode
         }),
-        signal: abortController.signal
       });
 
-      clearTimeout(fetchTimeout);
-
-      // Update status based on progress
-      setLoadingProgress(40);
-      setLoadingStatus('Extracting audio from videos...');
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        clearInterval(progressInterval);
-        throw new Error(data.error || 'Processing failed');
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json();
+        throw new Error(errorData.error || 'Failed to start processing');
       }
 
-      setLoadingProgress(70);
-      setLoadingStatus('Analyzing transcripts with AI...');
+      const { jobId } = await startResponse.json();
+      console.log('Processing started with job ID:', jobId);
 
-      // Convert the new format to match the UI expectations
-      const formattedResults: SearchResults = {};
-      
-      // First, initialize all tweets with empty clips arrays
-      const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
-      tweetTexts.forEach((text, index) => {
-        const tweetKey = `tweet-${index + 1}`;
-        formattedResults[tweetKey] = {
-          tweet: text,
-          clips: []
-        };
-      });
-      
-      // Then populate with actual matches
-      if (data.matches && data.matches.length > 0) {
-        data.matches.forEach((match: any) => {
-          // Find which tweet this match belongs to
-          const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
-          if (tweetIndex !== -1) {
-            const tweetKey = `tweet-${tweetIndex + 1}`;
-            formattedResults[tweetKey].clips.push({
-              videoId: match.videoUrl,
-              title: 'AI Matched Clip',
-              thumbnail: '/default-thumbnail.jpg',
-              startTime: match.startTime,
-              endTime: match.endTime,
-              matchScore: match.confidence || 0,
-              transcriptText: match.text || '',
-              channelTitle: 'Video',
-              clipDuration: `${match.endTime - match.startTime}s`,
-              matchMethod: 'semantic' as const,
-              confidence: match.confidence || 0,
-              transcriptQuality: 'high' as const,
-              transcriptSource: 'whisper',
-              downloadPath: match.downloadPath,
-              downloadSuccess: match.downloadSuccess
-            });
+      // Now poll for status updates
+      let lastProgress = 0;
+      pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`/api/process/status?jobId=${jobId}`);
+          const statusData = await statusResponse.json();
+
+          if (statusData.status === 'not_found') {
+            clearInterval(pollInterval);
+            throw new Error('Processing job not found');
           }
+
+          // Update progress based on actual backend progress
+          if (statusData.progress !== undefined) {
+            setLoadingProgress(statusData.progress);
+            lastProgress = statusData.progress;
+          }
+
+          // Update status message from backend
+          if (statusData.message) {
+            setLoadingStatus(statusData.message);
+          }
+
+          // Check if completed
+          if (statusData.status === 'completed' && statusData.results) {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
+            
+            // Process the results
+            const data = statusData.results;
+            
+            // Convert the new format to match the UI expectations
+            const formattedResults: SearchResults = {};
+            
+            // First, initialize all tweets with empty clips arrays
+            const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
+            tweetTexts.forEach((text, index) => {
+              const tweetKey = `tweet-${index + 1}`;
+              formattedResults[tweetKey] = {
+                tweet: text,
+                clips: []
+              };
+            });
+            
+            // Then populate with actual matches
+            if (data.matches && data.matches.length > 0) {
+              data.matches.forEach((match: any) => {
+                // Find which tweet this match belongs to
+                const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+                if (tweetIndex !== -1) {
+                  const tweetKey = `tweet-${tweetIndex + 1}`;
+                  formattedResults[tweetKey].clips.push({
+                    videoId: match.videoUrl,
+                    title: 'AI Matched Clip',
+                    thumbnail: '/default-thumbnail.jpg',
+                    startTime: match.startTime,
+                    endTime: match.endTime,
+                    matchScore: match.confidence || 0,
+                    transcriptText: match.text || '',
+                    channelTitle: 'Video',
+                    clipDuration: `${match.endTime - match.startTime}s`,
+                    matchMethod: 'semantic' as const,
+                    confidence: match.confidence || 0,
+                    transcriptQuality: 'high' as const,
+                    transcriptSource: 'whisper',
+                    downloadPath: match.downloadPath,
+                    downloadSuccess: match.downloadSuccess
+                  });
+                }
+              });
+            }
+
+            setResults(formattedResults);
+            setStats(data.summary || null);
+            setRawMatches(data.matches || []); // Store raw matches
+            
+            setLoadingProgress(100);
+            setLoadingStatus('Complete!');
+            
+            // Reset progress after a short delay
+            setTimeout(() => {
+              setLoadingProgress(0);
+              setLoadingStatus('');
+            }, 1000);
+          }
+
+          // Check if failed
+          if (statusData.status === 'failed') {
+            clearInterval(pollInterval);
+            clearInterval(progressInterval);
+            throw new Error(statusData.error || 'Processing failed');
+          }
+
+        } catch (pollError) {
+          console.error('Polling error:', pollError);
+          // Don't throw here, just log and continue polling
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Also keep the visual progress animation for better UX
+      progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          // Don't override actual progress from backend
+          if (prev < lastProgress) {
+            return lastProgress;
+          }
+          
+          // Only animate if we haven't received real progress
+          if (prev < 85 && lastProgress < 85) {
+            const increment = Math.random() * 2 + 0.5; // 0.5-2.5% increment
+            return Math.min(prev + increment, 85);
+          }
+          return prev;
         });
-      }
-
-      clearInterval(progressInterval);
-      setLoadingProgress(95);
-      setLoadingStatus('Finalizing results...');
-
-      setResults(formattedResults);
-      setStats(data.summary || null);
-      setRawMatches(data.matches || []); // Store raw matches
-      
-      setLoadingProgress(100);
-      setLoadingStatus('Complete!');
-      
-      // Reset progress after a short delay
-      setTimeout(() => {
-        setLoadingProgress(0);
-        setLoadingStatus('');
       }, 1000);
+
     } catch (err) {
       clearInterval(progressInterval);
+      clearInterval(pollInterval);
       
       let errorMessage = 'An error occurred';
       
       if (err instanceof Error) {
-        if (err.name === 'AbortError') {
-          errorMessage = 'Request timed out. This usually happens with very long videos or many clips. Try processing fewer videos at once.';
-        } else if (err.message.includes('Failed to fetch')) {
-          errorMessage = 'Network error. Please check your connection and try again.';
-        } else {
-          errorMessage = err.message;
-        }
+        errorMessage = err.message;
       }
       
       setError(errorMessage);

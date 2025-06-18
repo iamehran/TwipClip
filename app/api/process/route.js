@@ -6,6 +6,8 @@ import { cookies } from 'next/headers';
 import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
+import { createProcessingJob, updateProcessingStatus } from './status/route';
+import { randomUUID } from 'crypto';
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -40,15 +42,10 @@ async function ensureAuthFile() {
 }
 
 export async function POST(request) {
-  // Set a longer timeout for this endpoint
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 minute timeout (increased from 10)
-
   try {
-    const { thread, videos } = await request.json();
+    const { thread, videos, async = false } = await request.json();
 
     if (!thread || !videos || videos.length === 0) {
-      clearTimeout(timeoutId);
       return NextResponse.json(
         { error: 'Thread and videos are required' },
         { status: 400 }
@@ -57,7 +54,6 @@ export async function POST(request) {
 
     // Add request validation
     if (videos.length > 5) {
-      clearTimeout(timeoutId);
       return NextResponse.json(
         { error: 'Maximum 5 videos allowed per request' },
         { status: 400 }
@@ -72,7 +68,6 @@ export async function POST(request) {
     // Ensure tools are available
     const ready = await ensureToolsAvailable();
     if (!ready) {
-      clearTimeout(timeoutId);
       return NextResponse.json(
         { 
           error: 'System requirements not met',
@@ -82,38 +77,29 @@ export async function POST(request) {
       );
     }
 
-    // Process videos with our intelligent system
+    // If async mode, return job ID immediately
+    if (async) {
+      const jobId = randomUUID();
+      createProcessingJob(jobId);
+      
+      // Process in background
+      processInBackground(jobId, thread, videos);
+      
+      return NextResponse.json({
+        success: true,
+        jobId,
+        message: 'Processing started. Poll /api/process/status?jobId=' + jobId + ' for updates'
+      });
+    }
+
+    // Synchronous processing (original behavior)
     const startTime = Date.now();
     const results = await processVideosIntelligently(thread, videos);
     const processingTime = Date.now() - startTime;
 
-    // Format response similar to media-matcher
-    const matches = [];
-    for (const result of results) {
-      if (result.success) {
-        for (const clip of result.clips) {
-          matches.push({
-            match: true,
-            tweet: clip.matchedTweet,
-            videoUrl: result.videoUrl,
-            startTime: clip.startTime,
-            endTime: clip.endTime,
-            text: clip.transcript,
-            matchReason: clip.reason,
-            confidence: clip.confidence,
-            downloadPath: clip.downloadPath,
-            downloadSuccess: clip.downloadSuccess
-          });
-        }
-      }
-    }
-
-    // Calculate average confidence
-    const avgConfidence = matches.length > 0 
-      ? matches.reduce((sum, m) => sum + (m.confidence || 0), 0) / matches.length
-      : 0;
-
-    clearTimeout(timeoutId);
+    // Format response
+    const matches = formatMatches(results);
+    const avgConfidence = calculateAvgConfidence(matches);
 
     return NextResponse.json({
       success: true,
@@ -130,16 +116,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    clearTimeout(timeoutId);
-    
-    // Check if it's a timeout error
-    if (error.name === 'AbortError') {
-      return NextResponse.json(
-        { error: 'Request timeout - processing took too long. Try with fewer videos or shorter content.' },
-        { status: 504 }
-      );
-    }
-    
     logError(error, 'process-endpoint');
     const { message, statusCode } = handleError(error);
     
@@ -148,4 +124,92 @@ export async function POST(request) {
       { status: statusCode }
     );
   }
+}
+
+// Background processing function
+async function processInBackground(jobId, thread, videos) {
+  try {
+    updateProcessingStatus(jobId, {
+      status: 'processing',
+      progress: 10,
+      message: 'Starting video processing...'
+    });
+
+    const startTime = Date.now();
+    
+    // Create a custom progress callback
+    const progressCallback = (progress, message) => {
+      updateProcessingStatus(jobId, {
+        progress: Math.min(90, progress),
+        message
+      });
+    };
+
+    // Process videos with progress updates
+    const results = await processVideosIntelligently(thread, videos, progressCallback);
+    const processingTime = Date.now() - startTime;
+
+    // Format results
+    const matches = formatMatches(results);
+    const avgConfidence = calculateAvgConfidence(matches);
+
+    // Update status with completed results
+    updateProcessingStatus(jobId, {
+      status: 'completed',
+      progress: 100,
+      message: 'Processing complete',
+      results: {
+        success: true,
+        matches: matches,
+        summary: {
+          videosProcessed: results.length,
+          videosSuccessful: results.filter(r => r.success).length,
+          clipsFound: matches.length,
+          clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
+          avgConfidence: avgConfidence,
+          aiModel: 'Claude 3.7 Sonnet',
+          processingTimeMs: processingTime
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Background processing error:', error);
+    updateProcessingStatus(jobId, {
+      status: 'failed',
+      progress: 0,
+      message: error.message || 'Processing failed',
+      error: error.message
+    });
+  }
+}
+
+// Helper functions
+function formatMatches(results) {
+  const matches = [];
+  for (const result of results) {
+    if (result.success) {
+      for (const clip of result.clips) {
+        matches.push({
+          match: true,
+          tweet: clip.matchedTweet,
+          videoUrl: result.videoUrl,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          text: clip.transcript,
+          matchReason: clip.reason,
+          confidence: clip.confidence,
+          downloadPath: clip.downloadPath,
+          downloadSuccess: clip.downloadSuccess
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+function calculateAvgConfidence(matches) {
+  return matches.length > 0 
+    ? matches.reduce((sum, m) => sum + (m.confidence || 0), 0) / matches.length
+    : 0;
 } 

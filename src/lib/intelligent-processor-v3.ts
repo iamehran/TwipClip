@@ -38,6 +38,7 @@ export interface ProcessingOptions {
   createZip?: boolean;
   outputDir?: string;
   quality?: string;
+  progressCallback?: (progress: number, message: string) => void;
 }
 
 /**
@@ -53,9 +54,13 @@ export async function processVideosWithPerfectMatching(
   downloadZipPath?: string;
   statistics: any;
 }> {
+  const { progressCallback } = options;
+  
   console.log(`\n🚀 Starting Perfect Video Processing`);
   console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
   console.log(`🎥 Videos: ${videos.length}`);
+
+  progressCallback?.(5, 'Parsing thread content...');
 
   // Parse tweets from thread
   const tweetsText = thread.split('---').map(t => t.trim()).filter(t => t.length > 0);
@@ -75,10 +80,12 @@ export async function processVideosWithPerfectMatching(
 
   // Step 1: Get transcripts for all videos in parallel
   console.log('\n📹 Getting video transcripts...');
+  progressCallback?.(10, 'Extracting video transcripts...');
   
-  const transcriptPromises = videos.map(async (videoUrl) => {
+  const transcriptPromises = videos.map(async (videoUrl, index) => {
     try {
       console.log(`  Processing: ${videoUrl}`);
+      progressCallback?.(10 + (index * 40 / videos.length), `Processing video ${index + 1}/${videos.length}...`);
       
       const transcript = await getEnhancedTranscript(videoUrl);
       
@@ -117,9 +124,11 @@ export async function processVideosWithPerfectMatching(
   }
   
   console.log(`\n✅ Successfully transcribed ${videoTranscripts.length}/${videos.length} videos`);
+  progressCallback?.(50, 'Analyzing transcripts with AI...');
   
   // Step 2: Find perfect matches - ONE per tweet
   console.log('\n🎯 Finding perfect matches...');
+  progressCallback?.(60, 'Finding perfect matches for each tweet...');
   
   // Use individual or batch processing based on configuration
   const findPerfectMatches = USE_INDIVIDUAL_PROCESSING 
@@ -127,6 +136,8 @@ export async function processVideosWithPerfectMatching(
     : findPerfectMatchesOptimized;
   
   const matches = await findPerfectMatches(tweets, videoTranscripts);
+  
+  progressCallback?.(80, 'Formatting results...');
   
   // Step 3: Convert matches to results format
   for (const videoUrl of videos) {
@@ -152,6 +163,7 @@ export async function processVideosWithPerfectMatching(
   
   if (options.downloadClips) {
     console.log('\n📥 Downloading all clips...');
+    progressCallback?.(85, 'Downloading video clips...');
     
     const downloadResults = await downloadAllClips(matches, {
       outputDir: options.outputDir,
@@ -159,6 +171,8 @@ export async function processVideosWithPerfectMatching(
       quality: options.quality || '720p',
       onProgress: (progress) => {
         console.log(`  Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(0)}%)`);
+        const overallProgress = 85 + (progress.percentage * 0.1); // 85-95%
+        progressCallback?.(overallProgress, `Downloading clips: ${progress.completed}/${progress.total}`);
       }
     });
     
@@ -179,6 +193,7 @@ export async function processVideosWithPerfectMatching(
       );
       
       console.log('\n📦 Creating ZIP file...');
+      progressCallback?.(95, 'Creating ZIP file...');
       downloadZipPath = await createDownloadZip(downloadResults, zipPath);
       console.log(`✅ ZIP created: ${downloadZipPath}`);
       
@@ -200,6 +215,8 @@ export async function processVideosWithPerfectMatching(
   console.log(`    - Acceptable: ${statistics.byQuality.acceptable}`);
   console.log(`  Average confidence: ${(statistics.averageConfidence * 100).toFixed(0)}%`);
   
+  progressCallback?.(100, 'Processing complete!');
+  
   return {
     results,
     matches,
@@ -213,10 +230,12 @@ export async function processVideosWithPerfectMatching(
  */
 export async function processVideosIntelligently(
   thread: string, 
-  videos: string[]
+  videos: string[],
+  progressCallback?: (progress: number, message: string) => void
 ): Promise<VideoProcessingResult[]> {
   const { results } = await processVideosWithPerfectMatching(thread, videos, {
-    downloadClips: false
+    downloadClips: false,
+    progressCallback
   });
   
   return results;
