@@ -41,13 +41,20 @@ export interface ProcessingOptions {
   progressCallback?: (progress: number, message: string) => void;
 }
 
+export interface ModelSettings {
+  model: 'claude-opus-4-20250514' | 'claude-sonnet-4-20250514';
+  thinkingEnabled: boolean;
+  tokenUsage: 'low' | 'medium' | 'high';
+}
+
 /**
  * Process videos with perfect matching - ONE clip per tweet
  */
 export async function processVideosWithPerfectMatching(
   thread: string, 
   videos: string[],
-  options: ProcessingOptions = {}
+  options: ProcessingOptions = {},
+  modelSettings?: ModelSettings
 ): Promise<{
   results: VideoProcessingResult[];
   matches: PerfectMatch[];
@@ -59,6 +66,9 @@ export async function processVideosWithPerfectMatching(
   console.log(`\n🚀 Starting Perfect Video Processing`);
   console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
   console.log(`🎥 Videos: ${videos.length}`);
+  console.log(`🤖 Model: ${modelSettings?.model || 'claude-3-7-sonnet-latest'}`);
+  console.log(`🧠 Thinking: ${modelSettings?.thinkingEnabled ? 'Enabled' : 'Disabled'}`);
+  console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'medium'}`);
 
   progressCallback?.(5, 'Parsing thread content...');
 
@@ -135,7 +145,7 @@ export async function processVideosWithPerfectMatching(
     ? findPerfectMatchesIndividual 
     : findPerfectMatchesOptimized;
   
-  const matches = await findPerfectMatches(tweets, videoTranscripts);
+  const matches = await findPerfectMatches(tweets, videoTranscripts, modelSettings);
   
   progressCallback?.(80, 'Formatting results...');
   
@@ -231,12 +241,13 @@ export async function processVideosWithPerfectMatching(
 export async function processVideosIntelligently(
   thread: string, 
   videos: string[],
-  progressCallback?: (progress: number, message: string) => void
+  progressCallback?: (progress: number, message: string) => void,
+  modelSettings?: ModelSettings
 ): Promise<VideoProcessingResult[]> {
   const { results } = await processVideosWithPerfectMatching(thread, videos, {
     downloadClips: false,
     progressCallback
-  });
+  }, modelSettings);
   
   return results;
 } 

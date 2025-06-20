@@ -81,15 +81,15 @@ export async function POST(request) {
       console.log('⚠️ No matches provided, re-processing videos...');
       
       const { results, matches: newMatches, downloadZipPath: zipPath, statistics } = await processVideosWithPerfectMatching(
-        thread, 
-        videos,
-        {
-          downloadClips: true,
-          createZip: true,
+      thread, 
+      videos,
+      {
+        downloadClips: true,
+        createZip: true,
           outputDir: path.join(process.cwd(), 'temp', 'downloads'),
           quality: quality
-        }
-      );
+      }
+    );
 
       downloadZipPath = zipPath;
     }

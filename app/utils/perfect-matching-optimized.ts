@@ -1,10 +1,15 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { TranscriptSegment } from './enhanced-transcripts';
 
-// Initialize Anthropic client
-const anthropic = process.env.ANTHROPIC_API_KEY 
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) 
-  : null;
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+}) : null;
+
+export interface ModelSettings {
+  model: 'claude-opus-4-20250514' | 'claude-sonnet-4-20250514';
+  thinkingEnabled: boolean;
+  tokenUsage: 'low' | 'medium' | 'high';
+}
 
 export interface PerfectMatch {
   tweetId: string;
@@ -37,20 +42,52 @@ interface BatchMatchResult {
 }
 
 /**
- * Optimized batch matching - analyze all tweets and videos in a single API call
+ * Get token limits based on model settings
+ */
+function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; maxCandidates: number } {
+  const tokenUsage = modelSettings?.tokenUsage || 'medium';
+  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  
+  // Base token limits
+  let maxTokens = 2000;
+  let maxCandidates = 50;
+  
+  // Adjust based on token usage
+  if (tokenUsage === 'low') {
+    maxTokens = 1000;
+    maxCandidates = 30;
+  } else if (tokenUsage === 'high') {
+    maxTokens = 4000;
+    maxCandidates = 80;
+  }
+  
+  // Opus gets more tokens by default
+  if (model === 'claude-opus-4-20250514') {
+    maxTokens = Math.floor(maxTokens * 1.5);
+  }
+  
+  return { maxTokens, maxCandidates };
+}
+
+/**
+ * Batch analyze matches with model settings
  */
 async function batchAnalyzeMatches(
   tweets: Array<{ id: string; text: string }>,
-  videoTranscripts: VideoTranscript[]
+  videoTranscripts: VideoTranscript[],
+  modelSettings?: ModelSettings
 ): Promise<BatchMatchResult[]> {
+  const startTime = Date.now();
+  
   if (!anthropic) {
     throw new Error('Anthropic API key not configured');
   }
-
-  console.log('\n🚀 Starting optimized batch matching...');
-  const startTime = Date.now();
   
-  // Create candidate segments for each video
+  const { maxTokens, maxCandidates } = getTokenLimits(modelSettings);
+  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const useThinking = modelSettings?.thinkingEnabled || false;
+  
+  // Create candidate segments from all videos
   const candidates: Array<{
     videoUrl: string;
     segmentIndex: number;
@@ -92,7 +129,6 @@ async function batchAnalyzeMatches(
   console.log(`📊 Created ${candidates.length} candidate segments in ${candidateCreationTime}ms`);
 
   // Limit candidates to prevent API overload
-  const maxCandidates = Math.min(candidates.length, 50); // Increased from 30 to 50
   const selectedCandidates = candidates.slice(0, maxCandidates);
   
   if (candidates.length > maxCandidates) {
@@ -105,16 +141,11 @@ async function batchAnalyzeMatches(
     `SEGMENT_${i} (${c.videoUrl.split('/').pop()}, ${c.startTime.toFixed(1)}-${c.endTime.toFixed(1)}s):\n"${c.text}"`
   ).join('\n\n');
 
-  console.log(`🤖 Sending batch request to Claude AI...`);
+  console.log(`🤖 Sending batch request to ${model}${useThinking ? ' with thinking mode' : ''}...`);
   const apiStartTime = Date.now();
 
-  const response = await anthropic.messages.create({
-    model: 'claude-3-7-sonnet-latest',
-    max_tokens: 2000,
-    temperature: 0.2,
-    messages: [{
-      role: 'user',
-      content: `Find the SINGLE BEST video segment for each tweet. Each tweet MUST get exactly ONE match.
+  // Prepare the prompt
+  const prompt = `Find the SINGLE BEST video segment for each tweet. Each tweet MUST get exactly ONE match.
 
 TWEETS:
 ${tweetsText}
@@ -128,12 +159,26 @@ MATCH_0: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/acce
 MATCH_1: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/acceptable] | REASON:[one line explanation]
 ...
 
-IMPORTANT: Every tweet MUST have a match. Choose the best available segment even if the relevance is low.`
+IMPORTANT: Every tweet MUST have a match. Choose the best available segment even if the relevance is low.`;
+
+  // Add thinking prefix if enabled
+  const systemMessage = useThinking 
+    ? "You are an expert at analyzing content and finding the most relevant video segments for tweets. Think step by step about each match before making your decision."
+    : undefined;
+
+  const response = await anthropic.messages.create({
+    model: model,
+    max_tokens: maxTokens,
+    temperature: 0.2,
+    ...(systemMessage && { system: systemMessage }),
+    messages: [{
+      role: 'user',
+      content: prompt
     }]
   });
 
   const apiTime = Date.now() - apiStartTime;
-  console.log(`✅ Claude AI response received in ${apiTime}ms`);
+  console.log(`✅ ${model} response received in ${apiTime}ms`);
 
   const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
   const matches: BatchMatchResult[] = [];
@@ -206,7 +251,8 @@ function createDefaultMatch(
  */
 export async function findPerfectMatchesOptimized(
   tweets: Array<{ id: string; text: string }>,
-  videoTranscripts: VideoTranscript[]
+  videoTranscripts: VideoTranscript[],
+  modelSettings?: ModelSettings
 ): Promise<PerfectMatch[]> {
   if (!anthropic) {
     throw new Error('Anthropic API key not configured. Perfect matching requires AI.');
@@ -222,7 +268,7 @@ export async function findPerfectMatchesOptimized(
   
   try {
     // Batch process all matches in one API call
-    const batchResults = await batchAnalyzeMatches(tweets, videoTranscripts);
+    const batchResults = await batchAnalyzeMatches(tweets, videoTranscripts, modelSettings);
     
     // Convert batch results to PerfectMatch format
     for (const tweet of tweets) {
@@ -321,11 +367,16 @@ export function getMatchStatistics(matches: PerfectMatch[]) {
  */
 async function findBestMatchForSingleTweet(
   tweet: { id: string; text: string },
-  videoTranscripts: VideoTranscript[]
+  videoTranscripts: VideoTranscript[],
+  modelSettings?: ModelSettings
 ): Promise<PerfectMatch | null> {
   if (!anthropic) {
     throw new Error('Anthropic API key not configured');
   }
+
+  const { maxTokens, maxCandidates } = getTokenLimits(modelSettings);
+  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const useThinking = modelSettings?.thinkingEnabled || false;
 
   console.log(`\n🎯 Finding best match for tweet: "${tweet.text.substring(0, 50)}..."`);
   
@@ -365,7 +416,6 @@ async function findBestMatchForSingleTweet(
   }
 
   // Limit candidates but allow more for single tweet processing
-  const maxCandidates = Math.min(candidates.length, 80);
   const selectedCandidates = candidates.slice(0, maxCandidates);
   
   console.log(`📊 Analyzing ${selectedCandidates.length} candidates for this tweet`);
@@ -375,13 +425,8 @@ async function findBestMatchForSingleTweet(
     `SEGMENT_${i} (${c.videoUrl.split('/').pop()}, ${c.startTime.toFixed(1)}-${c.endTime.toFixed(1)}s):\n"${c.text}"`
   ).join('\n\n');
 
-  const response = await anthropic.messages.create({
-    model: 'claude-3-7-sonnet-latest',
-    max_tokens: 1000,
-    temperature: 0.2,
-    messages: [{
-      role: 'user',
-      content: `Find the SINGLE BEST video segment that matches this tweet.
+  // Prepare the prompt
+  const prompt = `Find the SINGLE BEST video segment that matches this tweet.
 
 TWEET: "${tweet.text}"
 
@@ -395,7 +440,21 @@ Select the ONE segment that best matches the tweet's content. Consider:
 - Quality of the match over mere keyword presence
 
 Return in this exact format:
-BEST_MATCH: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/acceptable] | REASON:[detailed explanation of why this is the best match]`
+BEST_MATCH: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/acceptable] | REASON:[detailed explanation of why this is the best match]`;
+
+  // Add thinking prefix if enabled
+  const systemMessage = useThinking 
+    ? "You are an expert at analyzing content and finding the most relevant video segments for tweets. Think carefully about the tweet's meaning and find the segment that best supports or illustrates its message."
+    : undefined;
+
+  const response = await anthropic.messages.create({
+    model: model,
+    max_tokens: Math.floor(maxTokens / 2), // Less tokens needed for single tweet
+    temperature: 0.2,
+    ...(systemMessage && { system: systemMessage }),
+    messages: [{
+      role: 'user',
+      content: prompt
     }]
   });
 
@@ -445,7 +504,8 @@ BEST_MATCH: SEGMENT_[number] | SCORE:[0-100] | QUALITY:[perfect/excellent/good/a
  */
 export async function findPerfectMatchesIndividual(
   tweets: Array<{ id: string; text: string }>,
-  videoTranscripts: VideoTranscript[]
+  videoTranscripts: VideoTranscript[],
+  modelSettings?: ModelSettings
 ): Promise<PerfectMatch[]> {
   if (!anthropic) {
     throw new Error('Anthropic API key not configured. Perfect matching requires AI.');
@@ -455,7 +515,10 @@ export async function findPerfectMatchesIndividual(
     throw new Error('No video transcripts provided');
   }
   
+  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  
   console.log(`\n🚀 Starting individual perfect matching for ${tweets.length} tweets across ${videoTranscripts.length} videos`);
+  console.log(`📊 Using model: ${model}`);
   console.log(`📊 This will make ${tweets.length} separate API calls for best quality`);
   
   const matches: PerfectMatch[] = [];
@@ -467,7 +530,7 @@ export async function findPerfectMatchesIndividual(
     console.log(`\n📍 Processing tweet ${i + 1}/${tweets.length}`);
     
     try {
-      let match = await findBestMatchForSingleTweet(tweet, videoTranscripts);
+      let match = await findBestMatchForSingleTweet(tweet, videoTranscripts, modelSettings);
       
       if (match) {
         // Check if this segment has already been used

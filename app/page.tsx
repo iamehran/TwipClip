@@ -9,6 +9,7 @@ import ExportButton from './components/ExportButton';
 // import YouTubeConnect from './components/YouTubeConnect';
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
 import BulkDownloadButton from './components/BulkDownloadButton';
+import { ModelSettings } from './components/ModelSelector';
 
 interface VideoClip {
   videoId: string;
@@ -42,19 +43,19 @@ export default function Home() {
   const [stats, setStats] = useState<any>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStatus, setLoadingStatus] = useState('');
-  const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[] } | null>(null);
+  const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[]; modelSettings: ModelSettings } | null>(null);
   const [showSearchForm, setShowSearchForm] = useState(true);
   const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
 
-  const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false) => {
-    console.log('handleSearch called, setting loading to true');
+  const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false, modelSettings: ModelSettings) => {
+    console.log('handleSearch called with model settings:', modelSettings);
     setLoading(true);
     setError(null);
     setResults({});
     setStats(null);
     setLoadingProgress(0);
     setLoadingStatus('Initializing...');
-    setLastSearch({ threadContent, videoUrls });
+    setLastSearch({ threadContent, videoUrls, modelSettings });
     setShowSearchForm(false); // Hide search form when processing starts
 
     let progressInterval: NodeJS.Timeout | undefined;
@@ -70,7 +71,7 @@ export default function Home() {
         throw new Error('Please provide at least one video URL');
       }
 
-      console.log('Sending to process API:', { thread: threadContent, videos: videoUrls });
+      console.log('Sending to process API:', { thread: threadContent, videos: videoUrls, modelSettings });
 
       // Start with initial progress
       setLoadingStatus('Initializing search...');
@@ -83,7 +84,8 @@ export default function Home() {
         body: JSON.stringify({ 
           thread: threadContent,
           videos: videoUrls,
-          async: true  // Enable async mode
+          async: true,  // Enable async mode
+          modelSettings // Pass model settings to API
         }),
       });
 
@@ -138,18 +140,18 @@ export default function Home() {
             
             // Process the results
             const data = statusData.results;
-            
-            // Convert the new format to match the UI expectations
-            const formattedResults: SearchResults = {};
+
+      // Convert the new format to match the UI expectations
+      const formattedResults: SearchResults = {};
             
             // First, initialize all tweets with empty clips arrays
             const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
             tweetTexts.forEach((text, index) => {
-              const tweetKey = `tweet-${index + 1}`;
-              formattedResults[tweetKey] = {
+          const tweetKey = `tweet-${index + 1}`;
+            formattedResults[tweetKey] = {
                 tweet: text,
-                clips: []
-              };
+              clips: []
+            };
             });
             
             // Then populate with actual matches
@@ -159,42 +161,42 @@ export default function Home() {
                 const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
                 if (tweetIndex !== -1) {
                   const tweetKey = `tweet-${tweetIndex + 1}`;
-                  formattedResults[tweetKey].clips.push({
-                    videoId: match.videoUrl,
-                    title: 'AI Matched Clip',
-                    thumbnail: '/default-thumbnail.jpg',
-                    startTime: match.startTime,
-                    endTime: match.endTime,
-                    matchScore: match.confidence || 0,
-                    transcriptText: match.text || '',
-                    channelTitle: 'Video',
-                    clipDuration: `${match.endTime - match.startTime}s`,
-                    matchMethod: 'semantic' as const,
-                    confidence: match.confidence || 0,
-                    transcriptQuality: 'high' as const,
-                    transcriptSource: 'whisper',
-                    downloadPath: match.downloadPath,
-                    downloadSuccess: match.downloadSuccess
-                  });
+          formattedResults[tweetKey].clips.push({
+            videoId: match.videoUrl,
+            title: 'AI Matched Clip',
+            thumbnail: '/default-thumbnail.jpg',
+            startTime: match.startTime,
+            endTime: match.endTime,
+            matchScore: match.confidence || 0,
+            transcriptText: match.text || '',
+            channelTitle: 'Video',
+            clipDuration: `${match.endTime - match.startTime}s`,
+            matchMethod: 'semantic' as const,
+            confidence: match.confidence || 0,
+            transcriptQuality: 'high' as const,
+            transcriptSource: 'whisper',
+            downloadPath: match.downloadPath,
+            downloadSuccess: match.downloadSuccess
+          });
                 }
-              });
-            }
+        });
+      }
 
-            setResults(formattedResults);
-            setStats(data.summary || null);
+      setResults(formattedResults);
+      setStats(data.summary || null);
             setRawMatches(data.matches || []); // Store raw matches
-            
-            setLoadingProgress(100);
-            setLoadingStatus('Complete!');
+      
+      setLoadingProgress(100);
+      setLoadingStatus('Complete!');
             
             // Set loading to false when complete
             setLoading(false);
-            
-            // Reset progress after a short delay
-            setTimeout(() => {
-              setLoadingProgress(0);
-              setLoadingStatus('');
-            }, 1000);
+      
+      // Reset progress after a short delay
+      setTimeout(() => {
+        setLoadingProgress(0);
+        setLoadingStatus('');
+      }, 1000);
           }
 
           // Check if failed
@@ -270,7 +272,7 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 pt-20 pb-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           {/* Header - Only show when search form is visible */}
           {showSearchForm && (
             <div className="text-center mb-10">
@@ -322,7 +324,7 @@ export default function Home() {
           {error && (
             <ErrorDisplay 
               error={error} 
-              onRetry={lastSearch ? () => handleSearch(lastSearch.threadContent, lastSearch.videoUrls) : undefined} 
+              onRetry={lastSearch ? () => handleSearch(lastSearch.threadContent, lastSearch.videoUrls, false, lastSearch.modelSettings) : undefined} 
             />
           )}
 
@@ -331,12 +333,12 @@ export default function Home() {
           {loading && (
             <>
               {console.log('Showing loading state:', { loadingStatus, loadingProgress })}
-              <LoadingState 
-                status={loadingStatus}
-                progress={loadingProgress}
-                currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
-                totalVideos={lastSearch?.videoUrls.length}
-              />
+            <LoadingState 
+              status={loadingStatus}
+              progress={loadingProgress}
+              currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
+              totalVideos={lastSearch?.videoUrls.length}
+            />
             </>
           )}
 
@@ -385,7 +387,8 @@ export default function Home() {
               {/* Quality Indicator */}
               <div className="mt-4 pt-4 border-t border-gray-700/50">
                 <p className="text-xs text-gray-400 text-center">
-                  🎯 One perfect clip selected per tweet using AI matching
+                  🎯 One perfect clip selected per tweet using {lastSearch?.modelSettings.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 'Claude Sonnet 4'}
+                  {lastSearch?.modelSettings.thinkingEnabled && ' with thinking mode'}
                 </p>
               </div>
             </div>
@@ -409,11 +412,11 @@ export default function Home() {
                 </div>
 
                 {/* Video Clips */}
-                <div className="grid gap-4">
-                  {tweetData.clips.map((clip, index) => (
-                    <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
-                  ))}
-                </div>
+                  <div className="grid gap-4">
+                    {tweetData.clips.map((clip, index) => (
+                      <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
+                    ))}
+                  </div>
               </div>
             </div>
           ))}

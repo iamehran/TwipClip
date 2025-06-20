@@ -382,7 +382,7 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
             console.log('⚠️ Very long video detected - using most efficient format');
             // For very long videos, prioritize format 140 which is more stable
             formatSelection = '-f "140"';
-          }
+        }
         }
         
         // Build command with optimizations for large files

@@ -46,7 +46,7 @@ export async function POST(request) {
     const body = await request.json();
     console.log('Process API received:', body);
     
-    const { thread, videos, async: isAsync = false } = body;
+    const { thread, videos, async: isAsync = false, modelSettings } = body;
 
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
@@ -63,7 +63,11 @@ export async function POST(request) {
       );
     }
 
-    console.log('Processing request:', { thread: thread.substring(0, 50), videoCount: videos.length });
+    console.log('Processing request:', { 
+      thread: thread.substring(0, 50), 
+      videoCount: videos.length,
+      modelSettings: modelSettings || { model: 'claude-3-7-sonnet-latest', thinkingEnabled: false, tokenUsage: 'medium' }
+    });
 
     // Ensure auth file exists if user is authenticated
     await ensureAuthFile();
@@ -85,7 +89,7 @@ export async function POST(request) {
       console.log('Async mode requested, generating job ID...');
       // Generate a unique job ID
       const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Store initial job state
       jobs.set(jobId, {
         status: 'processing',
@@ -97,7 +101,7 @@ export async function POST(request) {
       console.log('Created job:', jobId);
       
       // Start processing in background
-      processInBackground(jobId, thread, videos).catch(error => {
+      processInBackground(jobId, thread, videos, modelSettings).catch(error => {
         console.error('Async processing error:', error);
         jobs.set(jobId, {
           status: 'failed',
@@ -115,7 +119,7 @@ export async function POST(request) {
 
     // Synchronous processing (original behavior)
     const startTime = Date.now();
-    const results = await processVideosIntelligently(thread, videos);
+    const results = await processVideosIntelligently(thread, videos, undefined, modelSettings);
     const processingTime = Date.now() - startTime;
 
     // Format response
@@ -131,7 +135,9 @@ export async function POST(request) {
         clipsFound: matches.length,
         clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
         avgConfidence: avgConfidence,
-        aiModel: 'Claude 3.7 Sonnet',
+        aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
+                 modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
+                 'Claude 3.7 Sonnet',
         processingTimeMs: processingTime
       }
     });
@@ -148,7 +154,7 @@ export async function POST(request) {
 }
 
 // Background processing function
-async function processInBackground(jobId, thread, videos) {
+async function processInBackground(jobId, thread, videos, modelSettings) {
   try {
     updateProcessingStatus(jobId, {
       status: 'processing',
@@ -167,7 +173,7 @@ async function processInBackground(jobId, thread, videos) {
     };
 
     // Process videos with progress updates
-    const results = await processVideosIntelligently(thread, videos, progressCallback);
+    const results = await processVideosIntelligently(thread, videos, progressCallback, modelSettings);
     const processingTime = Date.now() - startTime;
 
     // Format results
@@ -188,7 +194,9 @@ async function processInBackground(jobId, thread, videos) {
           clipsFound: matches.length,
           clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
           avgConfidence: avgConfidence,
-          aiModel: 'Claude 3.7 Sonnet',
+          aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
+                   modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
+                   'Claude 3.7 Sonnet',
           processingTimeMs: processingTime
         }
       }

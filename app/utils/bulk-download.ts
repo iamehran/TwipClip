@@ -58,7 +58,8 @@ async function downloadClip(
     
     // Download the video with proper quality settings
     const heightLimit = quality === '1080p' ? '1080' : '720';
-    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "best[height<=${heightLimit}]/bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+    // Improved format selection for better quality
+    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
     
     onProgress?.(`Downloading video (${quality})...`);
     await execAsync(downloadCmd, { 
@@ -70,8 +71,8 @@ async function downloadClip(
     onProgress?.(`Extracting clip (${startTimeStr} - ${endTimeStr})...`);
     
     // Use accurate seeking with re-encoding for precise cuts
-    // First try with fast preset for speed
-    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration} -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -avoid_negative_ts make_zero "${outputPath}" -y`;
+    // First try with fast preset for speed, but better quality (lower CRF = better quality)
+    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration} -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart -avoid_negative_ts make_zero "${outputPath}" -y`;
     
     try {
       await execAsync(extractCmd, {
@@ -81,7 +82,7 @@ async function downloadClip(
     } catch (extractError) {
       // If that fails, try with input seeking for better compatibility
       onProgress?.(`Retrying with alternative extraction method...`);
-      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}" -y`;
+      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}" -y`;
       
       await execAsync(extractCmd, {
         timeout: 180000, // 3 minute timeout
