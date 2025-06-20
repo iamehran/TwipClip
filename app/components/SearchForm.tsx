@@ -2,10 +2,19 @@
 
 import { useState, useCallback } from 'react';
 import ModelSelector, { ModelSettings } from './ModelSelector';
+import examplesData from '../data/examples.json';
 
 interface SearchFormProps {
   onSearch: (threadContent: string, videoUrls: string[], forceRefresh: boolean, modelSettings: ModelSettings) => void;
   loading: boolean;
+}
+
+interface Example {
+  id: number;
+  category: string;
+  title: string;
+  thread: string;
+  videos: string[];
 }
 
 export default function SearchForm({ onSearch, loading }: SearchFormProps) {
@@ -17,6 +26,7 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
     thinkingEnabled: false,
     tokenUsage: 'medium'
   });
+  const [lastUsedExampleId, setLastUsedExampleId] = useState<number | null>(null);
 
   const handleModelSettingsChange = useCallback((settings: ModelSettings) => {
     setModelSettings(settings);
@@ -34,18 +44,60 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
     onSearch(threadContent, urls, forceRefresh, modelSettings);
   };
 
-  // Example content for easy testing
+  // Load a random example from the JSON data
   const loadExample = () => {
-    setThreadContent(`The AI revolution isn't coming - it's already here, reshaping how we work and create
+    try {
+      // Type assertion to ensure TypeScript knows this is an array of Examples
+      const examples = examplesData as Example[];
+      
+      // Edge case: No examples available
+      if (!examples || examples.length === 0) {
+        console.error('No examples available');
+        return;
+      }
+
+      // Get available examples (excluding the last used one if there are multiple examples)
+      let availableExamples = examples;
+      if (examples.length > 1 && lastUsedExampleId !== null) {
+        availableExamples = examples.filter(ex => ex.id !== lastUsedExampleId);
+      }
+
+      // Select a random example
+      const randomIndex = Math.floor(Math.random() * availableExamples.length);
+      const selectedExample = availableExamples[randomIndex];
+
+      // Edge case: Invalid example structure
+      if (!selectedExample || !selectedExample.thread || !selectedExample.videos) {
+        console.error('Invalid example structure:', selectedExample);
+        return;
+      }
+
+      // Set the thread content
+      setThreadContent(selectedExample.thread);
+      
+      // Set the video URLs (join with newlines)
+      setVideoUrlsText(selectedExample.videos.join('\n'));
+      
+      // Remember which example was used
+      setLastUsedExampleId(selectedExample.id);
+
+      // Optional: Show a subtle notification of which example was loaded
+      console.log(`Loaded example: ${selectedExample.title} (${selectedExample.category})`);
+      
+    } catch (error) {
+      console.error('Error loading example:', error);
+      // Fallback to original hardcoded example if JSON loading fails
+      setThreadContent(`The AI revolution isn't coming - it's already here, reshaping how we work and create
 ---
 This wasn't just another CEO interview. Sundar Pichai uncovered that the businesses winning today aren't just building new products... they've built a brand new playbook
 ---
 And tech companies are using it to dominate. Here are his 8 revelations on the shift happening right now
 ---
 The $2 trillion opportunity that most are missing completely`);
-    
-    setVideoUrlsText(`https://www.youtube.com/watch?v=abc123
+      
+      setVideoUrlsText(`https://www.youtube.com/watch?v=abc123
 https://www.youtube.com/watch?v=xyz789`);
+    }
   };
 
   return (
@@ -66,9 +118,15 @@ https://www.youtube.com/watch?v=xyz789`);
             <button
               type="button"
               onClick={loadExample}
-              className="px-3 py-1 text-xs bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded-md transition-colors self-start"
+              className="px-3 py-1 text-xs bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded-md transition-colors self-start group relative"
+              title="Load a random real-world example"
             >
-              Load Example
+              <span className="flex items-center gap-1">
+                Load Example
+                <svg className="w-3 h-3 group-hover:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </span>
             </button>
           </div>
           
