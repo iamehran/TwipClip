@@ -2,101 +2,52 @@
   {
     "id": 1,
     "category": "AI & Technology",
-    "title": "OpenAI's GPT Evolution",
-    "thread": "The untold story of how OpenAI went from a non-profit to a $90B company isn't what you think\n---\nIn 2015, Elon Musk and Sam Altman founded OpenAI with a simple mission: ensure AI benefits all of humanity. But the path they took shocked everyone\n---\nWhat started as open-source research pivoted to closed models. The reason? They discovered something that changed everything about AI development\n---\nHere's the inside story of OpenAI's transformation and what it means for the future of AI",
+    "title": "Sam Altman on GPT-4 and OpenAI's Future",
+    "thread": "Sam Altman just revealed OpenAI's master plan and it's not what anyone expected\n---\nIn his latest interview, he admitted GPT-4 was \"embarrassingly bad\" compared to what's coming. But here's the kicker - they're not just building better AI\n---\nThey're building AGI that can do scientific research. Altman says we're 2-3 years away from AI that can cure diseases on its own\n---\nThe craziest part? OpenAI is already testing GPT-5 internally. And according to insiders, it makes GPT-4 look like a toy",
     "videos": [
-      "https://www.youtube.com/watch?v=L_Guz73e6fw",
-      "https://www.youtube.com/watch?v=jvqFAi7vkBc"
+      "https://www.youtube.com/watch?v=Wmo2vR7U9ck",
+      "https://www.youtube.com/watch?v=e-gwvmhyU7A"
     ]
   },
   {
     "id": 2,
-    "category": "Business & Startups",
-    "title": "Airbnb's Near-Death Experience",
-    "thread": "In 2008, Airbnb was selling cereal boxes to survive. Today they're worth $75 billion. Here's the insane story of their darkest hour\n---\nBrian Chesky and his co-founders were $40,000 in debt. They maxed out credit cards and couldn't pay rent. Investors laughed them out of meetings\n---\nThen they did something desperate: Created Obama O's and Cap'n McCain's cereal during the 2008 election. They made $30,000 selling breakfast cereal\n---\nThat cereal money kept them alive just long enough to get into Y Combinator. The rest is history",
+    "category": "Business & Entrepreneurship",
+    "title": "How Nvidia Became a $3 Trillion Company",
+    "thread": "Nvidia was almost bankrupt in 1997. Today they're worth $3 trillion. The story of how Jensen Huang pulled this off is insane\n---\nIn 1997, Nvidia had 3 months of cash left. Their graphics chips were failing. Jensen made a desperate pivot to something called 'GPU computing'\n---\nEveryone thought he was crazy. \"Why would anyone need parallel processing?\" they said. Then AI happened. And Nvidia had the only chips that could handle it\n---\nToday, every AI company on Earth needs Nvidia chips. They control 80% of the AI chip market. Jensen Huang saw the future 25 years early",
     "videos": [
-      "https://www.youtube.com/watch?v=W608u6sBFpo",
-      "https://www.youtube.com/watch?v=6hfPPotQEPs"
+      "https://www.youtube.com/watch?v=1QC9X_QW52k",
+      "https://www.youtube.com/watch?v=d3L2uPuxOxU"
     ]
   },
   {
     "id": 3,
     "category": "Space & Innovation",
-    "title": "SpaceX's Impossible Dream",
-    "thread": "Everyone said landing a rocket was impossible. SpaceX failed 3 times and nearly went bankrupt. Then something incredible happened\n---\nDecember 2015: After multiple explosions, SpaceX had one last shot. Elon Musk spent his last $100M. The entire company's future rode on 9 minutes\n---\nWhen Falcon 9 touched down at Cape Canaveral, grown engineers cried. They had just changed spaceflight forever\n---\nThat landing saved $60M per launch and made Mars colonization possible. Here's the untold story of that historic night",
+    "title": "SpaceX Starship - The Mars Mission Reality",
+    "thread": "SpaceX just did something everyone said was impossible - caught a 230-foot rocket booster with mechanical arms. Here's why this changes everything\n---\nThe Starship booster weighs 300 tons and was falling at 500mph. SpaceX caught it like a baseball. This isn't just cool - it's revolutionary\n---\nWhy? Because it makes Mars colonization actually affordable. Catching and reusing boosters cuts launch costs by 99%. We can now send 150 tons to Mars for $2 million\n---\nElon's timeline: First cargo missions to Mars in 2026. First humans in 2028. It sounds crazy until you realize SpaceX has hit every major milestone so far",
     "videos": [
-      "https://www.youtube.com/watch?v=VshdafZvwrg",
-      "https://www.youtube.com/watch?v=A0FZIwabctw"
+      "https://www.youtube.com/watch?v=H6hYEqrP56I",
+      "https://www.youtube.com/watch?v=921VbEMAwwY"
     ]
   },
   {
     "id": 4,
-    "category": "Finance & Crypto",
-    "title": "Bitcoin's Anonymous Creator",
-    "thread": "Satoshi Nakamoto owns 1 million Bitcoin worth $40 billion. They haven't touched it in 14 years. The story gets stranger\n---\nIn 2008, a mysterious figure published the Bitcoin whitepaper. They collaborated with developers for 2 years, then vanished completely\n---\nTheir final message: \"I've moved on to other things.\" Since then, silence. Their Bitcoin wallet remains untouched - the ultimate diamond hands\n---\nWho was Satoshi? Why did they disappear? The answer might be more shocking than you think",
+    "category": "Science & Technology",
+    "title": "The AI That's Solving Protein Folding",
+    "thread": "Google's DeepMind just solved a 50-year-old problem in biology. Their AI can now predict how proteins fold with 90% accuracy. Here's why this is huge\n---\nProteins are the machines that run your body. But we couldn't predict their shapes from DNA. It's like having blueprints but not knowing what the building looks like\n---\nAlphaFold changed that overnight. It solved 200 million protein structures in 18 months. Scientists used to spend years solving just one\n---\nNow we can design new medicines in days instead of decades. Cancer drugs, antibiotics, even plastic-eating enzymes. This is the biggest breakthrough in biology since DNA",
     "videos": [
-      "https://www.youtube.com/watch?v=_Kav2K1DVWo",
-      "https://www.youtube.com/watch?v=XfcvX0P1b5g"
+      "https://www.youtube.com/watch?v=gg7WjuFs8F4",
+      "https://www.youtube.com/watch?v=W7wJDJ56c88"
     ]
   },
   {
     "id": 5,
-    "category": "Health & Science",
-    "title": "CRISPR Revolution",
-    "thread": "In 2020, two scientists won the Nobel Prize for discovering how to edit human DNA. What they're doing now will blow your mind\n---\nJennifer Doudna couldn't sleep after her CRISPR discovery. She realized she'd created technology that could redesign life itself\n---\nNow CRISPR is curing genetic diseases thought impossible to treat. Sickle cell, blindness, cancer - all being reversed at the DNA level\n---\nBut here's what's really wild: We're just getting started. The next 5 years of gene editing will transform humanity",
+    "category": "Future of Work & Society",
+    "title": "Why Tech Giants Are Betting Everything on AI Agents",
+    "thread": "Microsoft, Google, and Meta are all racing to build AI agents. But not for the reason you think. The real goal will blow your mind\n---\nThey're not building chatbots. They're building digital workers that can use computers like humans. Book flights, write code, do research - all autonomously\n---\nSatya Nadella let it slip: \"In 5 years, every person will have an AI agent doing 80% of their work.\" That's 1.5 billion jobs being transformed\n---\nThe wildest part? These agents can work 24/7, never make mistakes, and cost $20/month. We're about to see the biggest labor shift in human history",
     "videos": [
-      "https://www.youtube.com/watch?v=k99bMtg4zRk",
-      "https://www.youtube.com/watch?v=7Lmm7YBqDiM"
-    ]
-  },
-  {
-    "id": 6,
-    "category": "Social Media & Creator Economy",
-    "title": "MrBeast's Formula",
-    "thread": "MrBeast turned down $1 billion for his YouTube channel. When you see his business model, you'll understand why\n---\nJimmy started making videos at 13 in his mom's basement. He studied YouTube for 10 hours a day, obsessing over what makes videos go viral\n---\nHis secret? He spends $3M per video and gives it all away. Last year: $54M revenue. His channels are worth more than most TV networks\n---\nBut the real genius is what he's building next. Hint: It's not about YouTube anymore",
-    "videos": [
-      "https://www.youtube.com/watch?v=RzveCJPWiLo",
-      "https://www.youtube.com/watch?v=5N3b6fLbKrw"
-    ]
-  },
-  {
-    "id": 7,
-    "category": "Electric Vehicles & Clean Energy",
-    "title": "Tesla's Master Plan",
-    "thread": "In 2006, Elon Musk published Tesla's \"Secret Master Plan\" on a blog. Everyone laughed. Today, it reads like prophecy\n---\nStep 1: Build sports car\nStep 2: Use that money to build affordable car\nStep 3: Use that money to build even more affordable car\nStep 4: Provide solar power\n---\n17 years later, Tesla is worth more than the next 10 automakers combined. But here's what everyone missed about the plan\n---\nIt was never about cars. The real goal was something much bigger",
-    "videos": [
-      "https://www.youtube.com/watch?v=xKCuDxpccYM",
-      "https://www.youtube.com/watch?v=NWnIlCZj5w0"
-    ]
-  },
-  {
-    "id": 8,
-    "category": "Gaming & Metaverse",
-    "title": "Epic vs Apple Battle",
-    "thread": "Epic Games declared war on Apple and Google on the same day. They knew they'd lose billions. Here's why they did it anyway\n---\nAugust 2020: Epic secretly updated Fortnite with direct payments, breaking App Store rules. They had lawyers on standby and a campaign ready\n---\nWithin hours, Fortnite was banned. Epic released a \"1984\" parody video. The gaming world went insane. It was all planned\n---\nTim Sweeney wasn't fighting for Fortnite. He was fighting for the metaverse. And he might have won",
-    "videos": [
-      "https://www.youtube.com/watch?v=euiSHuaw6Q4",
-      "https://www.youtube.com/watch?v=8qZkl9CKgjI"
-    ]
-  },
-  {
-    "id": 9,
-    "category": "Food Tech & Sustainability",
-    "title": "Impossible Foods Story",
-    "thread": "A Stanford professor spent 5 years studying why meat tastes like meat. His discovery is now worth $7 billion\n---\nPat Brown found the secret: heme, an iron molecule in blood. He figured out how to make it from plants. Burger King was interested\n---\nThe first taste test was a disaster. The second was worse. But the 3rd version fooled professional chefs. Even hardcore meat lovers couldn't tell\n---\nNow Impossible is in 40,000 restaurants. But burgers were just the beginning. Wait until you see what's next",
-    "videos": [
-      "https://www.youtube.com/watch?v=TF9bf9uKQQk",
-      "https://www.youtube.com/watch?v=nIiLqNQOgPA"
-    ]
-  },
-  {
-    "id": 10,
-    "category": "Education & Future of Work",
-    "title": "Khan Academy's AI Tutor",
-    "thread": "Khan Academy just launched an AI tutor that might replace traditional education. What it can do is absolutely mind-blowing\n---\nSal Khan started by tutoring his cousin over Yahoo Messenger. Now his AI can tutor 100 million students simultaneously in any subject\n---\nThe AI doesn't just give answers - it asks Socratic questions, adapts to learning styles, and never loses patience. Teachers are stunned\n---\nGPT-4 integration means every student now has a personal tutor 24/7. The implications for global education are staggering",
-    "videos": [
-      "https://www.youtube.com/watch?v=rnIgnS8Susg",
-      "https://www.youtube.com/watch?v=hJP5GqnTrNo"
+      "https://youtu.be/tVIP8MnpweQ?si=1zHhQ1rvoAXOVXgU",
+      "https://youtu.be/1IxG7ywSNXk?si=1YDyuYGFa8RT-9Cd",
+      "https://youtu.be/_a8EnBX8DSU?si=9hABIEIleOLaeBwA"
     ]
   }
 ] 
