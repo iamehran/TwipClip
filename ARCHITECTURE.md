@@ -2,142 +2,359 @@
 
 ## Overview
 
-TwipClip is an AI-powered YouTube clip extraction tool that helps users create perfect video clips for their Twitter/X threads. It uses advanced AI (Claude 3.7 Sonnet for semantic matching and OpenAI's Whisper for transcription to automatically find the most relevant segments of a YouTube video that match your thread content.
+TwipClip is an AI-powered video clip extraction tool that helps users create perfect video clips for their Twitter/X threads. It uses advanced AI models (Claude Opus 4 or Sonnet 4) for semantic matching and Google Cloud Video Intelligence for transcription to automatically find the most relevant segments of YouTube videos that match your thread content.
 
 ## Core Functionality
 
-The app follows a single, streamlined approach:
-1. **Audio Extraction** → 2. **Transcription** → 3. **Semantic Matching** → 4. **Clip Generation**
+The app follows a streamlined approach:
+1. **Video Processing** → 2. **Transcription** → 3. **AI Matching** → 4. **Clip Generation**
 
 ## Technical Architecture
 
 ### Tech Stack
-- **Frontend**: Next.js 14 with TypeScript
+- **Frontend**: Next.js 14 with TypeScript and React
 - **UI**: Tailwind CSS with custom components
 - **AI Models**: 
-  - Claude 3.7 Sonnet (Anthropic) for semantic matching
-  - Whisper (OpenAI) for audio transcription
+  - Claude 3 Opus (highest quality, 5x cost)
+  - Claude 3.5 Sonnet (balanced performance)
+  - Configurable thinking mode and token usage
+- **Transcription**: Google Cloud Video Intelligence API
 - **Video Processing**: yt-dlp + FFmpeg
-- **Deployment**: Railway (Docker-based)
+- **Deployment**: Docker, Railway, Vercel
 
 ### System Flow
 
 ```
-User Input (YouTube URL + Thread Content)
+User Input (Thread + Video URLs + Model Settings)
     ↓
-Video Processing (yt-dlp)
+Parallel Video Processing
     ↓
-Audio Extraction (.m4a format)
+Transcript Fetching/Generation
     ↓
-Transcription (Whisper API)
+AI Semantic Matching (Claude Opus/Sonnet)
     ↓
-Semantic Matching (Claude 3.7 Sonnet)
+Clip Timestamp Extraction
     ↓
-Clip Generation (timestamps)
-    ↓
-Results (YouTube URLs with start/end times)
+Results Display & Download Options
 ```
 
 ## Key Components
 
-### 1. Video Processing (`src/lib/video-processor.ts`)
-- Primary method: yt-dlp with Android player client to avoid bot detection
-- Downloads audio in m4a format for optimal quality and size
-- Includes retry logic and error handling
+### 1. Intelligent Processor V3 (`src/lib/intelligent-processor-v3.ts`)
+- Orchestrates the entire processing pipeline
+- Handles parallel video processing
+- Manages error recovery and retries
+- Coordinates between transcription and AI matching
 
-### 2. Transcription Service (`src/lib/transcription-service.ts`)
-- Uses OpenAI's Whisper API for accurate transcription
-- Returns timestamped segments for precise clip creation
-- Handles various audio formats
+### 2. Video Downloader (`src/lib/video-downloader.ts`)
+- Uses yt-dlp for reliable video downloading
+- Supports quality selection (720p/1080p)
+- FFmpeg integration for clip extraction
+- Optimized encoding settings (CRF 18, 192k audio)
 
-### 3. AI Matching (`src/lib/ai-matching.ts`)
-- Uses Claude 3.7 Sonnet for semantic understanding
-- Analyzes thread content and transcript to find relevant segments
-- Returns confidence scores and precise timestamps
-- Formats results with triple dashes (---) between tweets
+### 3. Transcription Service (`src/lib/transcription.ts`)
+- Primary: Google Cloud Video Intelligence API
+- Fallback: YouTube captions when available
+- Caches transcripts to avoid redundant API calls
+- Returns timestamped segments for precise matching
 
-### 4. System Tools (`src/lib/system-tools.ts`)
-- Manages yt-dlp and FFmpeg binaries
-- Handles different environments (local vs Railway)
-- Provides fallback mechanisms
+### 4. Perfect Matching Algorithm (`app/utils/perfect-matching-optimized.ts`)
+- Advanced AI-powered content matching
+- Dynamic model selection (Opus/Sonnet)
+- Configurable token limits based on usage level:
+  - Low: 1000 tokens (30 candidates)
+  - Medium: 2000 tokens (50 candidates)
+  - High: 4000 tokens (80 candidates)
+- Thinking mode for deeper analysis
+- Context window optimization
 
-## Fallback Strategy
+### 5. UI Components
 
-### Primary Path (95% success rate)
-1. yt-dlp with Android client spoofing
-2. Direct audio extraction
-3. Whisper transcription
-4. Claude matching
+#### SearchForm (`app/components/SearchForm.tsx`)
+- Horizontal layout with side-by-side inputs
+- Thread content and video URLs
+- Model selection integration
+- Example data loading
 
-### Fallback Path (when yt-dlp fails)
-1. Invidious API for transcript retrieval
-2. Direct transcript processing (skips audio extraction)
-3. Claude matching on existing transcript
+#### ModelSelector (`app/components/ModelSelector.tsx`)
+- AI model dropdown (Opus/Sonnet)
+- Thinking mode toggle
+- Token usage selector
+- Cost indicator display
 
-### Why This Approach?
-- **Reliability**: Single path reduces complexity and points of failure
-- **Quality**: Direct audio extraction ensures best transcription accuracy
-- **Speed**: Optimized for minimal processing time
-- **Cost**: Audio-only processing reduces bandwidth and API costs
+#### VideoResult (`app/components/VideoResult.tsx`)
+- YouTube embed preview
+- Timestamp navigation
+- Download buttons
+- Match confidence display
 
-## Environment Variables
+## AI Model Configuration
+
+### Model Selection
+```typescript
+interface ModelSettings {
+  model: 'claude-3-opus' | 'claude-3.5-sonnet';
+  thinkingMode: boolean;
+  tokenUsage: 'low' | 'medium' | 'high';
+}
+```
+
+### Token Allocation Strategy
+- Base tokens determined by usage level
+- Opus model receives 1.5x multiplier
+- Thinking mode adds system prompts for reasoning
+- Dynamic candidate limiting based on token budget
+
+### Cost Optimization
+- Sonnet as default (1x cost)
+- Opus for premium quality (5x cost)
+- Token usage affects both cost and quality
+- Caching reduces redundant API calls
+
+## Data Flow Architecture
+
+### 1. Request Processing
+```
+Client Request
+    ↓
+API Route Handler (/api/process)
+    ↓
+Input Validation
+    ↓
+Intelligent Processor V3
+    ↓
+Parallel Execution
+```
+
+### 2. Parallel Processing
+```
+Video URLs → [
+  Video 1 → Transcript → AI Matching
+  Video 2 → Transcript → AI Matching
+  Video 3 → Transcript → AI Matching
+] → Aggregated Results
+```
+
+### 3. Result Compilation
+```
+Matched Clips
+    ↓
+Confidence Scoring
+    ↓
+Result Formatting
+    ↓
+Client Response
+```
+
+## Environment Configuration
 
 ```env
-# Required
-OPENAI_API_KEY=          # For Whisper transcription
-ANTHROPIC_API_KEY=       # For Claude 3.7 Sonnet matching
+# Required API Keys
+ANTHROPIC_API_KEY=       # For Claude AI models
+GOOGLE_CLOUD_API_KEY=    # For Video Intelligence
 
-# Optional (for fallback)
-YOUTUBE_API_KEY=         # For YouTube Data API (currently unused)
-INVIDIOUS_INSTANCE=      # Custom Invidious instance (defaults to public)
+# Optional Configuration
+NODE_ENV=                # development/production
+NEXT_PUBLIC_API_URL=     # API endpoint URL
+MAX_CONCURRENT_DOWNLOADS=# Parallel download limit
+TRANSCRIPT_CACHE_TTL=    # Cache duration in seconds
 
-# Railway-specific
-YTDLP_PATH=             # Path to yt-dlp binary (auto-detected)
-FFMPEG_PATH=            # Path to FFmpeg binary (auto-detected)
+# System Paths
+FFMPEG_PATH=            # Custom FFmpeg path
+YTDLP_PATH=             # Custom yt-dlp path
+TEMP_DIR=               # Temporary file storage
 ```
 
-## Deployment
+## Deployment Architecture
+
+### Docker Deployment
+- Multi-stage build for optimization
+- Alpine Linux base for small image size
+- System dependencies included
+- Health check endpoints
 
 ### Railway Deployment
-The app uses a custom Dockerfile for Railway deployment:
+- Nixpacks configuration
+- Automatic dependency installation
+- Environment variable management
+- Built-in monitoring
 
-```dockerfile
-# Key steps:
-1. Install system dependencies (FFmpeg via apk)
-2. Install yt-dlp via pip
-3. Copy application code
-4. Build Next.js application
-5. Run production server
+### Vercel Deployment
+- Serverless functions
+- Edge network distribution
+- Automatic scaling
+- External service integration required
+
+## Performance Optimizations
+
+### 1. Parallel Processing
+- Concurrent video processing
+- Promise.all for batch operations
+- Resource pooling for downloads
+
+### 2. Caching Strategy
+- Transcript caching
+- Result memoization
+- CDN for static assets
+
+### 3. Resource Management
+- Automatic temp file cleanup
+- Memory usage monitoring
+- Request timeout handling
+
+## Error Handling
+
+### Graceful Degradation
+1. Primary transcription fails → YouTube captions
+2. AI model timeout → Retry with backoff
+3. Download failure → Alternative quality
+4. Complete failure → Detailed error reporting
+
+### Error Recovery
+```typescript
+try {
+  // Primary operation
+} catch (error) {
+  // Log error details
+  logger.error('Operation failed', { error, context });
+  
+  // Attempt recovery
+  if (isRecoverable(error)) {
+    return fallbackOperation();
+  }
+  
+  // Return user-friendly error
+  throw new UserError('Unable to process video');
+}
 ```
+
+## Security Considerations
+
+### API Security
+- API keys server-side only
+- Request validation
+- Rate limiting implementation
+- CORS configuration
+
+### Input Validation
+- URL format verification
+- Content length limits
+- Sanitization of user inputs
+- SQL injection prevention
+
+### File Security
+- Temporary file isolation
+- Automatic cleanup
+- Path traversal prevention
+- File type validation
+
+## Monitoring & Observability
+
+### Health Checks
+```typescript
+GET /api/health
+{
+  "status": "healthy",
+  "dependencies": {
+    "ffmpeg": true,
+    "ytdlp": true,
+    "anthropic": true,
+    "googleCloud": true
+  }
+}
+```
+
+### Metrics Collection
+- Processing time per request
+- API usage by model
+- Success/failure rates
+- Resource utilization
+
+### Logging Strategy
+- Structured JSON logging
+- Request/response tracking
+- Error stack traces
+- Performance metrics
+
+## Testing Architecture
+
+### Unit Tests
+- Component testing with React Testing Library
+- Utility function testing
+- API endpoint testing
+- Mock external services
+
+### Integration Tests
+- End-to-end processing flow
+- API integration verification
+- Error scenario testing
+- Performance benchmarking
+
+## Future Architecture Considerations
+
+### Scalability
+- Message queue for long tasks
+- Worker pool for processing
+- Database for persistent storage
+- Distributed caching
+
+### Features
+- Real-time processing updates
+- Batch job scheduling
+- User authentication
+- Usage analytics
+
+### Optimizations
+- GPU acceleration for AI
+- Edge computing for global distribution
+- Progressive web app capabilities
+- Offline mode support
+
+## Development Workflow
 
 ### Local Development
 ```bash
-# Install dependencies
-npm install
-
-# Set up environment variables
-cp .env.example .env.local
-
-# Run development server
-npm run dev
+npm run dev          # Start development server
+npm run build        # Production build
+npm run test         # Run test suite
+npm run lint         # Code linting
 ```
 
-## Common Issues & Solutions
+### Code Organization
+```
+app/                 # Next.js app directory
+├── api/            # API routes
+├── components/     # React components
+├── utils/          # Utility functions
+└── page.tsx        # Main page
 
-### 1. YouTube Bot Detection
-- **Issue**: YouTube blocks requests from data centers
-- **Solution**: Use Android player client with user-agent spoofing
-- **Fallback**: Invidious API for transcript retrieval
+src/lib/            # Core libraries
+├── intelligent-processor-v3.ts
+├── transcription.ts
+├── video-downloader.ts
+└── system-tools.ts
+```
 
-### 2. Binary Availability
-- **Issue**: yt-dlp/FFmpeg not found in production
-- **Solution**: Custom Dockerfile ensures binaries are installed and accessible
-- **Check**: System tools module verifies binary existence before use
+### Contributing Guidelines
+1. Follow TypeScript best practices
+2. Write comprehensive tests
+3. Document API changes
+4. Update architecture docs
+5. Performance impact assessment
 
-### 3. Large Video Processing
-- **Issue**: Timeout on long videos
-- **Solution**: Audio-only extraction reduces processing time
-- **Limit**: Videos over 2 hours may require special handling
+## Support & Maintenance
+
+### Common Issues
+- FFmpeg/yt-dlp installation
+- API key configuration
+- Memory limitations
+- Timeout errors
+
+### Debug Tools
+- `/api/health` - System health
+- `/api/test-tools` - Dependency check
+- Browser DevTools - Client debugging
+- Server logs - Backend debugging
 
 ## API Endpoints
 

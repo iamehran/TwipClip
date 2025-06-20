@@ -1,250 +1,141 @@
-# TwipClip 🎬✂️
+# TwipClip 🎬
 
-**AI-Powered Video Clip Extraction from Social Media Threads**
+An intelligent video clip extraction tool that automatically finds and extracts the most relevant video segments for your Twitter/X threads using AI-powered content matching.
 
-TwipClip is an intelligent web application that matches social media thread content to video transcripts and extracts relevant clips. Using Claude 3.7 Sonnet (Max Thinking) for semantic matching and Whisper for transcription, it finds the perfect video moments that correspond to your tweet threads.
+## 🚀 Overview
 
-## 🌟 Features
+TwipClip analyzes your thread content and searches through multiple YouTube videos to find the perfect clips that match each tweet. It uses advanced AI models (Claude Opus 4 / Sonnet 4) to understand context and deliver highly relevant video segments.
 
-- **AI-Powered Matching**: Uses Claude 3.7 Sonnet (Max Thinking) for intelligent semantic matching
-- **Multi-Platform Support**: YouTube, Vimeo, Twitter, TikTok, Instagram, and direct video files
-- **Whisper Transcription**: High-quality audio transcription with YouTube transcript fallback
-- **Parallel Processing**: Processes multiple videos simultaneously for speed
-- **Direct Downloads**: Clips download directly to your browser's Downloads folder
-- **Real-time Preview**: YouTube embed preview with timestamp navigation
-- **Health Monitoring**: Built-in health checks and error handling
-- **Production Ready**: Optimized for Railway deployment with automatic cleanup
+### Key Features
+
+- **AI-Powered Matching**: Uses Claude AI to intelligently match tweet content with video transcripts
+- **Bulk Processing**: Process multiple videos and tweets simultaneously
+- **Flexible AI Models**: Choose between Claude Opus 4 (highest quality) or Sonnet 4 (balanced performance)
+- **Thinking Mode**: Enable deep reasoning for better match quality
+- **Token Usage Control**: Optimize for speed (low), balance (medium), or quality (high)
+- **Bulk Download**: Download all matched clips as a ZIP file
+- **Quality Selection**: Choose between 720p and 1080p video quality
+- **Real Examples**: Built-in test cases with real threads and videos
+
+## 🛠️ Prerequisites
+
+- Node.js 18+ and npm
+- FFmpeg installed and in PATH
+- yt-dlp installed and in PATH
+- Anthropic API key
+- Google Cloud API key (for video transcription)
+
+## 📦 Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/twipclip.git
+cd twipclip
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
+
+4. Configure your `.env.local`:
+```env
+ANTHROPIC_API_KEY=your_anthropic_api_key
+GOOGLE_CLOUD_API_KEY=your_google_cloud_api_key
+```
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Node.js 18+ 
-- Anthropic API key (for Claude 3.7 Sonnet)
-- OpenAI API key (for Whisper transcription)
-- FFmpeg (auto-installed on Railway)
-- yt-dlp (auto-installed on Railway)
-
-### Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd TwipClip
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   cp env.example .env.local
-   ```
-   
-   Edit `.env.local` with your API keys:
-   ```env
-   # AI API Configuration
-   OPENAI_API_KEY=sk-your-openai-key-here
-   ANTHROPIC_API_KEY=sk-ant-api03-your-anthropic-key-here
-   
-   # Environment
-   NODE_ENV=development
-   ```
-
-4. **Install system dependencies** (Windows/Mac)
-   - **FFmpeg**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-   - **yt-dlp**: `pip install yt-dlp`
-
-5. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-6. **Open your browser**
-   Navigate to `http://localhost:3000`
-
-## 🎯 How to Use
-
-1. **Prepare your content**:
-   - Write your social media thread with tweets separated by triple dashes (`---`)
-   - Collect video URLs (YouTube, Vimeo, etc.)
-
-2. **Input your data**:
-   - Paste your thread in the text area
-   - Add video URLs (one per line or comma-separated)
-
-3. **Process and download**:
-   - Click "Find Clips" 
-   - Preview clips with embedded players
-   - Download individual clips to your computer
-
-### Example Thread Format
+### Development
+```bash
+npm run dev
 ```
-Zuckerberg just threatened to shut down Instagram in Europe.
----
-After the EU hit him with a $1.3 BILLION fine…
----
-He gave them 2 options: Drop the case—or lose access for 400M users.
+
+### Production Build
+```bash
+npm run build
+npm start
 ```
+
+### Docker (Optional)
+```bash
+docker build -t twipclip .
+docker run -p 3000:3000 --env-file .env.local twipclip
+```
+
+## 💡 Usage
+
+1. **Enter Your Thread**: Paste your thread content, separating each tweet with `---`
+
+2. **Add Video URLs**: Enter YouTube video URLs (one per line) that relate to your thread
+
+3. **Configure AI Settings**:
+   - **Model**: Choose Claude Opus 4 (best quality) or Sonnet 4 (faster)
+   - **Thinking Mode**: Enable for deeper analysis
+   - **Token Usage**: Low (fast), Medium (balanced), or High (best quality)
+
+4. **Process**: Click "Find Matching Clips" to start the AI analysis
+
+5. **Download Results**: Use "Download All Clips" to get a ZIP file with all matched segments
 
 ## 🏗️ Architecture
-
-### Core Components
-
-- **Frontend**: Next.js 15 with React 19 and Tailwind CSS
-- **AI Matching**: Claude 3.7 Sonnet (Max Thinking) for semantic analysis
-- **Transcription**: OpenAI Whisper with YouTube transcript fallback
-- **Video Processing**: yt-dlp + FFmpeg for downloading and clipping
-- **Platform Detection**: Automatic video platform recognition
-
-### API Endpoints
-
-- `POST /api/process` - Main processing endpoint
-- `POST /api/download-clip` - Individual clip download
-- `GET /api/health` - System health check
-- `GET /api/test-tools` - Tool availability check
-- `GET /api/cleanup` - Temporary file cleanup
-
-## 🚀 Deployment
-
-### Railway Deployment (Recommended)
-
-1. Fork this repository
-2. Create a new project on [Railway](https://railway.app)
-3. Connect your GitHub repository
-4. Add environment variables (see Configuration section)
-5. Deploy!
-
-### YouTube Authentication (Optional but Recommended)
-
-To avoid YouTube bot detection errors, you can add your YouTube cookies:
-
-1. Extract cookies from your browser (see [COOKIE_EXTRACTION_GUIDE.md](COOKIE_EXTRACTION_GUIDE.md))
-2. Add to Railway environment variables:
-   ```
-   YOUTUBE_COOKIES="[your cookie string]"
-   ```
-3. Cookies last 30-60 days and work for all users
-
-For detailed instructions, see the [Cookie Extraction Guide](COOKIE_EXTRACTION_GUIDE.md).
-
-### Manual Deployment
-
-For other platforms, ensure these system dependencies are installed:
-- Node.js 18+
-- Python 3.11+
-- FFmpeg
-- yt-dlp
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for Whisper transcription |
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude 3.7 Sonnet matching |
-| `NODE_ENV` | No | Environment (development/production) |
-| `CLEANUP_SECRET` | No | Secret for cleanup endpoint security |
-| `FFMPEG_PATH` | No | Custom FFmpeg path (auto-detected) |
-| `YTDLP_PATH` | No | Custom yt-dlp path (auto-detected) |
-
-### System Requirements
-
-- **Memory**: 512MB minimum, 1GB recommended
-- **Storage**: 2GB for temporary video processing
-- **Network**: Stable internet for API calls and video downloads
-
-## 🛠️ Development
-
-### Project Structure
 
 ```
 TwipClip/
 ├── app/                    # Next.js app directory
 │   ├── api/               # API routes
 │   ├── components/        # React components
-│   └── page.tsx          # Main page
-├── src/lib/              # Core libraries
-│   ├── transcription.ts  # Video transcription
-│   ├── semantic-matcher.ts # Claude matching
-│   ├── video-downloader.ts # Clip extraction
-│   └── system-tools.ts   # Tool detection
-├── scripts/              # Utility scripts
-├── nixpacks.toml        # Railway build config
-└── package.json         # Dependencies
+│   ├── utils/             # Utility functions
+│   └── data/              # Example data
+├── src/lib/               # Core library functions
+├── docs/                  # Documentation
+└── scripts/               # Setup and utility scripts
 ```
 
-### Key Technologies
+## 🔧 Configuration
 
-- **Next.js 15**: React framework with App Router
-- **TypeScript**: Type-safe development
-- **Tailwind CSS**: Utility-first styling
-- **Claude 3.7 Sonnet Advanced AI reasoning
-- **OpenAI Whisper**: Speech-to-text transcription
-- **yt-dlp**: Video downloading
-- **FFmpeg**: Video processing
+### AI Model Settings
 
-## 🔍 Monitoring
+| Model | Cost | Quality | Speed |
+|-------|------|---------|-------|
+| Claude Opus 4 | 5x | Highest | Slower |
+| Claude Sonnet 4 | 1x | High | Fast |
 
-### Health Checks
+### Token Usage Levels
 
-- **Health endpoint**: `/api/health`
-- **Tool status**: `/api/test-tools`
-- **Logs**: Check Railway dashboard or console
+| Level | Tokens | Candidates | Use Case |
+|-------|--------|------------|----------|
+| Low | 1000 | 30 | Quick results |
+| Medium | 2000 | 50 | Balanced |
+| High | 4000 | 80 | Best quality |
 
-### Common Issues
+## 📚 API Documentation
 
-1. **"System requirements not met"**
-   - Check `/api/health` for missing dependencies
-   - Verify API keys are set correctly
-
-2. **"No clips found"**
-   - Ensure video has transcripts/captions
-   - Check if thread content matches video topics
-
-3. **Download failures**
-   - Verify FFmpeg and yt-dlp are installed
-   - Check video URL accessibility
-
-## 📊 Performance
-
-- **Processing Speed**: ~30-60 seconds for 3 videos
-- **Concurrent Users**: Supports 10+ simultaneous users
-- **Video Limits**: Max 5 videos per request
-- **File Cleanup**: Automatic cleanup every 30 minutes
+See [API Documentation](./docs/API.md) for detailed endpoint information.
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🙏 Acknowledgments
 
-For issues and questions:
-1. Check the health endpoint: `/api/health`
-2. Review Railway logs for errors
-3. Ensure all API keys are configured
-4. Verify video URLs are accessible
-
-## 🔮 Roadmap
-
-- [ ] Support for more video platforms
-- [ ] Batch processing for large threads
-- [ ] Custom clip duration settings
-- [ ] User authentication and rate limiting
-- [ ] Advanced filtering and search
-- [ ] Export to various formats
+- Built with [Next.js](https://nextjs.org/)
+- AI powered by [Anthropic Claude](https://www.anthropic.com/)
+- Video processing with [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org/)
 
 ---
 
-**Built with ❤️ .**
+Built with ❤️ by Thoughtleadr

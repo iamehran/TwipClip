@@ -64,7 +64,12 @@ export default function ModelSelector({ onSettingsChange, disabled = false }: Mo
           <label className="text-xs text-gray-400 mb-1 block">Model</label>
           <div className="relative" ref={modelMenuRef}>
             <button
-              onClick={() => setShowModelMenu(!showModelMenu)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowModelMenu(!showModelMenu);
+              }}
               disabled={disabled}
               className={`w-full px-3 py-2 rounded-lg text-sm transition-all duration-200 flex items-center justify-between ${
                 disabled
@@ -81,7 +86,13 @@ export default function ModelSelector({ onSettingsChange, disabled = false }: Mo
             {showModelMenu && !disabled && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg overflow-hidden z-10">
                 <button
-                  onClick={() => { setModel('claude-sonnet-4-20250514'); setShowModelMenu(false); }}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setModel('claude-sonnet-4-20250514');
+                    setShowModelMenu(false);
+                  }}
                   className={`block w-full px-3 py-2 text-left hover:bg-gray-700 transition-colors text-sm ${
                     model === 'claude-sonnet-4-20250514' ? 'bg-gray-700 text-[#b8a887]' : 'text-white'
                   }`}
@@ -89,7 +100,13 @@ export default function ModelSelector({ onSettingsChange, disabled = false }: Mo
                   Claude Sonnet 4
                 </button>
                 <button
-                  onClick={() => { setModel('claude-opus-4-20250514'); setShowModelMenu(false); }}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setModel('claude-opus-4-20250514');
+                    setShowModelMenu(false);
+                  }}
                   className={`block w-full px-3 py-2 text-left hover:bg-gray-700 transition-colors text-sm ${
                     model === 'claude-opus-4-20250514' ? 'bg-gray-700 text-[#b8a887]' : 'text-white'
                   }`}
@@ -105,7 +122,12 @@ export default function ModelSelector({ onSettingsChange, disabled = false }: Mo
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Thinking Mode</label>
           <button
-            onClick={() => setThinkingEnabled(!thinkingEnabled)}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setThinkingEnabled(!thinkingEnabled);
+            }}
             disabled={disabled}
             className={`w-full px-3 py-2 rounded-lg text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
               disabled
@@ -139,7 +161,12 @@ export default function ModelSelector({ onSettingsChange, disabled = false }: Mo
             {(['low', 'medium', 'high'] as const).map((level) => (
               <button
                 key={level}
-                onClick={() => setTokenUsage(level)}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTokenUsage(level);
+                }}
                 disabled={disabled}
                 className={`flex-1 px-2 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
                   disabled
