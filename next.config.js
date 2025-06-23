@@ -13,7 +13,18 @@ const nextConfig = {
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
   },
   images: {
-    domains: ['i.ytimg.com', 'img.youtube.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'i.ytimg.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'img.youtube.com',
+        pathname: '/**',
+      },
+    ],
   },
   webpack: (config) => {
     // Resolve issues with next-connect

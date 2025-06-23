@@ -129,15 +129,46 @@ class TwipClipAuthHelper {
 
     async isBrowserAvailable(browser) {
         try {
-            const { stdout } = await execAsync(
+            // For Windows Chrome, we need to handle the locked database issue differently
+            if (platform() === 'win32' && browser === 'chrome') {
+                console.log(chalk.yellow(`Checking ${browser}... (Chrome must be closed on Windows)`));
+            }
+            
+            const { stdout, stderr } = await execAsync(
                 `yt-dlp --cookies-from-browser ${browser} --skip-download --print-json https://www.youtube.com 2>&1`,
                 { timeout: 5000 }
             );
-            return stdout.includes('"id"') || stdout.includes('"title"');
-        } catch (error) {
-            if (error.stderr && error.stderr.includes('No cookies found')) {
+            
+            // If we get JSON output, browser is available
+            if (stdout.includes('"id"') || stdout.includes('"title"')) {
                 return true;
             }
+            
+            // Check for specific error messages
+            if (stderr || stdout.includes('ERROR')) {
+                if (stdout.includes('Could not copy Chrome cookie database') || 
+                    stderr.includes('Could not copy Chrome cookie database')) {
+                    // Chrome is installed but database is locked
+                    console.log(chalk.yellow(`⚠️  ${browser} detected but cookies are locked. Please close Chrome completely.`));
+                    return true; // Still show as available
+                }
+                return false;
+            }
+            
+            return false;
+        } catch (error) {
+            // Check the error output
+            const errorStr = error.stdout || error.stderr || error.message || '';
+            
+            if (errorStr.includes('Could not copy Chrome cookie database')) {
+                console.log(chalk.yellow(`⚠️  ${browser} detected but cookies are locked. Please close Chrome completely.`));
+                return true; // Still show as available
+            }
+            
+            if (errorStr.includes('No cookies found')) {
+                return true; // Browser is available, just no cookies
+            }
+            
             return false;
         }
     }
@@ -176,6 +207,12 @@ class TwipClipAuthHelper {
         const cookiePath = join(this.tempDir, 'youtube_cookies.txt');
         
         try {
+            // Special message for Chrome on Windows
+            if (platform() === 'win32' && browser === 'chrome') {
+                console.log(chalk.yellow('\n⚠️  Important: Chrome must be completely closed on Windows!'));
+                console.log(chalk.yellow('   Close all Chrome windows and wait a few seconds.\n'));
+            }
+            
             const command = `yt-dlp --cookies-from-browser ${browser} --cookies "${cookiePath}" --skip-download https://www.youtube.com`;
             
             await execAsync(command, {
