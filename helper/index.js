@@ -95,6 +95,13 @@ class TwipClipAuthHelper {
                     console.log(chalk.yellow('Please make sure you are logged into YouTube in your browser.\n'));
                 } else if (error.message.includes('browser is running')) {
                     console.log(chalk.yellow('Please close your browser and try again.\n'));
+                } else if (error.message.includes('DPAPI decrypt failed')) {
+                    console.log(chalk.yellow('Chrome cookie decryption failed (Windows security issue).'));
+                    console.log(chalk.yellow('This is a known issue with some Windows configurations.\n'));
+                    console.log(chalk.cyan('Please try one of these alternatives:'));
+                    console.log(chalk.white('1. Use Firefox or Edge instead (they usually work better)'));
+                    console.log(chalk.white('2. Run this helper as Administrator'));
+                    console.log(chalk.white('3. Make sure Chrome is completely closed\n'));
                 }
             }
 
@@ -117,21 +124,40 @@ class TwipClipAuthHelper {
     async detectBrowsers() {
         const detectedBrowsers = [];
         
+        console.log(chalk.gray('Detecting installed browsers...\n'));
+        
         for (const browser of SUPPORTED_BROWSERS) {
-            const isAvailable = await this.isBrowserAvailable(browser);
-            if (isAvailable) {
-                detectedBrowsers.push(browser);
+            try {
+                const isAvailable = await this.isBrowserAvailable(browser);
+                if (isAvailable) {
+                    detectedBrowsers.push(browser);
+                    console.log(chalk.green(`✓ Found ${this.getBrowserDisplayName(browser)}`));
+                }
+            } catch (error) {
+                // Skip this browser silently
             }
         }
         
+        console.log(); // Empty line for spacing
         return detectedBrowsers;
     }
 
     async isBrowserAvailable(browser) {
         try {
+            // Skip Safari on non-macOS systems
+            if (browser === 'safari' && platform() !== 'darwin') {
+                return false;
+            }
+            
             // For Windows Chrome, we need to handle the locked database issue differently
             if (platform() === 'win32' && browser === 'chrome') {
-                console.log(chalk.yellow(`Checking ${browser}... (Chrome must be closed on Windows)`));
+                // Try a simpler check first
+                try {
+                    await execAsync('where chrome', { timeout: 2000 });
+                    return true; // Chrome is installed
+                } catch {
+                    // Try another method
+                }
             }
             
             const { stdout, stderr } = await execAsync(
@@ -139,34 +165,49 @@ class TwipClipAuthHelper {
                 { timeout: 5000 }
             );
             
+            const output = stdout + (stderr || '');
+            
             // If we get JSON output, browser is available
-            if (stdout.includes('"id"') || stdout.includes('"title"')) {
+            if (output.includes('"id"') || output.includes('"title"')) {
                 return true;
             }
             
-            // Check for specific error messages
-            if (stderr || stdout.includes('ERROR')) {
-                if (stdout.includes('Could not copy Chrome cookie database') || 
-                    stderr.includes('Could not copy Chrome cookie database')) {
-                    // Chrome is installed but database is locked
-                    console.log(chalk.yellow(`⚠️  ${browser} detected but cookies are locked. Please close Chrome completely.`));
-                    return true; // Still show as available
-                }
+            // Check for known error patterns that indicate browser is installed
+            if (output.includes('Could not copy Chrome cookie database') || 
+                output.includes('Could not copy Edge cookie database') ||
+                output.includes('Could not copy Brave cookie database')) {
+                return true; // Browser is installed, just locked
+            }
+            
+            if (output.includes('browser is not installed') || 
+                output.includes('could not find') ||
+                output.includes('No such file or directory')) {
                 return false;
+            }
+            
+            // If we get here and it's a known browser on Windows, assume it's available
+            if (platform() === 'win32' && ['chrome', 'edge', 'firefox'].includes(browser)) {
+                return true;
             }
             
             return false;
         } catch (error) {
-            // Check the error output
-            const errorStr = error.stdout || error.stderr || error.message || '';
+            const errorStr = (error.stdout || '') + (error.stderr || '') + (error.message || '');
             
-            if (errorStr.includes('Could not copy Chrome cookie database')) {
-                console.log(chalk.yellow(`⚠️  ${browser} detected but cookies are locked. Please close Chrome completely.`));
-                return true; // Still show as available
+            // Check if browser is installed but has issues
+            if (errorStr.includes('Could not copy') && errorStr.includes('cookie database')) {
+                return true;
             }
             
-            if (errorStr.includes('No cookies found')) {
-                return true; // Browser is available, just no cookies
+            if (errorStr.includes('No cookies found') || 
+                errorStr.includes('Failed to extract cookies')) {
+                return true; // Browser exists, just no cookies
+            }
+            
+            // For Windows, be more lenient
+            if (platform() === 'win32' && ['chrome', 'edge'].includes(browser)) {
+                // These browsers are almost always installed on Windows
+                return true;
             }
             
             return false;
@@ -244,6 +285,8 @@ class TwipClipAuthHelper {
                 throw new Error('not logged in');
             } else if (error.message?.includes('database is locked')) {
                 throw new Error('browser is running (please close it)');
+            } else if (error.message?.includes('Failed to decrypt with DPAPI')) {
+                throw new Error('DPAPI decrypt failed');
             }
             
             throw error;
