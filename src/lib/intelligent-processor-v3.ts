@@ -9,6 +9,7 @@ import {
 import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
+import { YouTubeAuthConfig } from './youtube-auth-v2';
 
 // Configuration: Use individual processing for better quality
 const USE_INDIVIDUAL_PROCESSING = true;
@@ -34,11 +35,15 @@ export interface VideoProcessingResult {
 }
 
 export interface ProcessingOptions {
+  forceRefresh?: boolean;
   downloadClips?: boolean;
   createZip?: boolean;
   outputDir?: string;
   quality?: string;
+  sessionId?: string;
   progressCallback?: (progress: number, message: string) => void;
+  modelSettings?: ModelSettings;
+  authConfig?: YouTubeAuthConfig;
 }
 
 export interface ModelSettings {
@@ -53,19 +58,33 @@ export interface ModelSettings {
 export async function processVideosWithPerfectMatching(
   thread: string, 
   videos: string[],
-  options: ProcessingOptions = {},
-  modelSettings?: ModelSettings
+  options: ProcessingOptions = {}
 ): Promise<{
   results: VideoProcessingResult[];
   matches: PerfectMatch[];
   downloadZipPath?: string;
   statistics: any;
 }> {
-  const { progressCallback } = options;
-  
-  console.log(`\n🚀 Starting Perfect Video Processing`);
+  const {
+    forceRefresh = false,
+    downloadClips = false,
+    createZip = false,
+    outputDir = path.join(process.cwd(), 'temp', 'downloads'),
+    quality = '720p',
+    modelSettings,
+    authConfig
+  } = options;
+
+  console.log('🚀 Starting intelligent video processing v3...');
   console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
   console.log(`🎥 Videos: ${videos.length}`);
+  console.log(`🔧 Options:`, { forceRefresh, downloadClips, createZip, quality });
+  if (authConfig) {
+    console.log(`🔐 Authentication: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
+  }
+
+  const { progressCallback } = options;
+  
   console.log(`🤖 Model: ${modelSettings?.model || 'claude-3-7-sonnet-latest'}`);
   console.log(`🧠 Thinking: ${modelSettings?.thinkingEnabled ? 'Enabled' : 'Disabled'}`);
   console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'medium'}`);
@@ -171,44 +190,38 @@ export async function processVideosWithPerfectMatching(
   // Step 4: Download clips if requested
   let downloadZipPath: string | undefined;
   
-  if (options.downloadClips) {
-    console.log('\n📥 Downloading all clips...');
-    progressCallback?.(85, 'Downloading video clips...');
+  if (downloadClips && matches.length > 0) {
+    console.log(`\n📥 Downloading ${matches.length} clips...`);
     
     const downloadResults = await downloadAllClips(matches, {
-      outputDir: options.outputDir,
+      outputDir,
       maxConcurrent: 3,
-      quality: options.quality || '720p',
+      quality,
+      authConfig,
       onProgress: (progress) => {
         console.log(`  Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(0)}%)`);
-        const overallProgress = 85 + (progress.percentage * 0.1); // 85-95%
-        progressCallback?.(overallProgress, `Downloading clips: ${progress.completed}/${progress.total}`);
       }
     });
-    
-    // Update matches with download paths
-    for (let i = 0; i < matches.length; i++) {
-      const downloadResult = downloadResults[i];
+
+    const successfulDownloads = downloadResults.filter(r => r.success);
+    console.log(`✅ Downloaded ${successfulDownloads.length}/${matches.length} clips`);
+
+    // Update matches with download status
+    matches.forEach((match, index) => {
+      const downloadResult = downloadResults[index];
       if (downloadResult) {
-        matches[i].downloadPath = downloadResult.downloadPath;
-        matches[i].downloadSuccess = downloadResult.success;
+        match.downloadSuccess = downloadResult.success;
+        match.downloadError = downloadResult.error;
+        match.downloadPath = downloadResult.downloadPath;
       }
-    }
-    
+    });
+
     // Create ZIP if requested
-    if (options.createZip) {
-      const zipPath = path.join(
-        options.outputDir || os.tmpdir(),
-        `twipclip-${Date.now()}.zip`
-      );
-      
-      console.log('\n📦 Creating ZIP file...');
-      progressCallback?.(95, 'Creating ZIP file...');
+    if (createZip && successfulDownloads.length > 0) {
+      console.log('\n📦 Creating ZIP archive...');
+      const zipPath = path.join(outputDir, `twipclip-${Date.now()}.zip`);
       downloadZipPath = await createDownloadZip(downloadResults, zipPath);
       console.log(`✅ ZIP created: ${downloadZipPath}`);
-      
-      // Clean up individual files after creating ZIP
-      await cleanupDownloads(downloadResults);
     }
   }
   
@@ -246,8 +259,9 @@ export async function processVideosIntelligently(
 ): Promise<VideoProcessingResult[]> {
   const { results } = await processVideosWithPerfectMatching(thread, videos, {
     downloadClips: false,
-    progressCallback
-  }, modelSettings);
+    progressCallback,
+    modelSettings
+  });
   
   return results;
 } 

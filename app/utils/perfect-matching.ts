@@ -18,6 +18,7 @@ export interface PerfectMatch {
   reasoning: string;
   downloadPath?: string;
   downloadSuccess?: boolean;
+  downloadError?: string;
 }
 
 interface VideoTranscript {

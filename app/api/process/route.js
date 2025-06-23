@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { processVideosIntelligently } from '../../../src/lib/intelligent-processor-v3';
+import { processVideosWithPerfectMatching } from '../../../src/lib/intelligent-processor-v3';
 import { performStartupCheck } from '../../../src/lib/startup-check';
 import { handleError, logError } from '../../../src/lib/error-handler';
 import { cookies } from 'next/headers';
@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { createProcessingJob, updateProcessingStatus, jobs } from './status/route';
 import { randomUUID } from 'crypto';
+import { YouTubeAuthManagerV2 } from '../../../src/lib/youtube-auth-v2';
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -43,11 +44,8 @@ async function ensureAuthFile() {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    console.log('Process API received:', body);
+    const { thread, videos, forceRefresh = false, modelSettings } = await request.json();
     
-    const { thread, videos, async: isAsync = false, modelSettings } = body;
-
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
         { error: 'Thread and videos are required' },
@@ -55,100 +53,70 @@ export async function POST(request) {
       );
     }
 
-    // Add request validation
-    if (videos.length > 5) {
-      return NextResponse.json(
-        { error: 'Maximum 5 videos allowed per request' },
-        { status: 400 }
-      );
-    }
-
-    console.log('Processing request:', { 
-      thread: thread.substring(0, 50), 
-      videoCount: videos.length,
-      modelSettings: modelSettings || { model: 'claude-3-7-sonnet-latest', thinkingEnabled: false, tokenUsage: 'medium' }
-    });
-
-    // Ensure auth file exists if user is authenticated
-    await ensureAuthFile();
-    
     // Ensure tools are available
-    const ready = await ensureToolsAvailable();
+    const ready = await performStartupCheck();
     if (!ready) {
       return NextResponse.json(
         { 
           error: 'System requirements not met',
-          details: 'Please check the server console for missing dependencies (yt-dlp, FFmpeg, or API keys)'
+          details: 'Please check the server console for missing dependencies'
         },
         { status: 503 }
       );
     }
 
-    // Check if async mode is requested
-    if (isAsync) {
-      console.log('Async mode requested, generating job ID...');
-      // Generate a unique job ID
-      const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Store initial job state
-      jobs.set(jobId, {
-        status: 'processing',
-        progress: 0,
-        message: 'Starting processing...',
-        createdAt: Date.now()
-      });
-      
-      console.log('Created job:', jobId);
-      
-      // Start processing in background
-      processInBackground(jobId, thread, videos, modelSettings).catch(error => {
-        console.error('Async processing error:', error);
-        jobs.set(jobId, {
-          status: 'failed',
-          error: error.message,
-          progress: 0,
-          message: 'Processing failed',
-          createdAt: jobs.get(jobId)?.createdAt || Date.now()
-        });
-      });
-      
-      // Return immediately with job ID
-      console.log('Returning job ID to client:', { jobId });
-      return NextResponse.json({ jobId });
+    // Get session ID and auth config
+    const cookieStore = cookies();
+    const sessionId = cookieStore.get('youtube_session_id')?.value;
+    
+    let authConfig;
+    if (sessionId) {
+      const authStatus = await YouTubeAuthManagerV2.getAuthStatus(sessionId);
+      if (authStatus.authenticated && authStatus.browser) {
+        authConfig = {
+          browser: authStatus.browser,
+          profile: authStatus.profile
+        };
+        console.log(`🔐 Using browser authentication: ${authConfig.browser}`);
+      }
     }
 
-    // Synchronous processing (original behavior)
-    const startTime = Date.now();
-    const results = await processVideosIntelligently(thread, videos, undefined, modelSettings);
-    const processingTime = Date.now() - startTime;
+    if (!authConfig) {
+      console.log('⚠️ No YouTube authentication configured - downloads may fail for restricted content');
+    }
 
-    // Format response
-    const matches = formatMatches(results);
-    const avgConfidence = calculateAvgConfidence(matches);
+    console.log('🎯 Processing request with perfect matching...');
+    console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
+    console.log(`📹 Videos: ${videos.length}`);
+    console.log(`🔄 Force refresh: ${forceRefresh}`);
+    console.log(`🤖 Model settings:`, modelSettings);
+
+    const { results, matches, statistics } = await processVideosWithPerfectMatching(
+      thread, 
+      videos,
+      {
+        forceRefresh,
+        downloadClips: false,
+        createZip: false,
+        modelSettings,
+        authConfig // Pass authentication config
+      }
+    );
+
+    console.log('✅ Processing complete');
+    console.log(`📊 Statistics:`, statistics);
 
     return NextResponse.json({
-      success: true,
-      matches: matches,
-      summary: {
-        videosProcessed: results.length,
-        videosSuccessful: results.filter(r => r.success).length,
-        clipsFound: matches.length,
-        clipsDownloaded: matches.filter(m => m.downloadSuccess).length,
-        avgConfidence: avgConfidence,
-        aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
-                 modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
-                 'Claude 3.7 Sonnet',
-        processingTimeMs: processingTime
-      }
+      results,
+      matches,
+      statistics
     });
 
   } catch (error) {
-    logError(error, 'process-endpoint');
-    const { message, statusCode } = handleError(error);
-    
+    console.error('Processing error:', error);
     return NextResponse.json(
-      { error: message },
-      { status: statusCode }
+      { error: error.message || 'Failed to process videos' },
+      { status: 500 }
     );
   }
 }

@@ -1,5 +1,7 @@
 # Troubleshooting Guide
 
+This guide covers common issues and their solutions.
+
 ## Table of Contents
 
 1. [Common Issues](#common-issues)
@@ -10,6 +12,7 @@
 6. [Deployment Issues](#deployment-issues)
 7. [Debug Tools](#debug-tools)
 8. [Getting Help](#getting-help)
+9. [YouTube Authentication Issues](#youtube-authentication-issues)
 
 ## Common Issues
 
@@ -589,4 +592,257 @@ function generatePerformanceReport() {
 
 // Log report
 console.log(JSON.stringify(generatePerformanceReport(), null, 2));
-``` 
+```
+
+## YouTube Authentication Issues
+
+### New Browser-Based Authentication System
+
+TwipClip now uses yt-dlp's native `--cookies-from-browser` feature for authentication. This is more reliable and secure than manual cookie extraction.
+
+### "Sign in to confirm you're not a bot" Error
+
+**Problem**: YouTube requires authentication for some videos.
+
+**Solution**:
+1. **Connect Your Browser**:
+   - Click the "YouTube Authentication" section in the UI
+   - Select your browser (Chrome, Firefox, Edge, etc.)
+   - Make sure you're logged into YouTube in that browser
+   - Click "Test" to verify authentication works
+
+2. **Browser-Specific Issues**:
+   - **Chrome on Windows**: Close Chrome before downloading (Windows locks cookie database when Chrome is running)
+   - **Firefox**: Works while browser is running
+   - **Edge**: Works while browser is running
+   - **Brave**: May need to select specific profile
+
+3. **If Authentication Fails**:
+   - Try a different browser
+   - Ensure you're logged into YouTube
+   - Clear browser cache and log in again
+   - Try using a browser profile without extensions
+
+### Browser Not Detected
+
+**Problem**: Your browser doesn't appear in the list.
+
+**Solution**:
+1. Ensure the browser is installed in the default location
+2. Supported browsers: Chrome, Firefox, Edge, Brave, Opera, Vivaldi, Safari (macOS)
+3. Try restarting the application
+
+### Cookie Extraction Failed
+
+**Problem**: yt-dlp can't access browser cookies.
+
+**Common Causes & Solutions**:
+1. **Browser is running (Chrome on Windows)**:
+   - Close Chrome completely
+   - Use Task Manager to ensure no Chrome processes are running
+
+2. **Permission Issues**:
+   - Run the application with appropriate permissions
+   - On Windows, try running as Administrator
+
+3. **Browser Profile Issues**:
+   - Try using the default profile
+   - Create a new browser profile specifically for YouTube
+
+### Testing Authentication
+
+Run the test script to verify your setup:
+```bash
+node scripts/test-browser-auth.js
+```
+
+This will:
+- Detect available browsers
+- Test cookie extraction
+- Verify yt-dlp integration
+- Show platform-specific warnings
+
+## Video Processing Errors
+
+### Transcript Extraction Failed
+**Error**: `Failed to extract transcript`
+
+**Possible Causes**:
+1. Video has no captions/subtitles
+2. Video is private or deleted
+3. Network timeout
+
+**Solutions**:
+- Verify the video URL is correct
+- Check if the video has captions enabled
+- Try again with a stable internet connection
+- Use videos with auto-generated or manual captions
+
+### AI Processing Timeout
+**Error**: `AI processing timed out`
+
+**Solutions**:
+- Break down large threads into smaller chunks
+- Reduce the number of videos processed at once
+- Check your API rate limits
+
+### No Matches Found
+**Problem**: The system can't find matching clips for your tweets.
+
+**Solutions**:
+- Ensure tweets and video content are related
+- Use more specific keywords in tweets
+- Verify transcript quality (check if video has clear audio)
+- Try different videos that discuss the tweet topics
+
+## Download Problems
+
+### Clip Download Failed
+**Error**: `Failed to download clip`
+
+**Common Causes**:
+1. **Authentication Required**: See [YouTube Authentication](#youtube-authentication)
+2. **Network Issues**: Check internet connection
+3. **Video Restrictions**: Some videos can't be downloaded due to DRM
+
+**Solutions**:
+- Ensure YouTube authentication is set up
+- Try downloading with lower quality (720p instead of 1080p)
+- Check if the video is available in your region
+- Verify sufficient disk space
+
+### Bulk Download Issues
+**Problem**: Bulk download fails or is incomplete.
+
+**Solutions**:
+- Reduce concurrent downloads in settings
+- Check available disk space
+- Ensure stable internet connection
+- Try downloading fewer clips at once
+
+### FFmpeg Errors
+**Error**: `FFmpeg exited with code 1`
+
+**Solutions**:
+- Verify FFmpeg is properly installed
+- Check FFmpeg version: `ffmpeg -version`
+- Ensure video codec is supported
+- Try with different quality settings
+
+## API Issues
+
+### Rate Limiting
+**Error**: `429 Too Many Requests`
+
+**Solutions**:
+- Implement request throttling
+- Add delays between API calls
+- Check your API quota and limits
+- Consider upgrading your API plan
+
+### Invalid API Key
+**Error**: `Invalid API key provided`
+
+**Solutions**:
+1. Verify `.env.local` file exists
+2. Check API key format and validity
+3. Ensure no extra spaces or quotes
+4. Regenerate API key if necessary
+
+### CORS Errors
+**Error**: `CORS policy blocked`
+
+**Solutions**:
+- Ensure API routes are properly configured
+- Check Next.js middleware settings
+- Verify API endpoint URLs
+- Use proper request headers
+
+## Performance Issues
+
+### Slow Processing
+**Problem**: Video processing takes too long.
+
+**Solutions**:
+1. **Optimize Video Selection**:
+   - Use shorter videos when possible
+   - Select videos with existing transcripts
+
+2. **System Optimization**:
+   - Close unnecessary applications
+   - Ensure sufficient RAM (8GB+ recommended)
+   - Use SSD for temporary files
+
+3. **Configuration**:
+   - Reduce concurrent processing
+   - Lower video quality for faster downloads
+   - Enable caching for repeated searches
+
+### High Memory Usage
+**Problem**: Application uses too much memory.
+
+**Solutions**:
+- Process fewer videos simultaneously
+- Reduce transcript buffer size
+- Clear temporary files regularly
+- Restart the application periodically
+
+### Browser Freezing
+**Problem**: UI becomes unresponsive during processing.
+
+**Solutions**:
+- Use async processing for large operations
+- Enable progress indicators
+- Break large tasks into smaller chunks
+- Refresh the page if stuck
+
+## Common Error Messages
+
+### "ENOENT: no such file or directory"
+- Ensure all required directories exist
+- Check file paths in configuration
+- Verify write permissions
+
+### "EPIPE: broken pipe"
+- Network connection interrupted
+- Restart the download/process
+- Check firewall settings
+
+### "ENOMEM: out of memory"
+- Reduce concurrent operations
+- Increase Node.js memory limit:
+  ```bash
+  NODE_OPTIONS="--max-old-space-size=4096" npm run dev
+  ```
+
+## Getting Help
+
+If you continue to experience issues:
+
+1. **Check Logs**:
+   - Browser console (F12)
+   - Server logs in terminal
+   - Application logs in `./logs`
+
+2. **Gather Information**:
+   - Error messages
+   - Steps to reproduce
+   - System information
+   - Browser and version
+
+3. **Report Issues**:
+   - GitHub Issues with detailed description
+   - Include relevant logs
+   - Specify your environment
+
+## Quick Fixes Checklist
+
+- [ ] yt-dlp installed and updated
+- [ ] FFmpeg installed and in PATH
+- [ ] Logged into YouTube in browser
+- [ ] Selected correct browser in UI
+- [ ] API keys properly configured
+- [ ] Sufficient disk space
+- [ ] Stable internet connection
+- [ ] Node.js 18+ installed
+- [ ] All npm packages installed 

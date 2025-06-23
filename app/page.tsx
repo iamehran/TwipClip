@@ -6,10 +6,12 @@ import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
 import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
-// import YouTubeConnect from './components/YouTubeConnect';
+import YouTubeHelperAuth from './components/YouTubeHelperAuth';
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
 import BulkDownloadButton from './components/BulkDownloadButton';
 import { ModelSettings } from './components/ModelSelector';
+import { cookies } from 'next/headers';
+import { YouTubeAuthConfig } from '../src/lib/youtube-auth-v2';
 
 interface VideoClip {
   videoId: string;
@@ -46,6 +48,15 @@ export default function Home() {
   const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[]; modelSettings: ModelSettings } | null>(null);
   const [showSearchForm, setShowSearchForm] = useState(true);
   const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
+  const [authConfig, setAuthConfig] = useState<YouTubeAuthConfig | undefined>();
+
+  const handleAuthChange = (isAuthenticated: boolean, browser?: string, profile?: string) => {
+    if (isAuthenticated && browser) {
+      setAuthConfig({ browser, profile });
+    } else {
+      setAuthConfig(undefined);
+    }
+  };
 
   const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false, modelSettings: ModelSettings) => {
     console.log('handleSearch called with model settings:', modelSettings);
@@ -265,7 +276,7 @@ export default function Home() {
             </div>
             
             {/* YouTube Connect */}
-            {/* <YouTubeConnect /> */}
+            <YouTubeHelperAuth />
           </div>
         </div>
       </div>
@@ -349,10 +360,8 @@ export default function Home() {
                 <h3 className="text-base sm:text-lg font-semibold text-white">Results Summary</h3>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <BulkDownloadButton 
-                    threadContent={lastSearch?.threadContent || ''}
-                    videoUrls={lastSearch?.videoUrls || []}
                     matches={rawMatches}
-                    disabled={!lastSearch}
+                    authConfig={authConfig}
                   />
                   <ExportButton data={results} />
                 </div>

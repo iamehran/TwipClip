@@ -6,6 +6,7 @@ import path from 'path';
 import os from 'os';
 import { getYtDlpCommand, getFFmpegCommand } from '../../src/lib/system-tools';
 import AdmZip from 'adm-zip';
+import { YouTubeAuthManagerV2, YouTubeAuthConfig } from '../../src/lib/youtube-auth-v2';
 
 const execAsync = promisify(exec);
 
@@ -29,13 +30,23 @@ export interface BulkDownloadProgress {
   percentage: number;
 }
 
+export interface BulkDownloadOptions {
+  outputDir?: string;
+  maxConcurrent?: number;
+  quality?: string;
+  authConfig?: YouTubeAuthConfig; // Browser authentication config
+  onProgress?: (progress: BulkDownloadProgress) => void;
+  onClipComplete?: (result: DownloadResult) => void;
+}
+
 /**
- * Download a single video clip
+ * Download a single video clip with browser-based authentication
  */
 async function downloadClip(
   match: PerfectMatch,
   outputDir: string,
   quality: string = '720p',
+  authConfig?: YouTubeAuthConfig,
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
   const ytDlpPath = await getYtDlpCommand();
@@ -56,16 +67,76 @@ async function downloadClip(
     const startTimeStr = formatTime(match.startTime);
     const endTimeStr = formatTime(match.endTime);
     
+    // Build download command with browser authentication
+    let downloadCmd = `"${ytDlpPath}"`;
+    
+    // Add browser cookie extraction if configured
+    if (authConfig) {
+      const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
+      downloadCmd += ` ${cookieArgs.join(' ')}`;
+      onProgress?.(`Using browser authentication (${authConfig.browser})...`);
+    } else {
+      onProgress?.(`⚠️ No browser authentication configured`);
+    }
+    
     // Download the video with proper quality settings
     const heightLimit = quality === '1080p' ? '1080' : '720';
     // Improved format selection for better quality
-    const downloadCmd = `"${ytDlpPath}" "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+    downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+    
+    // Add retry options for reliability
+    downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
     
     onProgress?.(`Downloading video (${quality})...`);
-    await execAsync(downloadCmd, { 
-      timeout: 300000, // 5 minute timeout
-      maxBuffer: 10 * 1024 * 1024 
-    });
+    
+    let downloadAttempts = 0;
+    const maxAttempts = 3;
+    let lastError: any = null;
+    
+    while (downloadAttempts < maxAttempts) {
+      try {
+        downloadAttempts++;
+        await execAsync(downloadCmd, { 
+          timeout: 300000, // 5 minute timeout
+          maxBuffer: 10 * 1024 * 1024 
+        });
+        break; // Success, exit loop
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if it's an authentication error
+        if (error.stderr?.includes('Sign in to confirm')) {
+          onProgress?.(`❌ Authentication required. Please log into YouTube in ${authConfig?.browser || 'your browser'}`);
+          
+          // Try fallback browser if available
+          if (authConfig && downloadAttempts < maxAttempts) {
+            const fallbackBrowsers = await YouTubeAuthManagerV2.getFallbackBrowsers(authConfig.browser);
+            if (fallbackBrowsers.length > 0) {
+              authConfig.browser = fallbackBrowsers[0];
+              onProgress?.(`🔄 Trying fallback browser: ${authConfig.browser}`);
+              // Rebuild command with new browser
+              downloadCmd = `"${ytDlpPath}"`;
+              const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
+              downloadCmd += ` ${cookieArgs.join(' ')}`;
+              downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+              downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
+              continue; // Retry with new browser
+            }
+          }
+        }
+        
+        if (downloadAttempts >= maxAttempts) {
+          throw error;
+        }
+        
+        onProgress?.(`⚠️ Download attempt ${downloadAttempts} failed, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+      }
+    }
+    
+    if (lastError && downloadAttempts >= maxAttempts) {
+      throw lastError;
+    }
     
     // Step 2: Extract the specific clip using FFmpeg with accurate seeking
     onProgress?.(`Extracting clip (${startTimeStr} - ${endTimeStr})...`);
@@ -147,6 +218,12 @@ async function downloadClip(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     onProgress?.(`❌ Failed to download clip: ${errorMessage}`);
     
+    // Provide helpful error messages
+    if (errorMessage.includes('Sign in to confirm')) {
+      const solutions = YouTubeAuthManagerV2.getErrorSolution(errorMessage);
+      console.error('Solutions:', solutions.join('\n'));
+    }
+    
     // Clean up any partial files
     try {
       await fs.unlink(outputPath).catch(() => {});
@@ -183,18 +260,13 @@ function formatTime(seconds: number): string {
  */
 export async function downloadAllClips(
   matches: PerfectMatch[],
-  options: {
-    outputDir?: string;
-    maxConcurrent?: number;
-    quality?: string;
-    onProgress?: (progress: BulkDownloadProgress) => void;
-    onClipComplete?: (result: DownloadResult) => void;
-  } = {}
+  options: BulkDownloadOptions = {}
 ): Promise<DownloadResult[]> {
   const {
     outputDir = path.join(os.tmpdir(), 'twipclip-downloads', Date.now().toString()),
     maxConcurrent = 3,
     quality = '720p',
+    authConfig,
     onProgress,
     onClipComplete
   } = options;
@@ -202,6 +274,13 @@ export async function downloadAllClips(
   // Create output directory
   await fs.mkdir(outputDir, { recursive: true });
   console.log(`📁 Download directory: ${outputDir}`);
+  
+  // Log authentication status
+  if (authConfig) {
+    console.log(`🔐 Using browser authentication: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
+  } else {
+    console.log('⚠️ No browser authentication configured - downloads may fail for restricted content');
+  }
   
   const results: DownloadResult[] = [];
   const progress: BulkDownloadProgress = {
@@ -220,7 +299,7 @@ export async function downloadAllClips(
       progress.currentFile = `Tweet ${match.tweetId}`;
       onProgress?.(progress);
       
-      const result = await downloadClip(match, outputDir, quality, (status) => {
+      const result = await downloadClip(match, outputDir, quality, authConfig, (status) => {
         console.log(`  ${status}`);
       });
       
@@ -249,6 +328,7 @@ export async function downloadAllClips(
     successfulDownloads: results.filter(r => r.success).length,
     failedDownloads: results.filter(r => !r.success).length,
     totalSize: results.reduce((sum, r) => sum + (r.fileSize || 0), 0),
+    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}` : 'none',
     results: results.map(r => ({
       tweetId: r.tweetId,
       filename: path.basename(r.downloadPath),

@@ -1,0 +1,37 @@
+{
+  "name": "twipclip-auth-helper",
+  "version": "1.0.0",
+  "description": "TwipClip YouTube Authentication Helper",
+  "main": "index.js",
+  "bin": "index.js",
+  "scripts": {
+    "build": "tsc && npm run package",
+    "package": "pkg . --targets node18-win-x64,node18-macos-x64 --compress GZip",
+    "package:win": "pkg . --targets node18-win-x64 --compress GZip --output dist/TwipClipAuth-win.exe",
+    "package:mac": "pkg . --targets node18-macos-x64 --compress GZip --output dist/TwipClipAuth-mac",
+    "package:all": "npm run package:win && npm run package:mac",
+    "dev": "ts-node index.ts",
+    "test": "node index.js"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/**/*"
+    ],
+    "outputPath": "dist",
+    "compress": "GZip"
+  },
+  "dependencies": {
+    "clipboardy": "^2.3.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "prompts": "^2.4.2",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
+    "pkg": "^5.8.1",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.1"
+  }
+} 

@@ -5,43 +5,109 @@ All notable changes to TwipClip will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2024-01-XX
 
 ### Added
-- AI Model Selection feature allowing users to choose between Claude Opus 4 and Claude Sonnet 4
-- Thinking mode toggle for deeper AI analysis
-- Token usage levels (Low/Medium/High) for controlling processing depth and speed
-- Cost indicator showing relative pricing between models (Opus is 5x more expensive)
-- Load Example feature with 5 curated real-world thread examples
-- Bulk download quality improvements with better video encoding settings
-- Comprehensive documentation suite including:
-  - API Documentation
-  - Development Guide
-  - Deployment Guide
-  - Troubleshooting Guide
-  - Contributing Guidelines
+- **Browser-Based YouTube Authentication**: Revolutionary new authentication system using yt-dlp's `--cookies-from-browser` feature
+  - Automatic cookie extraction from Chrome, Firefox, Edge, Brave, and more
+  - No manual cookie copying required
+  - Intelligent browser detection and selection
+  - Fallback browser support when primary fails
+  - Platform-specific optimizations (e.g., Chrome on Windows warnings)
+- **Enhanced Authentication UI**: New YouTubeAuthV2 component with:
+  - Browser selection interface
+  - Real-time authentication testing
+  - Helpful warnings and tips
+  - Profile selection support
+- **Robust Error Handling**: Smart error recovery with:
+  - Automatic browser fallback
+  - Detailed error solutions
+  - Retry mechanisms with exponential backoff
+- **Browser Detection System**: Comprehensive browser detection across all platforms
+  - Detects installed browsers
+  - Checks if browsers are running
+  - Finds browser profiles
+  - Platform-specific path resolution
 
 ### Changed
-- Updated SearchForm layout to horizontal design with Thread Content and Video URLs side by side
-- Increased main page width from max-w-6xl to max-w-7xl for better content display
-- Improved video quality settings:
-  - Changed CRF from 23 to 18 for better visual quality
-  - Increased audio bitrate from 128k to 192k
-- Enhanced input field heights from h-48 to h-64 for better usability
-- Made ModelSelector component more compact with reduced padding and smaller text
+- Replaced manual cookie extraction with automatic browser-based system
+- Updated all download functions to use new authentication
+- Improved bulk download reliability with retry logic
+- Enhanced error messages with actionable solutions
+- Updated documentation to reflect new authentication flow
 
 ### Fixed
-- Bulk download quality issues with improved yt-dlp format selection
-- Non-working YouTube URLs in example data replaced with verified working videos
+- Windows Chrome cookie database lock issues
+- Authentication failures with age-restricted content
+- Bulk download authentication propagation
+- Cross-platform compatibility issues
 
-### Technical Details
-- Updated `perfect-matching-optimized.ts` to support dynamic model selection
-- Token limits based on usage level:
-  - Low: 1000 tokens (30 candidates)
-  - Medium: 2000 tokens (50 candidates)
-  - High: 4000 tokens (80 candidates)
-- Opus model receives 1.5x more tokens than base limits
-- Added thinking mode system prompts for enhanced reasoning
+### Removed
+- Old manual cookie extraction system
+- YOUTUBE_COOKIES environment variable
+- Complex cookie file management
+- User-specific cookie storage endpoints
+
+### Security
+- Cookies never leave the user's machine
+- No cookie data stored in application
+- Direct browser-to-yt-dlp cookie passing
+- Improved user privacy
+
+## [0.1.2] - 2024-01-09
+
+### Added
+- Bulk download functionality with quality selection (720p/1080p)
+- Real-world example threads for quick testing
+- Enhanced video quality settings (CRF 18 for better quality)
+- Audio bitrate increased to 192k for better sound
+
+### Changed
+- Improved fair distribution algorithm for multi-video results
+- Better handling of form submission with proper event handling
+- Enhanced UI responsiveness with loading states
+
+### Fixed
+- Multi-video processing bias where first video dominated results
+- Form submission triggering on button clicks
+- Bulk download quality issues with better encoding settings
+
+## [0.1.1] - 2024-01-08
+
+### Added
+- AI model selection between Claude Opus 4 and Claude Sonnet 4
+- Thinking mode toggle for step-by-step reasoning
+- Token usage control (Low/Medium/High)
+- Cost indicators for different models
+- Professional documentation suite
+
+### Changed
+- UI layout optimized for wider screens (max-w-7xl)
+- Improved input field heights for better visibility
+- Enhanced model selector component styling
+
+### Fixed
+- TypeScript compilation errors
+- Component prop type mismatches
+- Build configuration issues
+
+## [0.1.0] - 2024-01-07
+
+### Added
+- Initial release of TwipClip
+- Perfect video clip matching using AI
+- Multi-video processing support
+- Transcript extraction and analysis
+- Individual and bulk clip downloads
+- Export functionality for results
+- Real-time processing progress
+- Responsive UI design
+
+### Technical
+- Built with Next.js 14 and TypeScript
+- Integrated Anthropic Claude API
+- yt-dlp and FFmpeg integration
+- Tailwind CSS for styling
 
 ## [1.0.0] - 2024-01-01
 

@@ -23,6 +23,7 @@ export interface PerfectMatch {
   reasoning: string;
   downloadPath?: string;
   downloadSuccess?: boolean;
+  downloadError?: string;
 }
 
 interface VideoTranscript {
@@ -87,22 +88,37 @@ async function batchAnalyzeMatches(
   const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
   const useThinking = modelSettings?.thinkingEnabled || false;
   
-  // Create candidate segments from all videos
-  const candidates: Array<{
+  // Calculate fair distribution of candidates per video
+  const candidatesPerVideo = Math.floor(maxCandidates / videoTranscripts.length);
+  const extraCandidates = maxCandidates % videoTranscripts.length;
+  
+  console.log(`📊 Creating candidate segments from ${videoTranscripts.length} videos...`);
+  console.log(`📊 Fair distribution: ~${candidatesPerVideo} candidates per video (total: ${maxCandidates})`);
+  
+  // Create candidate segments from all videos with fair distribution
+  const candidatesByVideo: Map<string, Array<{
     videoUrl: string;
     segmentIndex: number;
     windowSize: number;
     text: string;
     startTime: number;
     endTime: number;
-  }> = [];
+  }>> = new Map();
 
   // Use fewer, larger windows for efficiency
   const windowSizes = [10, 20]; // Reduced from [5, 10, 15]
   
-  console.log(`📊 Creating candidate segments from ${videoTranscripts.length} videos...`);
-  
+  // First, create all candidates for each video
   for (const video of videoTranscripts) {
+    const videoCandidates: Array<{
+      videoUrl: string;
+      segmentIndex: number;
+      windowSize: number;
+      text: string;
+      startTime: number;
+      endTime: number;
+    }> = [];
+    
     for (const windowSize of windowSizes) {
       const stepSize = Math.floor(windowSize / 2); // 50% overlap instead of 33%
       
@@ -113,7 +129,7 @@ async function batchAnalyzeMatches(
         // Skip very short segments
         if (windowText.length < 100) continue;
         
-        candidates.push({
+        videoCandidates.push({
           videoUrl: video.videoUrl,
           segmentIndex: i,
           windowSize,
@@ -123,17 +139,47 @@ async function batchAnalyzeMatches(
         });
       }
     }
+    
+    candidatesByVideo.set(video.videoUrl, videoCandidates);
+  }
+
+  // Now select candidates fairly from each video
+  const selectedCandidates: Array<{
+    videoUrl: string;
+    segmentIndex: number;
+    windowSize: number;
+    text: string;
+    startTime: number;
+    endTime: number;
+  }> = [];
+  
+  let videoIndex = 0;
+  for (const [videoUrl, videoCandidates] of candidatesByVideo) {
+    // Calculate how many candidates this video gets
+    let videoQuota = candidatesPerVideo;
+    if (videoIndex < extraCandidates) {
+      videoQuota += 1; // Distribute extra candidates to first few videos
+    }
+    
+    // For better coverage, try to select candidates evenly distributed throughout the video
+    if (videoCandidates.length <= videoQuota) {
+      // If we have fewer candidates than quota, take all
+      selectedCandidates.push(...videoCandidates);
+    } else {
+      // Select candidates evenly distributed throughout the video
+      const step = videoCandidates.length / videoQuota;
+      for (let i = 0; i < videoQuota; i++) {
+        const index = Math.floor(i * step);
+        selectedCandidates.push(videoCandidates[index]);
+      }
+    }
+    
+    console.log(`  Video ${videoIndex + 1}: Selected ${Math.min(videoCandidates.length, videoQuota)} from ${videoCandidates.length} candidates`);
+    videoIndex++;
   }
 
   const candidateCreationTime = Date.now() - startTime;
-  console.log(`📊 Created ${candidates.length} candidate segments in ${candidateCreationTime}ms`);
-
-  // Limit candidates to prevent API overload
-  const selectedCandidates = candidates.slice(0, maxCandidates);
-  
-  if (candidates.length > maxCandidates) {
-    console.log(`⚠️ Limiting to top ${maxCandidates} candidates (from ${candidates.length} total)`);
-  }
+  console.log(`📊 Selected ${selectedCandidates.length} candidates total in ${candidateCreationTime}ms`);
 
   // Batch process all tweets and top candidates in a single API call
   const tweetsText = tweets.map((t, i) => `TWEET_${i}: "${t.text}"`).join('\n\n');
@@ -380,20 +426,34 @@ async function findBestMatchForSingleTweet(
 
   console.log(`\n🎯 Finding best match for tweet: "${tweet.text.substring(0, 50)}..."`);
   
-  // Create candidate segments for all videos
-  const candidates: Array<{
+  // Calculate fair distribution of candidates per video
+  const candidatesPerVideo = Math.floor(maxCandidates / videoTranscripts.length);
+  const extraCandidates = maxCandidates % videoTranscripts.length;
+  
+  // Create candidate segments for all videos with fair distribution
+  const candidatesByVideo: Map<string, Array<{
     videoUrl: string;
     segmentIndex: number;
     windowSize: number;
     text: string;
     startTime: number;
     endTime: number;
-  }> = [];
+  }>> = new Map();
 
   // Use fewer, larger windows for efficiency
   const windowSizes = [10, 20];
   
+  // First, create all candidates for each video
   for (const video of videoTranscripts) {
+    const videoCandidates: Array<{
+      videoUrl: string;
+      segmentIndex: number;
+      windowSize: number;
+      text: string;
+      startTime: number;
+      endTime: number;
+    }> = [];
+    
     for (const windowSize of windowSizes) {
       const stepSize = Math.floor(windowSize / 2);
       
@@ -403,7 +463,7 @@ async function findBestMatchForSingleTweet(
         
         if (windowText.length < 100) continue;
         
-        candidates.push({
+        videoCandidates.push({
           videoUrl: video.videoUrl,
           segmentIndex: i,
           windowSize,
@@ -413,12 +473,43 @@ async function findBestMatchForSingleTweet(
         });
       }
     }
+    
+    candidatesByVideo.set(video.videoUrl, videoCandidates);
   }
 
-  // Limit candidates but allow more for single tweet processing
-  const selectedCandidates = candidates.slice(0, maxCandidates);
+  // Now select candidates fairly from each video
+  const selectedCandidates: Array<{
+    videoUrl: string;
+    segmentIndex: number;
+    windowSize: number;
+    text: string;
+    startTime: number;
+    endTime: number;
+  }> = [];
   
-  console.log(`📊 Analyzing ${selectedCandidates.length} candidates for this tweet`);
+  let videoIndex = 0;
+  for (const [videoUrl, videoCandidates] of candidatesByVideo) {
+    // Calculate how many candidates this video gets
+    let videoQuota = candidatesPerVideo;
+    if (videoIndex < extraCandidates) {
+      videoQuota += 1;
+    }
+    
+    // For better coverage, select candidates evenly distributed throughout the video
+    if (videoCandidates.length <= videoQuota) {
+      selectedCandidates.push(...videoCandidates);
+    } else {
+      const step = videoCandidates.length / videoQuota;
+      for (let i = 0; i < videoQuota; i++) {
+        const index = Math.floor(i * step);
+        selectedCandidates.push(videoCandidates[index]);
+      }
+    }
+    
+    videoIndex++;
+  }
+  
+  console.log(`📊 Analyzing ${selectedCandidates.length} candidates for this tweet (fairly distributed across ${videoTranscripts.length} videos)`);
 
   // Process this single tweet with all candidates
   const candidatesText = selectedCandidates.map((c, i) => 
