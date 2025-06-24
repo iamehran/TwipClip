@@ -1,41 +1,87 @@
 const { exec } = require('child_process');
-const { promisify } = require('util');
+const path = require('path');
+const fs = require('fs');
 
-const execAsync = promisify(exec);
+console.log('🚀 Starting TwipClip production server...');
 
-async function checkTools() {
-  console.log('🚀 Starting TwipClip on Railway...');
-  console.log('================================');
+// Function to copy cookies
+async function copyCookies() {
+  const sourcePath = path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+  const destPath = path.join(process.cwd(), 'temp/youtube_cookies.txt');
+  const dockerDestPath = '/app/temp/youtube_cookies.txt';
   
-  // Check FFmpeg
-  try {
-    const { stdout } = await execAsync('ffmpeg -version');
-    console.log('✅ FFmpeg found:', stdout.split('\n')[0]);
-  } catch (e) {
-    console.log('⚠️  FFmpeg not found');
+  // Ensure temp directory exists
+  const tempDir = path.join(process.cwd(), 'temp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
   }
   
-  // Check yt-dlp
-  try {
-    const { stdout } = await execAsync('yt-dlp --version');
-    console.log('✅ yt-dlp found:', stdout.trim());
-  } catch (e) {
+  // Check if source cookie file exists
+  if (fs.existsSync(sourcePath)) {
     try {
-      const { stdout } = await execAsync('python3 -m yt_dlp --version');
-      console.log('✅ yt-dlp (python module) found:', stdout.trim());
-    } catch (e2) {
-      console.log('⚠️  yt-dlp not found');
+      // Copy to local temp directory
+      fs.copyFileSync(sourcePath, destPath);
+      console.log('✅ Cookies copied to temp directory');
+      
+      // If running in Docker/Railway, also ensure the docker path
+      if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production') {
+        const dockerTempDir = '/app/temp';
+        if (!fs.existsSync(dockerTempDir)) {
+          fs.mkdirSync(dockerTempDir, { recursive: true });
+        }
+        fs.copyFileSync(sourcePath, dockerDestPath);
+        console.log('✅ Cookies copied to Docker temp directory');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to copy cookies:', error);
+      return false;
     }
+  } else {
+    console.log('⚠️ No YouTube cookies found - authentication may be required');
+    return false;
   }
-  
-  console.log('================================');
-  console.log('Starting Next.js server...');
-  
-  // Start the Next.js server
-  require('child_process').spawn('npm', ['start'], {
-    stdio: 'inherit',
-    shell: true
-  });
 }
 
-checkTools().catch(console.error); 
+// Copy cookies first
+copyCookies().then(() => {
+  // Set production environment if not already set
+  process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+
+  // Start the Next.js server
+  const startCommand = 'next start';
+  
+  console.log(`Running: ${startCommand}`);
+  
+  const server = exec(startCommand, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`Error: ${error}`);
+      return;
+    }
+    if (stdout) console.log(stdout);
+    if (stderr) console.error(stderr);
+  });
+
+  // Forward stdout and stderr
+  server.stdout.on('data', (data) => {
+    console.log(data.toString());
+  });
+
+  server.stderr.on('data', (data) => {
+    console.error(data.toString());
+  });
+
+  // Handle process termination
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    server.kill();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully...');
+    server.kill();
+    process.exit(0);
+  });
+}); 

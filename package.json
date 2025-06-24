@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "node scripts/copy-cookies.js && next start",
     "start:prod": "node scripts/start-production.js",
-    "lint": "next lint",
-    "postinstall": "node scripts/check-dependencies.js"
+    "lint": "next lint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
