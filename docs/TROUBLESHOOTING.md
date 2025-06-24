@@ -662,6 +662,86 @@ This will:
 - Verify yt-dlp integration
 - Show platform-specific warnings
 
+### Browser Cookie Extraction Issues (Chrome/Edge on Windows)
+
+**Error: "Permission denied" or "Database is locked"**
+
+This is a known issue with Chrome and Edge on Windows ([yt-dlp issue #7271](https://github.com/yt-dlp/yt-dlp/issues/7271)). These browsers lock their cookie database while running.
+
+**Solutions:**
+
+1. **Use Firefox (Recommended for Windows)**:
+   - Firefox doesn't lock its cookie database
+   - No need to close the browser
+   - Works immediately
+
+2. **Properly close Chrome/Edge**:
+   - Close ALL browser windows
+   - Open Task Manager (Ctrl+Shift+Esc)
+   - Go to "Details" tab
+   - Find all `chrome.exe` or `msedge.exe` processes
+   - Right-click → "End Process Tree" for each
+   - Wait 5-10 seconds before running the helper
+
+3. **Check for background processes**:
+   ```powershell
+   # PowerShell command to check Chrome processes
+   Get-Process chrome -ErrorAction SilentlyContinue
+   
+   # Force kill all Chrome processes
+   Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue
+   
+   # For Edge
+   Get-Process msedge -ErrorAction SilentlyContinue
+   Stop-Process -Name msedge -Force -ErrorAction SilentlyContinue
+   ```
+
+**Error: "Python version 3.8 deprecated"**
+
+This is a warning from yt-dlp about Python 3.8 deprecation.
+
+**Solutions:**
+- The helper should still work despite the warning
+- Consider updating Python to 3.9 or later:
+  ```bash
+  # Check current Python version
+  python --version
+  
+  # Update Python (Windows - using chocolatey)
+  choco upgrade python
+  
+  # Update Python (using pyenv)
+  pyenv install 3.11.0
+  pyenv global 3.11.0
+  ```
+
+**Alternative: Manual Cookie Export**
+
+If automated extraction continues to fail:
+
+1. Install a browser extension:
+   - [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie/fngmhnnpilhplaeedifhccceomclgfbg) for Chrome
+   - [Cookie-Editor](https://addons.mozilla.org/en-US/firefox/addon/cookie-editor/) for Firefox
+
+2. Export YouTube cookies in Netscape format
+
+3. Save as `youtube_cookies.txt`
+
+4. Use the file directly with yt-dlp:
+   ```bash
+   yt-dlp --cookies youtube_cookies.txt <video_url>
+   ```
+
+**Browser Compatibility Table:**
+
+| Browser | Windows | macOS | Linux | Notes |
+|---------|---------|-------|-------|-------|
+| Firefox | ✅ Best | ✅ Works | ✅ Works | No need to close |
+| Chrome | ⚠️ Issues | ✅ Works | ✅ Works | Must close on Windows |
+| Edge | ⚠️ Issues | ✅ Works | ✅ Works | Must close on Windows |
+| Brave | ⚠️ Issues | ✅ Works | ✅ Works | Same as Chrome |
+| Safari | N/A | ✅ Works | N/A | macOS only |
+
 ## Video Processing Errors
 
 ### Transcript Extraction Failed

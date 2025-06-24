@@ -164,7 +164,7 @@ TwipClip uses yt-dlp's native browser cookie extraction for seamless YouTube aut
 4. Click "Test" to verify it works
 5. Start downloading!
 
-**Note for Windows Chrome users**: Close Chrome before downloading for best results.
+**Note for Windows Chrome/Edge users**: These browsers must be completely closed before authentication. [See browser compatibility guide](docs/BROWSER_COOKIE_ISSUES.md).
 
 ## Troubleshooting
 

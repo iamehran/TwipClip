@@ -6,10 +6,10 @@ import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
 import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
-import YouTubeHelperAuth from './components/YouTubeHelperAuth';
+import YouTubeAuth from './components/YouTubeAuth';
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
 import BulkDownloadButton from './components/BulkDownloadButton';
-import { ModelSettings } from './components/ModelSelector';
+import ModelSelector, { ModelSettings } from './components/ModelSelector';
 import { cookies } from 'next/headers';
 import { YouTubeAuthConfig } from '../src/lib/youtube-auth-v2';
 
@@ -263,7 +263,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0e1e2d]">
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 bg-[#0e1e2d]/90 backdrop-blur-md border-b border-gray-800">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-[#0e1e2d]/95 backdrop-blur-md border-b border-gray-800">
         <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             {/* Logo and Title */}
@@ -275,35 +275,35 @@ export default function Home() {
               <ThoughtleadrLogo className="w-6 h-6 sm:w-7 sm:h-7" />
             </div>
             
-            {/* YouTube Connect */}
-            <YouTubeHelperAuth />
+            {/* Authentication Section */}
+            <YouTubeAuth />
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 pt-20 pb-8">
+      <div className="container mx-auto px-4 pt-24 pb-8">
         <div className="max-w-7xl mx-auto">
           {/* Header - Only show when search form is visible */}
           {showSearchForm && (
-            <div className="text-center mb-10">
-              <h2 className="text-xl sm:text-2xl md:text-3xl tracking-wide font-medium font-antipasto mx-auto max-w-4xl px-4">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl tracking-wide font-bold mx-auto max-w-4xl px-4">
                 <span className="text-white">Get </span>
                 <span className="text-[#b8a887]">Perfect Video Clips</span>
                 <span className="text-white"> For Your Thread</span>
               </h2>
-              <div className="mt-4 sm:mt-6 flex flex-wrap items-center justify-center gap-x-3 sm:gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-400 px-2">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-400 px-2">
                 <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-[#b8a887] rounded-full"></span>
-                  <span className="hidden sm:inline">Enhanced </span>AI Matching
+                  <span className="w-2 h-2 bg-[#b8a887] rounded-full animate-pulse"></span>
+                  Enhanced AI Matching
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-[#b8a887]/70 rounded-full"></span>
-                  Custom <span className="hidden sm:inline">Video </span>Input
+                  <span className="w-2 h-2 bg-[#b8a887] rounded-full animate-pulse delay-100"></span>
+                  Custom Video Input
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-[#b8a887]/50 rounded-full"></span>
-                  Precise <span className="hidden sm:inline">Clip </span>Extraction
+                  <span className="w-2 h-2 bg-[#b8a887] rounded-full animate-pulse delay-200"></span>
+                  Precise Clip Extraction
                 </span>
               </div>
             </div>

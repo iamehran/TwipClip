@@ -63,13 +63,18 @@ export class VideoDownloader {
   private async getYtdlpArgs(videoUrl: string, quality: string = '720p'): Promise<string[]> {
     const args: string[] = [];
     
-    // Add browser cookie extraction if configured
-    if (this.authConfig) {
+    // Check for uploaded YouTube cookies first
+    const cookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+    if (existsSync(cookiePath)) {
+      args.push('--cookies', cookiePath);
+      console.log('🍪 Using uploaded YouTube cookies');
+    } else if (this.authConfig) {
+      // Fall back to browser cookie extraction if configured
       const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(this.authConfig);
       args.push(...cookieArgs);
       console.log(`🍪 Using browser cookies from ${this.authConfig.browser}${this.authConfig.profile ? `:${this.authConfig.profile}` : ''}`);
     } else {
-      console.log('⚠️ No browser authentication configured, downloads may fail for restricted content');
+      console.log('⚠️ No YouTube authentication configured, downloads may fail for restricted content');
     }
     
     // Format selection based on quality
@@ -91,25 +96,6 @@ export class VideoDownloader {
       '--fragment-retries', '10',
       '--retry-sleep', '3'
     );
-    
-    // Check for user-specific YouTube cookies
-    const cookieStore = cookies();
-    const sessionId = cookieStore.get('youtube_session_id')?.value;
-    
-    if (sessionId) {
-      const cookiePath = join(
-        process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd(), 
-        'temp', 
-        'cookies', 
-        sessionId, 
-        'youtube.txt'
-      );
-      
-      if (existsSync(cookiePath)) {
-        args.push('--cookies', cookiePath);
-        console.log(`Using user YouTube cookies from session: ${sessionId}`);
-      }
-    }
     
     return args;
   }
@@ -261,22 +247,11 @@ export class VideoDownloader {
       '--convert-thumbnails', 'jpg'
     ];
 
-    // Check for helper-based authentication first
-    const cookieStore = cookies();
-    const sessionId = cookieStore.get('youtube_session_id')?.value;
-    
-    if (sessionId) {
-      const cookiePath = join(
-        process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd(), 
-        'temp', 
-        'cookies', 
-        sessionId, 
-        'youtube.txt'
-      );
-      if (existsSync(cookiePath)) {
-        console.log('[VideoDownloader] Using helper-based cookie authentication');
-        args.push('--cookies', `"${cookiePath}"`);
-      }
+    // Check for uploaded YouTube cookies
+    const cookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+    if (existsSync(cookiePath)) {
+      console.log('[VideoDownloader] Using uploaded YouTube cookies');
+      args.push('--cookies', `"${cookiePath}"`);
     } else if (this.authConfig?.selectedBrowser) {
       // Fall back to browser-based auth if available
       console.log(`[VideoDownloader] Using browser cookies from: ${this.authConfig.selectedBrowser}`);

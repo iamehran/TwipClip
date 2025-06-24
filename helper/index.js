@@ -101,17 +101,27 @@ class TwipClipAuthHelper {
 
                 if (error.message.includes('not logged in')) {
                     console.log(chalk.yellow('Please make sure you are logged into YouTube in your browser.\n'));
-                } else if (error.message.includes('browser is running')) {
-                    console.log(chalk.yellow('Please close your browser and try again.\n'));
+                } else if (error.message.includes('browser is running') || error.message.includes('browser needs to be closed')) {
+                    console.log(chalk.yellow('The browser must be completely closed to access cookies.'));
+                    console.log(chalk.yellow('This is a security feature of Chrome/Edge.\n'));
+                    console.log(chalk.cyan('Steps to fix:'));
+                    console.log(chalk.white('1. Close ALL browser windows'));
+                    console.log(chalk.white('2. Open Task Manager (Ctrl+Shift+Esc)'));
+                    console.log(chalk.white('3. Look for chrome.exe or msedge.exe processes'));
+                    console.log(chalk.white('4. End all those processes'));
+                    console.log(chalk.white('5. Try again\n'));
+                } else if (error.message.includes('permission denied')) {
+                    console.log(chalk.yellow('Permission denied - Chrome/Edge database is locked.'));
+                    console.log(chalk.yellow('The browser MUST be completely closed.\n'));
+                    console.log(chalk.cyan('Alternative: Use Firefox which doesn\'t have this issue.\n'));
                 } else if (error.message.includes('DPAPI decrypt failed')) {
-                    console.log(chalk.yellow('Chrome cookie decryption failed (Windows security issue).'));
-                    console.log(chalk.yellow('This is a known issue with Chrome v127+ on Windows.\n'));
+                    console.log(chalk.yellow('Chrome/Edge cookie decryption failed.'));
+                    console.log(chalk.yellow('This is due to enhanced security in recent versions.\n'));
                     console.log(chalk.cyan('Solutions:'));
-                    console.log(chalk.white('1. Use Firefox or Edge instead (recommended)'));
-                    console.log(chalk.white('2. Use an older Chrome profile'));
-                    console.log(chalk.white('3. Try Chrome Canary or Chrome Beta'));
-                    console.log(chalk.white('4. Run this helper as Administrator\n'));
-                    console.log(chalk.gray('Note: This is due to Chrome\'s new App-Bound Encryption security feature.'));
+                    console.log(chalk.white('1. Use Firefox instead (recommended)'));
+                    console.log(chalk.white('2. Completely close Chrome/Edge and try again'));
+                    console.log(chalk.white('3. Try running as Administrator'));
+                    console.log(chalk.white('4. Use an older browser version\n'));
                 }
             }
 
@@ -159,6 +169,22 @@ class TwipClipAuthHelper {
                 return false;
             }
             
+            // Special handling for Firefox - it's more reliable
+            if (browser === 'firefox') {
+                // First, try a simple executable check
+                try {
+                    if (platform() === 'win32') {
+                        await execAsync('where firefox', { timeout: 2000 });
+                        return true;
+                    } else {
+                        await execAsync('which firefox', { timeout: 2000 });
+                        return true;
+                    }
+                } catch {
+                    // Continue to yt-dlp check
+                }
+            }
+            
             // For Windows Chrome, we need to handle the locked database issue differently
             if (platform() === 'win32' && browser === 'chrome') {
                 // Try a simpler check first
@@ -189,6 +215,15 @@ class TwipClipAuthHelper {
                 return true; // Browser is installed, just locked
             }
             
+            // Firefox-specific checks
+            if (browser === 'firefox') {
+                if (output.includes('could not find Firefox profiles directory') ||
+                    output.includes('No cookies found') ||
+                    output.includes('Failed to extract cookies')) {
+                    return true; // Firefox is installed, just some issue with cookies/profiles
+                }
+            }
+            
             if (output.includes('browser is not installed') || 
                 output.includes('could not find') ||
                 output.includes('No such file or directory')) {
@@ -214,8 +249,16 @@ class TwipClipAuthHelper {
                 return true; // Browser exists, just no cookies
             }
             
+            // Firefox-specific error handling
+            if (browser === 'firefox' && 
+                (errorStr.includes('profiles directory') || 
+                 errorStr.includes('Firefox') ||
+                 errorStr.includes('firefox'))) {
+                return true; // Assume Firefox is installed if mentioned in error
+            }
+            
             // For Windows, be more lenient
-            if (platform() === 'win32' && ['chrome', 'edge'].includes(browser)) {
+            if (platform() === 'win32' && ['chrome', 'edge', 'firefox'].includes(browser)) {
                 // These browsers are almost always installed on Windows
                 return true;
             }
@@ -258,13 +301,30 @@ class TwipClipAuthHelper {
         const cookiePath = join(this.tempDir, 'youtube_cookies.txt');
         
         try {
-            // Special message for Chrome on Windows
-            if (platform() === 'win32' && browser === 'chrome') {
-                console.log(chalk.yellow('\n⚠️  Important: Chrome must be completely closed on Windows!'));
-                console.log(chalk.yellow('   Close all Chrome windows and wait a few seconds.\n'));
+            // Special message for Chrome/Edge on Windows
+            if (platform() === 'win32' && ['chrome', 'edge'].includes(browser)) {
+                console.log(chalk.yellow('\n⚠️  Important: Chrome/Edge must be COMPLETELY closed!'));
+                console.log(chalk.white('   1. Close all browser windows'));
+                console.log(chalk.white('   2. Check Task Manager for any chrome.exe/msedge.exe processes'));
+                console.log(chalk.white('   3. End those processes if found'));
+                console.log(chalk.white('   4. Wait 5 seconds before continuing\n'));
+                
+                // Add a pause to let user read the message
+                const response = await prompts({
+                    type: 'confirm',
+                    name: 'ready',
+                    message: 'Have you closed all Chrome/Edge windows and processes?',
+                    initial: true
+                });
+                
+                if (!response.ready) {
+                    throw new Error('browser needs to be closed');
+                }
             }
             
             const command = `yt-dlp --cookies-from-browser ${browser} --cookies "${cookiePath}" --skip-download https://www.youtube.com`;
+            
+            console.log(chalk.gray('Attempting to extract cookies...'));
             
             await execAsync(command, {
                 timeout: 30000,
@@ -291,12 +351,23 @@ class TwipClipAuthHelper {
                 unlinkSync(cookiePath);
             }
 
-            if (error.message?.includes('Sign in to confirm')) {
+            // Check for specific error patterns
+            const errorMessage = error.message || '';
+            const errorOutput = error.stdout || error.stderr || '';
+            
+            if (errorMessage.includes('Sign in to confirm') || errorOutput.includes('Sign in to confirm')) {
                 throw new Error('not logged in');
-            } else if (error.message?.includes('database is locked')) {
+            } else if (errorMessage.includes('database is locked') || errorOutput.includes('database is locked')) {
                 throw new Error('browser is running (please close it)');
-            } else if (error.message?.includes('Failed to decrypt with DPAPI')) {
+            } else if (errorMessage.includes('Failed to decrypt with DPAPI') || errorOutput.includes('Failed to decrypt with DPAPI')) {
                 throw new Error('DPAPI decrypt failed');
+            } else if (errorMessage.includes('Permission denied') || errorOutput.includes('Permission denied')) {
+                throw new Error('permission denied - browser must be closed');
+            } else if (errorOutput.includes('Python version 3.8') || errorOutput.includes('Deprecated Feature')) {
+                console.log(chalk.yellow('\n⚠️  Python 3.8 deprecation warning detected.'));
+                console.log(chalk.yellow('   yt-dlp may have issues with Python 3.8.'));
+                console.log(chalk.yellow('   Consider updating Python to 3.9 or later.\n'));
+                // Don't throw error, just warn
             }
             
             throw error;
