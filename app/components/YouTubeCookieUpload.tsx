@@ -1,24 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Upload, AlertCircle, CheckCircle, ExternalLink, FileText } from 'lucide-react';
 
 export default function YouTubeCookieUpload() {
-  const [cookieText, setCookieText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = async () => {
-    if (!cookieText.trim()) {
-      setError('Please paste your cookies');
-      return;
-    }
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    // Basic validation
-    if (!cookieText.includes('.youtube.com') || !cookieText.includes('TRUE')) {
-      setError('Invalid cookie format. Make sure you exported cookies in Netscape format.');
+    // Validate file type
+    if (!file.name.endsWith('.txt')) {
+      setError('Please upload a .txt file');
       return;
     }
 
@@ -26,25 +24,29 @@ export default function YouTubeCookieUpload() {
     setError('');
 
     try {
-      const response = await fetch('/api/auth/youtube/cookies', {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/auth/youtube/upload-cookies', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cookies: cookieText })
+        body: formData
       });
 
       const data = await response.json();
 
       if (data.success) {
         setSuccess(true);
-        setCookieText('');
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
         setTimeout(() => {
           window.location.reload();
         }, 2000);
       } else {
-        setError(data.error || 'Failed to save cookies');
+        setError(data.error || 'Failed to upload cookies');
       }
     } catch (error) {
-      setError('Failed to save cookies. Please try again.');
+      setError('Failed to upload cookies. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -83,11 +85,11 @@ export default function YouTubeCookieUpload() {
                 </li>
                 
                 <li>
-                  <strong>Copy the cookie file in netscape format</strong>
+                  <strong>Click "Export" to download cookies.txt</strong>
                 </li>
                 
                 <li>
-                  <strong>Paste it in the input field below</strong>
+                  <strong>Upload the cookies.txt file below</strong>
                 </li>
               </ol>
 
@@ -111,22 +113,38 @@ export default function YouTubeCookieUpload() {
         </button>
       )}
 
-      {/* Cookie Input */}
+      {/* File Upload */}
       <div className="space-y-3">
         <label className="block text-sm font-medium text-gray-700">
-          Paste your YouTube cookies:
+          Upload your YouTube cookies file:
         </label>
         
-        <textarea
-          value={cookieText}
-          onChange={(e) => setCookieText(e.target.value)}
-          placeholder={`# Netscape HTTP Cookie File
-# This file contains cookies from YouTube
-.youtube.com	TRUE	/	TRUE	1234567890	cookie_name	cookie_value
-...`}
-          className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-xs resize-none"
-          spellCheck={false}
-        />
+        <div className="relative">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt"
+            onChange={handleFileUpload}
+            disabled={loading}
+            className="hidden"
+            id="cookie-file-input"
+          />
+          
+          <label
+            htmlFor="cookie-file-input"
+            className={`block w-full border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition-colors ${
+              loading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <p className="text-sm text-gray-600">
+              Click to upload cookies.txt file
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Only .txt files are accepted
+            </p>
+          </label>
+        </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-2">
@@ -138,28 +156,19 @@ export default function YouTubeCookieUpload() {
           <div className="bg-green-50 border border-green-200 rounded-lg p-2">
             <div className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-green-600" />
-              <p className="text-sm text-green-700">Cookies saved successfully! Redirecting...</p>
+              <p className="text-sm text-green-700">Cookies uploaded successfully! Redirecting...</p>
             </div>
           </div>
         )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !cookieText.trim()}
-          className="w-full bg-blue-600 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <Upload className="w-4 h-4 animate-pulse" />
-              Saving cookies...
-            </span>
-          ) : (
-            <span className="flex items-center justify-center gap-2">
-              <Upload className="w-4 h-4" />
-              Upload Cookies
-            </span>
-          )}
-        </button>
+        {loading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+            <div className="flex items-center gap-2">
+              <Upload className="w-4 h-4 text-blue-600 animate-pulse" />
+              <p className="text-sm text-blue-700">Uploading cookies...</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Privacy Note */}
@@ -167,11 +176,12 @@ export default function YouTubeCookieUpload() {
         <div className="flex gap-2">
           <FileText className="w-4 h-4 text-gray-600 flex-shrink-0 mt-0.5" />
           <div className="space-y-1 text-xs text-gray-600">
-            <p className="font-medium">Note:</p>
+            <p className="font-medium">Important:</p>
             <ul className="list-disc list-inside space-y-0.5">
-              <li>Cookies expire after 30-60 days</li>
-              <li>Your data stays on our secure servers</li>
-              <li>Never share your cookie file</li>
+              <li>Your cookies are stored securely per session</li>
+              <li>Each user has their own isolated cookie storage</li>
+              <li>Cookies expire after 7 days of inactivity</li>
+              <li>Never share your cookie file with others</li>
             </ul>
           </div>
         </div>

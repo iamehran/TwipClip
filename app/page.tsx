@@ -111,6 +111,73 @@ export default function Home() {
       const startData = await startResponse.json();
       console.log('Start response data:', startData);
       
+      // Check if we got immediate results (sync mode)
+      if (startData.status === 'completed' && startData.results) {
+        console.log('Received immediate results (sync mode)');
+        
+        // Process the results immediately
+        const data = startData.results;
+
+        // Convert the new format to match the UI expectations
+        const formattedResults: SearchResults = {};
+        
+        // First, initialize all tweets with empty clips arrays
+        const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
+        tweetTexts.forEach((text, index) => {
+          const tweetKey = `tweet-${index + 1}`;
+          formattedResults[tweetKey] = {
+            tweet: text,
+            clips: []
+          };
+        });
+        
+        // Then populate with actual matches
+        if (data.matches && data.matches.length > 0) {
+          data.matches.forEach((match: any) => {
+            // Find which tweet this match belongs to
+            const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+            if (tweetIndex !== -1) {
+              const tweetKey = `tweet-${tweetIndex + 1}`;
+              formattedResults[tweetKey].clips.push({
+                videoId: match.videoUrl,
+                title: 'AI Matched Clip',
+                thumbnail: '/default-thumbnail.jpg',
+                startTime: match.startTime,
+                endTime: match.endTime,
+                matchScore: match.confidence || 0,
+                transcriptText: match.text || '',
+                channelTitle: 'Video',
+                clipDuration: `${match.endTime - match.startTime}s`,
+                matchMethod: 'semantic' as const,
+                confidence: match.confidence || 0,
+                transcriptQuality: 'high' as const,
+                transcriptSource: 'whisper',
+                downloadPath: match.downloadPath,
+                downloadSuccess: match.downloadSuccess
+              });
+            }
+          });
+        }
+
+        setResults(formattedResults);
+        setStats(data.summary || null);
+        setRawMatches(data.matches || []); // Store raw matches
+        
+        setLoadingProgress(100);
+        setLoadingStatus('Complete!');
+        
+        // Set loading to false when complete
+        setLoading(false);
+        
+        // Reset progress after a short delay
+        setTimeout(() => {
+          setLoadingProgress(0);
+          setLoadingStatus('');
+        }, 1000);
+        
+        return; // Exit early, no need to poll
+      }
+      
       const { jobId } = startData;
       if (!jobId) {
         console.error('No job ID received:', startData);

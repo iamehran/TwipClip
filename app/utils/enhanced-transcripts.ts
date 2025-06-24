@@ -257,50 +257,52 @@ export function detectVideoPlatform(url: string): VideoInfo | null {
 /**
  * PHASE 2A: Enhanced transcript retrieval with multi-platform support
  */
-export async function getEnhancedTranscript(videoUrl: string): Promise<TranscriptResult | null> {
-  // Detect platform first
-  const videoInfo = detectVideoPlatform(videoUrl);
-  if (!videoInfo) {
-    console.error(`Unsupported video URL format: ${videoUrl}`);
-    return null;
-  }
-  
-  const cacheKey = `${videoInfo.platform}-${videoInfo.id}`;
-  
-  // Check cache first
-  const cached = getCachedTranscript(cacheKey);
-  if (cached) {
-    console.log(`Using cached transcript for ${videoInfo.platform}:${videoInfo.id}`);
-    return cached;
-  }
-  
-  // Check if already processing (prevent duplicates)
-  if (processingQueue.has(cacheKey)) {
-    console.log(`Waiting for existing processing of ${cacheKey}`);
-    return await processingQueue.get(cacheKey)!;
-  }
-  
-  // Start processing
-  const processingPromise = processVideoTranscript(videoInfo);
-  processingQueue.set(cacheKey, processingPromise);
-  
+export async function getEnhancedTranscript(videoUrl: string, sessionId?: string): Promise<TranscriptResult | null> {
   try {
-    const result = await processingPromise;
-    
-    if (result) {
-      setCachedTranscript(cacheKey, result);
+    if (!videoUrl || typeof videoUrl !== 'string') {
+      console.error('Invalid video URL provided');
+      return null;
     }
     
-    return result;
-  } finally {
-    processingQueue.delete(cacheKey);
+    console.log('\n🎬 Getting enhanced transcript for:', videoUrl);
+    if (sessionId) {
+      console.log('🔐 Using session:', sessionId.substring(0, 8) + '...');
+    }
+    
+    // Detect video platform
+    const videoInfo = detectVideoPlatform(videoUrl);
+    if (!videoInfo) {
+      console.error('Could not detect video platform from URL');
+      return null;
+    }
+    
+    console.log(`📺 Platform: ${videoInfo.platform}, ID: ${videoInfo.id}`);
+    
+    // Check cache first
+    const cached = getCachedTranscript(videoInfo.id);
+    if (cached) {
+      console.log('✅ Using cached transcript');
+      return cached;
+    }
+    
+    // Process video transcript with session ID
+    const transcript = await processVideoTranscript(videoInfo, sessionId);
+    
+    if (transcript) {
+      setCachedTranscript(videoInfo.id, transcript);
+    }
+    
+    return transcript;
+  } catch (error) {
+    console.error('Transcription failed:', error);
+    return null;
   }
 }
 
 /**
  * PHASE 2A: Main transcript processing function with quality enhancement
  */
-async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptResult | null> {
+async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string): Promise<TranscriptResult | null> {
   console.log(`Processing ${videoInfo.platform} video: ${videoInfo.id}`);
   
   // Store video info for potential re-download
@@ -352,41 +354,43 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Check for cookie options
         let cookieFlag = '';
         
-        // Check if cookie file exists (created by startup script)
-        const cookieFile = '/app/temp/youtube_cookies.txt';
-        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
-          console.log('Using YouTube cookies from:', cookieFile);
-          
-          // Debug: Check first few lines of cookie file
-          try {
-            const cookieContent = await fs.readFile(cookieFile, 'utf-8');
-            const lines = cookieContent.split('\n').slice(0, 3);
-            console.log('Cookie file preview:', lines.join(' | '));
-            console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
-          } catch (e) {
-            console.log('Could not read cookie file for preview');
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
+            console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+            
+            // Debug: Check first few lines of cookie file
+            try {
+              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
+              const lines = cookieContent.split('\n').slice(0, 3);
+              console.log('Cookie file preview:', lines.join(' | '));
+              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
+            } catch (e) {
+              console.log('Could not read cookie file for preview');
+            }
+          } else {
+            console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
           }
         } else {
-          console.log('No YouTube cookies file found at:', cookieFile);
+          console.log('No session ID provided - authentication may be required');
         }
         
-        // For YouTube, format 140 is the most reliable m4a audio format (128kbps)
-        // For very long videos, we don't need to download in chunks - just get the audio efficiently
-        let formatSelection = '-f "140/bestaudio[ext=m4a]/worstaudio"';
+        // Use the format selection strategy based on metadata
+        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
+        let formatSelection = '';
         
-        // Log video duration if available
-        if (metadata && metadata.duration) {
-          console.log(`📺 Video duration: ${(metadata.duration / 60).toFixed(1)} minutes`);
-          if (metadata.duration > 7200) { // Over 2 hours
-            console.log('⚠️ Very long video detected - using most efficient format');
-            // For very long videos, prioritize format 140 which is more stable
-            formatSelection = '-f "140"';
-        }
+        if (videoSizeMB > 1000) { // Over 1GB
+          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
+        } else {
+          formatSelection = '-f "worstaudio/bestaudio"';
         }
         
-        // Build command with optimizations for large files
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --no-playlist --no-check-certificate --socket-timeout 30 --retries 10 --fragment-retries 10 --retry-sleep 3 --buffer-size 16K --concurrent-fragments 4 -o ${audioPath} ${videoInfo.url}`.trim();
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
         // Windows/local command
         extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
@@ -408,10 +412,15 @@ async function processVideoTranscript(videoInfo: VideoInfo): Promise<TranscriptR
         // Same cookie logic as above
         let cookieFlag = '';
         
-        // Check if cookie file exists (created by startup script)
-        const cookieFile = '/app/temp/youtube_cookies.txt';
-        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies ${userCookieFile}`;
+          }
         }
         
         // Fallback: Try format 140 directly without extraction
@@ -575,14 +584,14 @@ async function getOptimizedWhisperTranscript(
 /**
  * PHASE 2A: Multi-strategy audio extraction
  */
-async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: string): Promise<boolean> {
+async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: string, sessionId?: string): Promise<boolean> {
   // Initialize commands if not already done
   if (!workingYtDlpCommand || !workingFFmpegCommand) {
     await getYtDlpCommand();
     await getFFmpegCommand();
   }
   
-  const strategies = getAudioExtractionStrategies(videoInfo, outputPath);
+  const strategies = await getAudioExtractionStrategies(videoInfo, outputPath, sessionId);
   
   // Get the directory where the file should be created
   const outputDir = path.dirname(outputPath);
@@ -695,7 +704,7 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
 /**
  * PHASE 2A: Platform-specific audio extraction strategies
  */
-function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: string): Array<{ command: string; timeout?: number }> {
+async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: string, sessionId?: string): Promise<Array<{ command: string; timeout?: number }>> {
   const strategies: Array<{ command: string; timeout?: number }> = [];
   const videoUrl = videoInfo.url;
   const tempDir = path.dirname(fullOutputPath);
@@ -728,13 +737,30 @@ function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath: stri
         // Cookie handling
         let cookieFlag = '';
         
-        // Check if cookie file exists (created by startup script)
-        const cookieFile = '/app/temp/youtube_cookies.txt';
-        if (require('fs').existsSync(cookieFile)) {
-          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
-          console.log('Using YouTube cookies from:', cookieFile);
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
+            console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+            
+            // Debug: Check first few lines of cookie file
+            try {
+              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
+              const lines = cookieContent.split('\n').slice(0, 3);
+              console.log('Cookie file preview:', lines.join(' | '));
+              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
+            } catch (e) {
+              console.log('Could not read cookie file for preview');
+            }
+          } else {
+            console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
+          }
         } else {
-          console.log('No YouTube cookies file found at:', cookieFile);
+          console.log('No session ID provided - authentication may be required');
         }
         
         strategies.push(
@@ -885,7 +911,7 @@ async function getDetailedVideoInfo(videoInfo: VideoInfo): Promise<VideoInfo | n
 /**
  * PHASE 2A: Execute transcript strategy based on method
  */
-async function executeTranscriptStrategy(strategy: { method: string; priority: number }, videoInfo: VideoInfo): Promise<TranscriptResult | null> {
+async function executeTranscriptStrategy(strategy: { method: string; priority: number }, videoInfo: VideoInfo, sessionId?: string): Promise<TranscriptResult | null> {
   // Only use Whisper-optimized method
   if (strategy.method === 'whisper-optimized' || strategy.method === 'direct-whisper') {
     if (!openai) {
@@ -918,13 +944,30 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         // Check for cookie options
         let cookieFlag = '';
         
-        // Check if cookie file exists (created by startup script)
-        const cookieFile = '/app/temp/youtube_cookies.txt';
-        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
-          console.log('Using YouTube cookies from:', cookieFile);
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
+            console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+            
+            // Debug: Check first few lines of cookie file
+            try {
+              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
+              const lines = cookieContent.split('\n').slice(0, 3);
+              console.log('Cookie file preview:', lines.join(' | '));
+              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
+            } catch (e) {
+              console.log('Could not read cookie file for preview');
+            }
+          } else {
+            console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
+          }
         } else {
-          console.log('No YouTube cookies file found at:', cookieFile);
+          console.log('No session ID provided - authentication may be required');
         }
         
         // Use the format selection strategy based on metadata
@@ -959,10 +1002,15 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         // Same cookie logic as above
         let cookieFlag = '';
         
-        // Check if cookie file exists (created by startup script)
-        const cookieFile = '/app/temp/youtube_cookies.txt';
-        if (await fs.access(cookieFile).then(() => true).catch(() => false)) {
-          cookieFlag = `--cookies ${cookieFile}`;
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies ${userCookieFile}`;
+          }
         }
         
         // Fallback: Try format 140 directly without extraction

@@ -23,7 +23,7 @@ async function ensureToolsAvailable() {
 }
 
 async function ensureAuthFile() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const isAuthenticated = cookieStore.get('youtube_authenticated')?.value === 'true';
   
   if (isAuthenticated) {
@@ -44,7 +44,8 @@ async function ensureAuthFile() {
 
 export async function POST(request) {
   try {
-    const { thread, videos, forceRefresh = false, modelSettings } = await request.json();
+    const body = await request.json();
+    const { thread, videos, forceRefresh = false, modelSettings, async = false } = body;
     
     if (!thread || !videos || videos.length === 0) {
       return NextResponse.json(
@@ -52,6 +53,10 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+
+    // Get session ID from cookies
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('twipclip_session')?.value;
 
     // Ensure tools are available
     const ready = await performStartupCheck();
@@ -65,32 +70,72 @@ export async function POST(request) {
       );
     }
 
-    // Get session ID and auth config
-    const cookieStore = cookies();
-    const sessionId = cookieStore.get('youtube_session_id')?.value;
-    
-    let authConfig;
-    if (sessionId) {
-      const authStatus = await YouTubeAuthManagerV2.getAuthStatus(sessionId);
-      if (authStatus.authenticated && authStatus.browser) {
-        authConfig = {
-          browser: authStatus.browser,
-          profile: authStatus.profile
-        };
-        console.log(`🔐 Using browser authentication: ${authConfig.browser}`);
-      }
-    }
-
-    if (!authConfig) {
-      console.log('⚠️ No YouTube authentication configured - downloads may fail for restricted content');
-    }
-
-    console.log('🎯 Processing request with perfect matching...');
+    console.log('🎯 Processing request...');
     console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
     console.log(`📹 Videos: ${videos.length}`);
     console.log(`🔄 Force refresh: ${forceRefresh}`);
+    console.log(`⚡ Async mode: ${async}`);
     console.log(`🤖 Model settings:`, modelSettings);
+    console.log(`🔐 Session ID:`, sessionId ? sessionId.substring(0, 8) + '...' : 'none');
 
+    // If async mode is requested but we're going to process synchronously anyway
+    // Return the results in a format the client expects
+    if (async) {
+      // Process synchronously but return in async format
+      const { results, matches, statistics } = await processVideosWithPerfectMatching(
+        thread, 
+        videos,
+        {
+          forceRefresh,
+          downloadClips: false,
+          createZip: false,
+          modelSettings,
+          sessionId // Pass session ID
+        }
+      );
+
+      console.log('✅ Processing complete');
+      console.log(`📊 Statistics:`, statistics);
+
+      // Format the response to match what the client expects
+      const formattedMatches = matches.map(match => ({
+        match: true,
+        tweet: match.tweetText,
+        videoUrl: match.videoUrl,
+        startTime: match.startTime,
+        endTime: match.endTime,
+        text: match.transcriptText,
+        matchReason: match.reasoning,
+        confidence: match.confidence,
+        downloadPath: match.downloadPath || '',
+        downloadSuccess: match.downloadSuccess || false
+      }));
+
+      // Return results formatted for async mode
+      return NextResponse.json({
+        jobId: 'sync-' + Date.now(), // Fake job ID
+        status: 'completed',
+        results: {
+          success: true,
+          matches: formattedMatches,
+          summary: {
+            videosProcessed: videos.length,
+            videosSuccessful: results.filter(r => r.success).length,
+            clipsFound: matches.length,
+            clipsDownloaded: 0,
+            avgConfidence: statistics.averageConfidence,
+            aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
+                     modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
+                     'Claude 3.7 Sonnet',
+            processingTimeMs: 0,
+            transcriptionQuality: 'High',
+            cacheHitRate: '0%'
+          }
+        }
+      });
+    }
+
+    // Synchronous processing (original behavior)
     const { results, matches, statistics } = await processVideosWithPerfectMatching(
       thread, 
       videos,
@@ -99,7 +144,7 @@ export async function POST(request) {
         downloadClips: false,
         createZip: false,
         modelSettings,
-        authConfig // Pass authentication config
+        sessionId // Pass session ID
       }
     );
 

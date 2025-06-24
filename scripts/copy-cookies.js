@@ -1,45 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 
-// Copy cookies from the API directory to the temp directory for yt-dlp
+// Copy cookies from user-specific directories to temp directory for yt-dlp
 async function copyCookies() {
-  const sourcePath = path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
-  const destPath = path.join(process.cwd(), 'temp/youtube_cookies.txt');
-  const dockerDestPath = '/app/temp/youtube_cookies.txt';
+  // This script is no longer needed for copying shared cookies
+  // Each user's cookies are now stored in their session directory
+  // and accessed dynamically during video processing
   
-  // Ensure temp directory exists
-  const tempDir = path.join(process.cwd(), 'temp');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
+  console.log('✅ Session-based cookie system initialized');
+  console.log('📁 User cookies will be stored in: temp/user-cookies/{sessionId}/');
+  
+  // Ensure the user-cookies directory exists
+  const userCookiesDir = path.join(process.cwd(), 'temp', 'user-cookies');
+  if (!fs.existsSync(userCookiesDir)) {
+    fs.mkdirSync(userCookiesDir, { recursive: true });
+    console.log('✅ Created user-cookies directory');
   }
   
-  // Check if source cookie file exists
-  if (fs.existsSync(sourcePath)) {
-    try {
-      // Copy to local temp directory
-      fs.copyFileSync(sourcePath, destPath);
-      console.log('✅ Cookies copied to temp directory');
-      
-      // If running in Docker/Railway, also ensure the docker path
-      if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV) {
-        const dockerTempDir = '/app/temp';
-        if (!fs.existsSync(dockerTempDir)) {
-          fs.mkdirSync(dockerTempDir, { recursive: true });
-        }
-        fs.copyFileSync(sourcePath, dockerDestPath);
-        console.log('✅ Cookies copied to Docker temp directory');
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to copy cookies:', error);
-      return false;
-    }
-  } else {
-    console.log('⚠️ No YouTube cookies found at:', sourcePath);
-    return false;
-  }
+  return true;
 }
 
-// Run the copy operation
+// Run the initialization
 copyCookies(); 

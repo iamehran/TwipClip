@@ -1,36 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { cookies } from 'next/headers';
+import { randomUUID } from 'crypto';
 
-const COOKIES_DIR = join(process.cwd(), 'app/api/auth/youtube/cookies');
-const COOKIE_FILE = join(COOKIES_DIR, 'youtube_cookies.txt');
+const COOKIES_DIR = join(process.cwd(), 'temp', 'user-cookies');
+
+// Generate or get user session ID
+function getUserSessionId(): string {
+  const cookieStore = cookies();
+  let sessionId = cookieStore.get('twipclip_session')?.value;
+  
+  if (!sessionId) {
+    sessionId = randomUUID();
+  }
+  
+  return sessionId;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { cookies } = await request.json();
+    const { cookies: cookieContent } = await request.json();
     
-    if (!cookies) {
+    if (!cookieContent) {
       return NextResponse.json({ error: 'No cookies provided' }, { status: 400 });
     }
     
     // Validate cookie format
-    if (!cookies.includes('.youtube.com') || !cookies.includes('TRUE')) {
+    if (!cookieContent.includes('.youtube.com') || !cookieContent.includes('TRUE')) {
       return NextResponse.json({ 
         error: 'Invalid cookie format. Please ensure it\'s a Netscape format cookie file from YouTube.' 
       }, { status: 400 });
     }
     
-    // Create cookies directory if it doesn't exist
-    if (!existsSync(COOKIES_DIR)) {
-      await mkdir(COOKIES_DIR, { recursive: true });
+    // Get or create user session
+    const sessionId = getUserSessionId();
+    const userCookieDir = join(COOKIES_DIR, sessionId);
+    const userCookieFile = join(userCookieDir, 'youtube_cookies.txt');
+    
+    // Create user-specific directory if it doesn't exist
+    if (!existsSync(userCookieDir)) {
+      await mkdir(userCookieDir, { recursive: true });
     }
     
-    // Save the cookie file
-    await writeFile(COOKIE_FILE, cookies);
+    // Save the cookie file for this specific user
+    await writeFile(userCookieFile, cookieContent);
     
     // Verify the cookies were saved
-    const lines = cookies.split('\n');
+    const lines = cookieContent.split('\n');
     let validCookies = 0;
     
     for (const line of lines) {
@@ -47,16 +65,65 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    return NextResponse.json({ 
+    // Set session cookie for this user
+    const response = NextResponse.json({ 
       success: true,
-      message: `Successfully saved ${validCookies} YouTube cookies`,
+      message: `Successfully saved ${validCookies} YouTube cookies for your session`,
       cookieCount: validCookies
     });
+    
+    // Set secure session cookie
+    response.cookies.set('twipclip_session', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      path: '/'
+    });
+    
+    return response;
     
   } catch (error) {
     console.error('Cookie save error:', error);
     return NextResponse.json({ 
       error: 'Failed to save cookies' 
+    }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const cookieStore = cookies();
+    const sessionId = cookieStore.get('twipclip_session')?.value;
+    
+    if (!sessionId) {
+      return NextResponse.json({ 
+        authenticated: false,
+        error: 'No session found' 
+      });
+    }
+    
+    const userCookieFile = join(COOKIES_DIR, sessionId, 'youtube_cookies.txt');
+    
+    if (!existsSync(userCookieFile)) {
+      return NextResponse.json({ 
+        authenticated: false,
+        error: 'No cookies found for this session' 
+      });
+    }
+    
+    // Return the cookie content for this user only
+    const cookieContent = await readFile(userCookieFile, 'utf-8');
+    
+    return NextResponse.json({ 
+      success: true,
+      cookies: cookieContent
+    });
+    
+  } catch (error) {
+    console.error('Cookie retrieval error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to retrieve cookies' 
     }, { status: 500 });
   }
 } 

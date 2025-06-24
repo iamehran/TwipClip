@@ -54,9 +54,9 @@ RUN npm run build
 # Remove dev dependencies after build
 RUN npm prune --production
 
-# Create necessary directories including cookie directory
-RUN mkdir -p /app/temp /app/public/downloads /app/app/api/auth/youtube/cookies && \
-    chmod -R 777 /app/temp /app/public/downloads /app/app/api/auth/youtube/cookies
+# Create necessary directories including user-specific cookie directories
+RUN mkdir -p /app/temp /app/public/downloads /app/temp/user-cookies && \
+    chmod -R 777 /app/temp /app/public/downloads /app/temp/user-cookies
 
 # Set up a non-root user for Chromium
 RUN useradd -m -s /bin/bash appuser && \

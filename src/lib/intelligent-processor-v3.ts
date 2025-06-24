@@ -114,9 +114,10 @@ export async function processVideosWithPerfectMatching(
   const transcriptPromises = videos.map(async (videoUrl, index) => {
     try {
       console.log(`  Processing: ${videoUrl}`);
-      progressCallback?.(10 + (index * 40 / videos.length), `Processing video ${index + 1}/${videos.length}...`);
+      const progress = 10 + (index * 30 / videos.length);
+      progressCallback?.(progress, `Processing video ${index + 1}/${videos.length}...`);
       
-      const transcript = await getEnhancedTranscript(videoUrl);
+      const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
       
       if (!transcript || transcript.segments.length === 0) {
         console.log(`  ⚠️ No transcript found for ${videoUrl}`);
