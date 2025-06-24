@@ -52,6 +52,14 @@ class TwipClipAuthHelper {
                 return;
             }
 
+            // Show Chrome warning if on Windows
+            if (platform() === 'win32' && browsers.includes('chrome')) {
+                console.log(chalk.yellow('⚠️  Chrome Note:'));
+                console.log(chalk.white('   Recent Chrome versions (v127+) have enhanced security that may'));
+                console.log(chalk.white('   prevent cookie extraction on some Windows systems.\n'));
+                console.log(chalk.cyan('   Recommended: Use Firefox or Edge for best compatibility.\n'));
+            }
+
             const selectedBrowser = await this.selectBrowser(browsers);
             if (!selectedBrowser) {
                 console.log(chalk.yellow('\nOperation cancelled.\n'));
@@ -97,11 +105,13 @@ class TwipClipAuthHelper {
                     console.log(chalk.yellow('Please close your browser and try again.\n'));
                 } else if (error.message.includes('DPAPI decrypt failed')) {
                     console.log(chalk.yellow('Chrome cookie decryption failed (Windows security issue).'));
-                    console.log(chalk.yellow('This is a known issue with some Windows configurations.\n'));
-                    console.log(chalk.cyan('Please try one of these alternatives:'));
-                    console.log(chalk.white('1. Use Firefox or Edge instead (they usually work better)'));
-                    console.log(chalk.white('2. Run this helper as Administrator'));
-                    console.log(chalk.white('3. Make sure Chrome is completely closed\n'));
+                    console.log(chalk.yellow('This is a known issue with Chrome v127+ on Windows.\n'));
+                    console.log(chalk.cyan('Solutions:'));
+                    console.log(chalk.white('1. Use Firefox or Edge instead (recommended)'));
+                    console.log(chalk.white('2. Use an older Chrome profile'));
+                    console.log(chalk.white('3. Try Chrome Canary or Chrome Beta'));
+                    console.log(chalk.white('4. Run this helper as Administrator\n'));
+                    console.log(chalk.gray('Note: This is due to Chrome\'s new App-Bound Encryption security feature.'));
                 }
             }
 

@@ -179,6 +179,11 @@ export default function YouTubeHelperAuth() {
                       <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                         It will extract YouTube cookies from your browser
                       </p>
+                      {!isMac && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                          <strong>Windows Users:</strong> Firefox or Edge recommended. Chrome may have compatibility issues.
+                        </p>
+                      )}
                     </div>
                   </div>
 

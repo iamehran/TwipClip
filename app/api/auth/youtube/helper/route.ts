@@ -26,12 +26,24 @@ export async function POST(request: NextRequest) {
       const decoded = JSON.parse(Buffer.from(tokenData, 'base64').toString());
       const { metadata, data: encryptedData, iv } = decoded;
       
-      // Validate token age (max 5 minutes old)
+      // Validate token age (max 30 minutes old)
       const tokenAge = Date.now() - metadata.timestamp;
-      if (tokenAge > 5 * 60 * 1000) {
+      const maxAge = 30 * 60 * 1000; // 30 minutes
+      
+      console.log(`Token validation - Age: ${Math.floor(tokenAge / 1000)}s, Max allowed: ${maxAge / 1000}s`);
+      
+      if (tokenAge > maxAge) {
         return NextResponse.json({
           success: false,
-          error: 'Token expired. Please run the helper again.'
+          error: `Token expired. Token is ${Math.floor(tokenAge / 60000)} minutes old. Please run the helper again.`
+        }, { status: 400 });
+      }
+
+      // Also check if timestamp is in the future (clock sync issue)
+      if (tokenAge < -60000) { // More than 1 minute in the future
+        return NextResponse.json({
+          success: false,
+          error: 'Token timestamp is in the future. Please check your system clock.'
         }, { status: 400 });
       }
 
@@ -41,6 +53,25 @@ export async function POST(request: NextRequest) {
       const decipher = crypto.createDecipheriv('aes-256-cbc', key, ivBuffer);
       let decrypted = decipher.update(encryptedData, 'base64', 'utf8');
       decrypted += decipher.final('utf8');
+
+      // Validate cookie content
+      if (!decrypted || decrypted.length < 100) {
+        console.error('Invalid cookie content - too short');
+        return NextResponse.json({
+          success: false,
+          error: 'Invalid cookie data. Please ensure you are logged into YouTube.'
+        }, { status: 400 });
+      }
+
+      if (!decrypted.includes('youtube.com')) {
+        console.error('Invalid cookie content - no YouTube cookies found');
+        return NextResponse.json({
+          success: false,
+          error: 'No YouTube cookies found. Please log into YouTube and try again.'
+        }, { status: 400 });
+      }
+
+      console.log(`Cookie validation passed - Length: ${decrypted.length}, Browser: ${metadata.browser}`);
 
       // Save cookies for this user session
       const cookieStore = await cookies();
