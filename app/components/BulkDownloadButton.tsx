@@ -6,9 +6,10 @@ import { YouTubeAuthConfig } from '../../src/lib/youtube-auth-v2';
 interface BulkDownloadButtonProps {
   matches: any[];
   authConfig?: YouTubeAuthConfig;
+  isAuthenticated?: boolean;
 }
 
-export default function BulkDownloadButton({ matches, authConfig }: BulkDownloadButtonProps) {
+export default function BulkDownloadButton({ matches, authConfig, isAuthenticated }: BulkDownloadButtonProps) {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -106,7 +107,7 @@ export default function BulkDownloadButton({ matches, authConfig }: BulkDownload
         </div>
       )}
 
-      {!authConfig && (
+      {!isAuthenticated && (
         <div className="mt-2 text-sm text-yellow-400 text-center">
           ⚠️ No YouTube authentication configured - downloads may fail for restricted content
         </div>

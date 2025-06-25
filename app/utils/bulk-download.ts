@@ -35,6 +35,7 @@ export interface BulkDownloadOptions {
   maxConcurrent?: number;
   quality?: string;
   authConfig?: YouTubeAuthConfig; // Browser authentication config
+  sessionId?: string; // User session ID for per-user cookies
   onProgress?: (progress: BulkDownloadProgress) => void;
   onClipComplete?: (result: DownloadResult) => void;
 }
@@ -47,6 +48,7 @@ async function downloadClip(
   outputDir: string,
   quality: string = '720p',
   authConfig?: YouTubeAuthConfig,
+  sessionId?: string,
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
   const ytDlpPath = await getYtDlpCommand();
@@ -67,16 +69,30 @@ async function downloadClip(
     const startTimeStr = formatTime(match.startTime);
     const endTimeStr = formatTime(match.endTime);
     
-    // Build download command with browser authentication
+    // Build download command with authentication
     let downloadCmd = `"${ytDlpPath}"`;
     
-    // Add browser cookie extraction if configured
-    if (authConfig) {
+    // Check for per-user cookies first
+    let hasAuth = false;
+    if (sessionId) {
+      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      if (require('fs').existsSync(userCookiePath)) {
+        downloadCmd += ` --cookies "${userCookiePath}"`;
+        onProgress?.(`Using user-specific YouTube cookies...`);
+        hasAuth = true;
+      }
+    }
+    
+    // Fall back to browser cookie extraction if no user cookies
+    if (!hasAuth && authConfig) {
       const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
       downloadCmd += ` ${cookieArgs.join(' ')}`;
       onProgress?.(`Using browser authentication (${authConfig.browser})...`);
-    } else {
-      onProgress?.(`⚠️ No browser authentication configured`);
+      hasAuth = true;
+    }
+    
+    if (!hasAuth) {
+      onProgress?.(`⚠️ No authentication configured - downloads may fail for restricted content`);
     }
     
     // Download the video with proper quality settings
@@ -267,6 +283,7 @@ export async function downloadAllClips(
     maxConcurrent = 3,
     quality = '720p',
     authConfig,
+    sessionId,
     onProgress,
     onClipComplete
   } = options;
@@ -299,7 +316,7 @@ export async function downloadAllClips(
       progress.currentFile = `Tweet ${match.tweetId}`;
       onProgress?.(progress);
       
-      const result = await downloadClip(match, outputDir, quality, authConfig, (status) => {
+      const result = await downloadClip(match, outputDir, quality, authConfig, sessionId, (status) => {
         console.log(`  ${status}`);
       });
       

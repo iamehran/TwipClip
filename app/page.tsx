@@ -49,8 +49,10 @@ export default function Home() {
   const [showSearchForm, setShowSearchForm] = useState(true);
   const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
   const [authConfig, setAuthConfig] = useState<YouTubeAuthConfig | undefined>();
+  const [isYouTubeAuthenticated, setIsYouTubeAuthenticated] = useState(false);
 
   const handleAuthChange = (isAuthenticated: boolean, browser?: string, profile?: string) => {
+    setIsYouTubeAuthenticated(isAuthenticated);
     if (isAuthenticated && browser) {
       setAuthConfig({ browser, profile });
     } else {
@@ -134,27 +136,30 @@ export default function Home() {
         // Then populate with actual matches
         if (data.matches && data.matches.length > 0) {
           data.matches.forEach((match: any) => {
-            // Find which tweet this match belongs to
-            const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
-            if (tweetIndex !== -1) {
-              const tweetKey = `tweet-${tweetIndex + 1}`;
-              formattedResults[tweetKey].clips.push({
-                videoId: match.videoUrl,
-                title: 'AI Matched Clip',
-                thumbnail: '/default-thumbnail.jpg',
-                startTime: match.startTime,
-                endTime: match.endTime,
-                matchScore: match.confidence || 0,
-                transcriptText: match.text || '',
-                channelTitle: 'Video',
-                clipDuration: `${match.endTime - match.startTime}s`,
-                matchMethod: 'semantic' as const,
-                confidence: match.confidence || 0,
-                transcriptQuality: 'high' as const,
-                transcriptSource: 'whisper',
-                downloadPath: match.downloadPath,
-                downloadSuccess: match.downloadSuccess
-              });
+            // Only include matches with 80% confidence or higher
+            if (match.confidence >= 0.8) {
+              // Find which tweet this match belongs to
+              const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+              if (tweetIndex !== -1) {
+                const tweetKey = `tweet-${tweetIndex + 1}`;
+                formattedResults[tweetKey].clips.push({
+                  videoId: match.videoUrl,
+                  title: 'AI Matched Clip',
+                  thumbnail: '/default-thumbnail.jpg',
+                  startTime: match.startTime,
+                  endTime: match.endTime,
+                  matchScore: match.confidence || 0,
+                  transcriptText: match.text || '',
+                  channelTitle: 'Video',
+                  clipDuration: `${match.endTime - match.startTime}s`,
+                  matchMethod: 'semantic' as const,
+                  confidence: match.confidence || 0,
+                  transcriptQuality: 'high' as const,
+                  transcriptSource: 'whisper',
+                  downloadPath: match.downloadPath,
+                  downloadSuccess: match.downloadSuccess
+                });
+              }
             }
           });
         }
@@ -235,10 +240,12 @@ export default function Home() {
             // Then populate with actual matches
             if (data.matches && data.matches.length > 0) {
               data.matches.forEach((match: any) => {
-                // Find which tweet this match belongs to
-                const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
-                if (tweetIndex !== -1) {
-                  const tweetKey = `tweet-${tweetIndex + 1}`;
+                // Only include matches with 80% confidence or higher
+                if (match.confidence >= 0.8) {
+                  // Find which tweet this match belongs to
+                  const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+                  if (tweetIndex !== -1) {
+                    const tweetKey = `tweet-${tweetIndex + 1}`;
           formattedResults[tweetKey].clips.push({
             videoId: match.videoUrl,
             title: 'AI Matched Clip',
@@ -253,12 +260,13 @@ export default function Home() {
             confidence: match.confidence || 0,
             transcriptQuality: 'high' as const,
             transcriptSource: 'whisper',
-            downloadPath: match.downloadPath,
-            downloadSuccess: match.downloadSuccess
-          });
+                                downloadPath: match.downloadPath,
+                    downloadSuccess: match.downloadSuccess
+                  });
+                  }
                 }
-        });
-      }
+              });
+            }
 
       setResults(formattedResults);
       setStats(data.summary || null);
@@ -326,6 +334,7 @@ export default function Home() {
   };
 
   const totalClips = Object.values(results).reduce((sum, r) => sum + r.clips.length, 0);
+  const totalLowConfidenceMatches = rawMatches.filter(m => m.confidence < 0.8).length;
 
   return (
     <main className="min-h-screen bg-[#0e1e2d]">
@@ -343,7 +352,7 @@ export default function Home() {
             </div>
             
             {/* Authentication Section */}
-            <YouTubeAuth />
+            <YouTubeAuth onAuthChange={(authenticated) => setIsYouTubeAuthenticated(authenticated)} />
           </div>
         </div>
       </div>
@@ -421,14 +430,15 @@ export default function Home() {
           )}
 
           {/* Results Summary */}
-          {!loading && totalClips > 0 && (
+          {!loading && (totalClips > 0 || totalLowConfidenceMatches > 0) && (
             <div className="mt-8 p-4 sm:p-6 bg-gray-800/30 rounded-lg border border-gray-700/50">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                 <h3 className="text-base sm:text-lg font-semibold text-white">Results Summary</h3>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <BulkDownloadButton 
-                    matches={rawMatches}
+                    matches={rawMatches.filter(m => m.confidence >= 0.8)}
                     authConfig={authConfig}
+                    isAuthenticated={isYouTubeAuthenticated}
                   />
                   <ExportButton data={results} />
                 </div>
@@ -466,6 +476,37 @@ export default function Home() {
                   🎯 One perfect clip selected per tweet using {lastSearch?.modelSettings.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 'Claude Sonnet 4'}
                   {lastSearch?.modelSettings.thinkingEnabled && ' with thinking mode'}
                 </p>
+                {totalLowConfidenceMatches > 0 && (
+                  <p className="text-xs text-yellow-500 text-center mt-2">
+                    ⚠️ {totalLowConfidenceMatches} low-confidence matches (below 80%) were filtered out. Please provide more relevant YouTube videos for better results.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* No High-Confidence Results Message */}
+          {!loading && totalClips === 0 && totalLowConfidenceMatches > 0 && (
+            <div className="mt-8 p-6 bg-yellow-900/20 rounded-lg border border-yellow-700/50">
+              <div className="flex items-start gap-3">
+                <svg className="w-6 h-6 text-yellow-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <h3 className="text-lg font-semibold text-yellow-500 mb-2">No High-Quality Matches Found</h3>
+                  <p className="text-sm text-gray-300 mb-3">
+                    We found {totalLowConfidenceMatches} potential matches, but they all had confidence scores below 80%, 
+                    indicating they may not be relevant to your thread.
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    <strong>Suggestions:</strong>
+                  </p>
+                  <ul className="list-disc list-inside text-sm text-gray-400 mt-2 space-y-1">
+                    <li>Provide YouTube videos that are more closely related to your thread topics</li>
+                    <li>Use videos where the speakers discuss the specific subjects mentioned in your tweets</li>
+                    <li>Try videos from the same speakers or events referenced in your thread</li>
+                  </ul>
+                </div>
               </div>
             </div>
           )}

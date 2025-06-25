@@ -36,12 +36,14 @@ export class VideoDownloader {
   private tempDir: string;
   private downloadTimeout: number;
   private maxRetries: number;
+  private sessionId?: string;
   
-  constructor(authConfig?: YouTubeAuthConfig) {
+  constructor(authConfig?: YouTubeAuthConfig, sessionId?: string) {
     this.tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : join(process.cwd(), 'temp');
     this.downloadTimeout = 600000; // 10 minutes
     this.maxRetries = 3;
     this.authConfig = authConfig;
+    this.sessionId = sessionId;
     this.ensureTempDirectory();
   }
   
@@ -64,16 +66,31 @@ export class VideoDownloader {
     const args: string[] = [];
     
     // Check for uploaded YouTube cookies first
-    const cookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
-    if (existsSync(cookiePath)) {
-      args.push('--cookies', cookiePath);
-      console.log('🍪 Using uploaded YouTube cookies');
-    } else if (this.authConfig) {
+    // Try session-specific cookies if sessionId is provided
+    if (this.sessionId) {
+      const userCookiePath = join(process.cwd(), 'temp', 'user-cookies', this.sessionId, 'youtube_cookies.txt');
+      if (existsSync(userCookiePath)) {
+        args.push('--cookies', userCookiePath);
+        console.log(`🍪 Using user-specific YouTube cookies for session: ${this.sessionId.substring(0, 8)}...`);
+      }
+    } else {
+      // Fall back to global cookie file
+      const cookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+      if (existsSync(cookiePath)) {
+        args.push('--cookies', cookiePath);
+        console.log('🍪 Using uploaded YouTube cookies');
+      }
+    }
+    
+    // If no cookie files found, try browser extraction
+    if (args.length === 0 && this.authConfig) {
       // Fall back to browser cookie extraction if configured
       const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(this.authConfig);
       args.push(...cookieArgs);
       console.log(`🍪 Using browser cookies from ${this.authConfig.browser}${this.authConfig.profile ? `:${this.authConfig.profile}` : ''}`);
-    } else {
+    }
+    
+    if (args.length === 0) {
       console.log('⚠️ No YouTube authentication configured, downloads may fail for restricted content');
     }
     
@@ -159,10 +176,10 @@ export class VideoDownloader {
         '-ss', startTime.toString(),
         '-t', duration.toString(),
         '-c:v', 'libx264',
-        '-crf', '18',
-        '-preset', 'medium',
+        '-crf', '26',
+        '-preset', 'fast',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-b:a', '128k',
         '-movflags', '+faststart',
         '-y',
         outputPath
@@ -248,9 +265,37 @@ export class VideoDownloader {
     ];
 
     // Check for uploaded YouTube cookies
-    const cookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
-    if (existsSync(cookiePath)) {
-      console.log('[VideoDownloader] Using uploaded YouTube cookies');
+    // Try to get session-specific cookies
+    let cookiePath: string | null = null;
+    
+    try {
+      const { cookies } = await import('next/headers');
+      const cookieStore = await cookies();
+      const sessionId = cookieStore.get('twipclip_session')?.value;
+      
+      if (sessionId) {
+        const userCookiePath = join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+        if (existsSync(userCookiePath)) {
+          cookiePath = userCookiePath;
+          console.log(`[VideoDownloader] Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+        }
+      }
+    } catch (error) {
+      // If we can't access cookies (e.g., not in a request context), fall back to default
+      console.log('[VideoDownloader] Could not access session cookies:', error);
+    }
+    
+    // Fall back to global cookie file if no user-specific one found
+    if (!cookiePath) {
+      const globalCookiePath = join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+      if (existsSync(globalCookiePath)) {
+        cookiePath = globalCookiePath;
+        console.log('[VideoDownloader] Using global YouTube cookies');
+      }
+    }
+    
+    if (cookiePath) {
+      console.log('[VideoDownloader] Using YouTube cookies from:', cookiePath);
       args.push('--cookies', `"${cookiePath}"`);
     } else if (this.authConfig?.selectedBrowser) {
       // Fall back to browser-based auth if available
@@ -288,12 +333,12 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
   
   if (isRailway) {
     // On Railway, FFmpeg is in PATH
-    command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    command = `${ytdlpCmd} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   } else {
     // In development, specify FFmpeg location
-  const ffmpegPath = getFFmpegPath();
-  const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    const ffmpegPath = getFFmpegPath();
+    const ffmpegDir = path.dirname(ffmpegPath);
+    command = `${ytdlpCmd} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   }
   
   console.log(`Running: ${command}`);
@@ -333,7 +378,7 @@ async function cutVideoSegment(
   // FFmpeg command optimized for quality and size
   const command = `${ffmpegCmd} -i "${inputPath}" -ss ${startTime} -t ${duration} ` +
     `-vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease" ` +
-    `-c:v libx264 -crf 23 -preset fast -c:a aac -b:a 128k ` +
+    `-c:v libx264 -crf 26 -preset fast -c:a aac -b:a 128k ` +
     `-movflags +faststart -y "${outputPath}"`;
   
   console.log(`Cutting segment: ${startTime}s - ${endTime}s`);

@@ -17,27 +17,19 @@ export async function POST(request) {
 
     console.log(`Starting bulk download for ${matches.length} clips`);
 
-    // Get session ID and auth config
-    const cookieStore = cookies();
-    const sessionId = cookieStore.get('youtube_session_id')?.value;
+    // Get session ID for per-user cookies
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('twipclip_session')?.value;
     
-    let authConfig;
     if (sessionId) {
-      const authStatus = await YouTubeAuthManagerV2.getAuthStatus(sessionId);
-      if (authStatus.authenticated && authStatus.browser) {
-        authConfig = {
-          browser: authStatus.browser,
-          profile: authStatus.profile
-        };
-        console.log(`Using browser authentication: ${authConfig.browser}`);
-      }
+      console.log(`Using session ID: ${sessionId.substring(0, 8)}...`);
     }
 
     // Download all clips with progress tracking
     const results = await downloadAllClips(matches, {
       maxConcurrent: 2, // Limit concurrent downloads
       quality: '720p',
-      authConfig,
+      sessionId, // Pass session ID for per-user cookies
       onProgress: (progress) => {
         console.log(`Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(1)}%)`);
       },
