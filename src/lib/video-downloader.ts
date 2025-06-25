@@ -319,7 +319,7 @@ export class VideoDownloader {
 /**
  * Downloads a full video using yt-dlp
  */
-async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<string> {
+async function downloadFullVideo(videoUrl: string, outputPath: string, sessionId?: string): Promise<string> {
   await ensureTempDir();
   
   console.log('Downloading video:', videoUrl);
@@ -327,18 +327,43 @@ async function downloadFullVideo(videoUrl: string, outputPath: string): Promise<
   // Get the working yt-dlp command
   const ytdlpCmd = await getYtDlpCommand();
   
+  // Build cookie flag
+  let cookieFlag = '';
+  
+  // Check for per-user cookies first
+  if (sessionId) {
+    const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    if (existsSync(userCookiePath)) {
+      cookieFlag = `--cookies "${userCookiePath}"`;
+      console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+    }
+  }
+  
+  // Fall back to global cookie file if no user-specific one found
+  if (!cookieFlag) {
+    const globalCookiePath = path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+    if (existsSync(globalCookiePath)) {
+      cookieFlag = `--cookies "${globalCookiePath}"`;
+      console.log('Using global YouTube cookies');
+    }
+  }
+  
+  if (!cookieFlag) {
+    console.log('⚠️ No YouTube cookies found - download may fail for restricted content');
+  }
+  
   // Build command based on environment
   const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
   let command: string;
   
   if (isRailway) {
     // On Railway, FFmpeg is in PATH
-    command = `${ytdlpCmd} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    command = `${ytdlpCmd} ${cookieFlag} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   } else {
     // In development, specify FFmpeg location
     const ffmpegPath = getFFmpegPath();
     const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    command = `${ytdlpCmd} ${cookieFlag} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   }
   
   console.log(`Running: ${command}`);
@@ -404,6 +429,19 @@ export async function downloadClips(matches: Array<{
   
   const results: ClipDownloadResult[] = [];
   
+  // Try to get session ID from cookies
+  let sessionId: string | undefined;
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
+    sessionId = cookieStore.get('twipclip_session')?.value;
+    if (sessionId) {
+      console.log(`Using session ID for downloads: ${sessionId.substring(0, 8)}...`);
+    }
+  } catch (error) {
+    console.log('Could not access session cookies:', error);
+  }
+  
   // Group matches by video URL for efficiency
   const matchesByVideo = new Map<string, typeof matches>();
   
@@ -421,8 +459,8 @@ export async function downloadClips(matches: Array<{
     const tempVideoPath = path.join(TEMP_DIR, `full_${timestamp}`);
     
     try {
-      // Download full video once
-      const fullVideoPath = await downloadFullVideo(videoUrl, tempVideoPath);
+      // Download full video once with session ID
+      const fullVideoPath = await downloadFullVideo(videoUrl, tempVideoPath, sessionId);
       
       // Cut clips for each match
       for (let i = 0; i < videoMatches.length; i++) {
@@ -497,7 +535,7 @@ export async function cleanupTempFiles(olderThanMinutes: number = 30): Promise<v
 /**
  * Extract audio from YouTube video URL using yt-dlp
  */
-export async function extractAudio(videoUrl: string, videoId: string): Promise<string> {
+export async function extractAudio(videoUrl: string, videoId: string, sessionId?: string): Promise<string> {
   const DOWNLOADS_DIR = path.join(process.cwd(), 'public', 'downloads');
   if (!existsSync(DOWNLOADS_DIR)) {
     mkdirSync(DOWNLOADS_DIR, { recursive: true });
@@ -516,7 +554,33 @@ export async function extractAudio(videoUrl: string, videoId: string): Promise<s
   console.log('Using yt-dlp for audio extraction...');
   
   const ytdlpCmd = await getYtDlpCommand();
-  const command = `${ytdlpCmd} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
+  
+  // Build command with cookie support
+  let cookieFlag = '';
+  
+  // Check for per-user cookies first
+  if (sessionId) {
+    const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    if (existsSync(userCookiePath)) {
+      cookieFlag = `--cookies "${userCookiePath}"`;
+      console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+    }
+  }
+  
+  // Fall back to global cookie file if no user-specific one found
+  if (!cookieFlag) {
+    const globalCookiePath = path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+    if (existsSync(globalCookiePath)) {
+      cookieFlag = `--cookies "${globalCookiePath}"`;
+      console.log('Using global YouTube cookies');
+    }
+  }
+  
+  if (!cookieFlag) {
+    console.log('⚠️ No YouTube cookies found - audio extraction may fail for restricted content');
+  }
+  
+  const command = `${ytdlpCmd} ${cookieFlag} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
   
   await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
   

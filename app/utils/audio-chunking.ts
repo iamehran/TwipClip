@@ -602,13 +602,14 @@ export async function transcribeLargeAudio(
 export async function downloadAudioInChunks(
   videoUrl: string,
   outputDir: string,
-  chunkDurationMinutes: number = 30
+  chunkDurationMinutes: number = 30,
+  sessionId?: string
 ): Promise<string[]> {
   const ytDlpPath = await getYtDlpCommand();
   const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
   
   // Get video metadata to determine duration
-  const metadata = await getVideoMetadata(videoUrl);
+  const metadata = await getVideoMetadata(videoUrl, sessionId);
   if (!metadata || !metadata.duration) {
     throw new Error('Could not get video duration');
   }
@@ -630,9 +631,21 @@ export async function downloadAudioInChunks(
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     let cookieFlag = '';
     
-    const cookieFile = '/app/temp/youtube_cookies.txt';
-    if (require('fs').existsSync(cookieFile)) {
-      cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
+    // Check for per-user cookies first
+    if (sessionId) {
+      const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      if (require('fs').existsSync(userCookieFile)) {
+        cookieFlag = `--cookies "${userCookieFile}"`;
+        console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+      }
+    }
+    
+    // Fall back to global cookie file
+    if (!cookieFlag) {
+      const cookieFile = '/app/temp/youtube_cookies.txt';
+      if (require('fs').existsSync(cookieFile)) {
+        cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
+      }
     }
     
     // Use download-sections to download specific time range

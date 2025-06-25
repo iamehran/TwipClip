@@ -55,7 +55,7 @@ function extractYouTubeVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-async function extractAudioFromVideo(videoUrl: string): Promise<string> {
+async function extractAudioFromVideo(videoUrl: string, sessionId?: string): Promise<string> {
   // Validate URL first
   if (!videoUrl || typeof videoUrl !== 'string') {
     throw new Error('Invalid video URL provided');
@@ -64,13 +64,28 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   // Clean the URL - remove any trailing semicolons or whitespace
   videoUrl = videoUrl.trim().replace(/;+$/, '');
   
-  // Check if this is a YouTube URL and if user is authenticated
+  // Check if this is a YouTube URL and if user has cookies
   const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
-  const authFile = path.join(process.cwd(), 'temp', 'youtube_auth.txt');
-  const isAuthenticated = isYouTube && existsSync(authFile);
+  let hasCookies = false;
+  let cookieFile = '';
   
-  if (isAuthenticated) {
-    console.log('✅ YouTube authentication detected - using cookie bypass');
+  // Check for per-user cookies first
+  if (sessionId) {
+    const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    if (existsSync(userCookieFile)) {
+      cookieFile = userCookieFile;
+      hasCookies = true;
+      console.log(`✅ Using YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+    }
+  }
+  
+  // Fall back to old auth system if no per-user cookies
+  if (!hasCookies && isYouTube) {
+    const authFile = path.join(process.cwd(), 'temp', 'youtube_auth.txt');
+    if (existsSync(authFile)) {
+      hasCookies = true;
+      console.log('✅ YouTube authentication detected (legacy) - using cookie bypass');
+    }
   }
   
   const tempDir = path.join(process.cwd(), 'temp');
@@ -130,9 +145,15 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   const baseOptions = `-x --audio-format mp3 --audio-quality 0 --no-mtime --no-part --paths "${tempDir}"`;
   const headers = `--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"`;
   
+  // Add cookie support if available
+  let cookieOptions = '';
+  if (cookieFile && existsSync(cookieFile)) {
+    cookieOptions = `--cookies "${cookieFile}"`;
+  }
+  
   // If authenticated, use special options that work better
   let authOptions = '';
-  if (isAuthenticated) {
+  if (hasCookies) {
     // Use options that make yt-dlp appear more like a logged-in user
     authOptions = '--extractor-args "youtube:player_client=android,web_creator" --no-check-certificates';
   } else {
@@ -142,12 +163,12 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
   
   if (isRailway) {
     // On Railway, use simpler options to avoid file permission issues
-    command = `${ytdlpCmd} ${baseOptions} ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
+    command = `${ytdlpCmd} ${baseOptions} ${cookieOptions} ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   } else {
     // In development, use the specific FFmpeg location
     const ffmpegPath = getFFmpegPath();
     const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} ${baseOptions} --ffmpeg-location "${ffmpegDir}" ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
+    command = `${ytdlpCmd} ${baseOptions} --ffmpeg-location "${ffmpegDir}" ${cookieOptions} ${authOptions} ${headers} "${videoUrl}" -o "${baseFilename}.%(ext)s"`;
   }
   
   console.log(`Executing command...`);
@@ -162,7 +183,7 @@ async function extractAudioFromVideo(videoUrl: string): Promise<string> {
       
       // Modify command based on attempt
       let attemptCommand = command;
-      if (attemptCount === 2 && !isAuthenticated) {
+      if (attemptCount === 2 && !hasCookies) {
         // Second attempt: Add extractor args to bypass bot detection (only if not authenticated)
         console.log('First attempt failed, trying with extractor args...');
         attemptCommand = command.replace(
@@ -351,14 +372,17 @@ async function transcribeWithWhisper(videoUrl: string, audioPath: string): Promi
  * Single method: Extract audio and transcribe with Whisper
  * No fallbacks - one reliable path
  */
-export async function getVideoTranscript(videoUrl: string, platform: string): Promise<ProcessedTranscript | null> {
+export async function getVideoTranscript(videoUrl: string, platform: string, sessionId?: string): Promise<ProcessedTranscript | null> {
   console.log(`Getting transcript for ${platform} video...`);
+  if (sessionId) {
+    console.log(`Using session ID: ${sessionId.substring(0, 8)}...`);
+  }
   
   let audioPath: string | null = null;
   
   try {
-    // Step 1: Extract audio
-    audioPath = await extractAudioFromVideo(videoUrl);
+    // Step 1: Extract audio with session ID
+    audioPath = await extractAudioFromVideo(videoUrl, sessionId);
     
     // Step 2: Transcribe with Whisper
     const transcript = await transcribeWithWhisper(videoUrl, audioPath);

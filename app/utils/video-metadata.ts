@@ -26,46 +26,59 @@ export interface VideoMetadata {
 /**
  * Get video metadata using yt-dlp without downloading
  */
-export async function getVideoMetadata(videoUrl: string): Promise<VideoMetadata | null> {
+export async function getVideoMetadata(videoUrl: string, sessionId?: string): Promise<VideoMetadata | null> {
   try {
     const ytDlpPath = await getYtDlpCommand();
-    const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
     
     // Build command to get JSON metadata
     let command: string;
-    if (isDocker) {
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      
-      // Check for cookies
-      let cookieFlag = '';
-      
-      // Check if cookie file exists (created by startup script)
-      const cookieFile = '/app/temp/youtube_cookies.txt';
-      if (require('fs').existsSync(cookieFile)) {
-        cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
-        console.log('Using YouTube cookies from:', cookieFile);
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    
+    // Check for cookies
+    let cookieFlag = '';
+    
+    // First check for per-user cookies if sessionId is provided
+    if (sessionId) {
+      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      if (require('fs').existsSync(userCookiePath)) {
+        cookieFlag = `--cookies "${userCookiePath}"`;
+        console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
         
         // Debug: Check cookie file content
         try {
           const fs = require('fs');
-          const cookieContent = fs.readFileSync(cookieFile, 'utf-8');
+          const cookieContent = fs.readFileSync(userCookiePath, 'utf-8');
           const lines = cookieContent.split('\n');
           const cookieLines = lines.filter(l => l.trim() && !l.startsWith('#'));
           console.log(`Cookie file has ${cookieLines.length} cookie entries`);
           if (cookieLines.length === 0) {
             console.warn('⚠️ Cookie file exists but contains no valid cookies!');
+            cookieFlag = ''; // Reset if no valid cookies
           }
         } catch (e) {
           console.error('Failed to read cookie file:', e);
         }
-      } else {
-        console.log('No YouTube cookies file found at:', cookieFile);
       }
-      
-      command = `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --dump-json --no-warnings "${videoUrl}"`;
-    } else {
-      command = `"${ytDlpPath}" --dump-json --no-warnings "${videoUrl}"`;
     }
+    
+    // Fall back to global cookie file if no user-specific one found
+    if (!cookieFlag) {
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+      const globalCookiePath = isDocker 
+        ? '/app/temp/youtube_cookies.txt'
+        : path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+        
+      if (require('fs').existsSync(globalCookiePath)) {
+        cookieFlag = `--cookies "${globalCookiePath}"`;
+        console.log('Using global YouTube cookies from:', globalCookiePath);
+      }
+    }
+    
+    if (!cookieFlag) {
+      console.log('⚠️ No YouTube cookies found - metadata extraction may fail for restricted content');
+    }
+    
+    command = `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --dump-json --no-warnings "${videoUrl}"`;
     
     console.log('🔍 Getting video metadata...');
     

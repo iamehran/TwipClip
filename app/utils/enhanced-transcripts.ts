@@ -309,7 +309,7 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
   videoInfoCache.set(videoInfo.id, videoInfo);
   
   // Get video metadata to determine processing strategy
-  const metadata = await getVideoMetadata(videoInfo.url);
+  const metadata = await getVideoMetadata(videoInfo.url, sessionId);
   if (metadata) {
     if (!shouldProcessVideo(metadata)) {
       throw new Error('Video cannot be processed (too long or live)');
@@ -342,7 +342,7 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
       const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
       
       // Get video metadata first to determine best strategy
-      const metadata = await getVideoMetadata(videoInfo.url);
+      const metadata = await getVideoMetadata(videoInfo.url, sessionId);
       
       // For very large files, we'll download the full audio and then chunk it locally
       // This is more efficient than downloading chunks separately
@@ -932,7 +932,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
       
       // Get video metadata first to determine best strategy
-      const metadata = await getVideoMetadata(videoInfo.url);
+      const metadata = await getVideoMetadata(videoInfo.url, sessionId);
       
       // For very large files, we'll download the full audio and then chunk it locally
       // This is more efficient than downloading chunks separately
