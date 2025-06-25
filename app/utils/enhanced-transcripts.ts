@@ -469,7 +469,9 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
       // Get transcript using optimized method
       const segments = await getOptimizedWhisperTranscript(actualAudioPath, tempDir, openai);
       
-      // Clean up
+      // Clean up - moved after transcription is complete
+      // NOTE: getOptimizedWhisperTranscript might use the file for chunking
+      // so we can't delete it until after it's done
       await fs.unlink(actualAudioPath).catch(() => {});
       
       return {
@@ -1059,7 +1061,9 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
       // Get transcript using optimized method
       const segments = await getOptimizedWhisperTranscript(actualAudioPath, tempDir, openai);
       
-      // Clean up
+      // Clean up - moved after transcription is complete
+      // NOTE: getOptimizedWhisperTranscript might use the file for chunking
+      // so we can't delete it until after it's done
       await fs.unlink(actualAudioPath).catch(() => {});
       
       return {

@@ -81,57 +81,98 @@ export async function POST(request) {
     // If async mode is requested but we're going to process synchronously anyway
     // Return the results in a format the client expects
     if (async) {
-      // Process synchronously but return in async format
-      const { results, matches, statistics } = await processVideosWithPerfectMatching(
-        thread, 
-        videos,
-        {
-          forceRefresh,
-          downloadClips: false,
-          createZip: false,
-          modelSettings,
-          sessionId // Pass session ID
+      // Create a job ID for tracking
+      const jobId = randomUUID();
+      
+      // Create initial job status
+      createProcessingJob(jobId);
+      updateProcessingStatus(jobId, {
+        progress: 5,
+        message: 'Initializing search...'
+      });
+      
+      // Start processing in the background (simulated)
+      setTimeout(async () => {
+        try {
+          // Update progress periodically
+          const updateProgress = (progress, message) => {
+            updateProcessingStatus(jobId, {
+              progress,
+              message
+            });
+          };
+          
+          updateProgress(15, 'Extracting audio from videos...');
+          
+          // Process with custom progress callback
+          const { results, matches, statistics } = await processVideosWithPerfectMatching(
+            thread, 
+            videos,
+            {
+              forceRefresh,
+              downloadClips: false,
+              createZip: false,
+              modelSettings,
+              sessionId,
+              progressCallback: updateProgress
+            }
+          );
+
+          console.log('✅ Processing complete');
+          console.log(`📊 Statistics:`, statistics);
+
+          // Format the response to match what the client expects
+          const formattedMatches = matches.map(match => ({
+            match: true,
+            tweet: match.tweetText,
+            videoUrl: match.videoUrl,
+            startTime: match.startTime,
+            endTime: match.endTime,
+            text: match.transcriptText,
+            matchReason: match.reasoning,
+            confidence: match.confidence,
+            downloadPath: match.downloadPath || '',
+            downloadSuccess: match.downloadSuccess || false
+          }));
+
+          // Update job with results
+          updateProcessingStatus(jobId, {
+            status: 'completed',
+            progress: 100,
+            message: 'Processing complete',
+            results: {
+              success: true,
+              matches: formattedMatches,
+              summary: {
+                videosProcessed: videos.length,
+                videosSuccessful: results.filter(r => r.success).length,
+                clipsFound: matches.length,
+                clipsDownloaded: 0,
+                avgConfidence: statistics.averageConfidence,
+                aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
+                         modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
+                         'Claude 3.7 Sonnet',
+                processingTimeMs: statistics.processingTimeMs || 0,
+                transcriptionQuality: 'High',
+                cacheHitRate: '0%'
+              }
+            }
+          });
+        } catch (error) {
+          console.error('Processing error:', error);
+          updateProcessingStatus(jobId, {
+            status: 'failed',
+            error: error.message || 'Processing failed',
+            progress: 0,
+            message: 'Processing failed'
+          });
         }
-      );
-
-      console.log('✅ Processing complete');
-      console.log(`📊 Statistics:`, statistics);
-
-      // Format the response to match what the client expects
-      const formattedMatches = matches.map(match => ({
-        match: true,
-        tweet: match.tweetText,
-        videoUrl: match.videoUrl,
-        startTime: match.startTime,
-        endTime: match.endTime,
-        text: match.transcriptText,
-        matchReason: match.reasoning,
-        confidence: match.confidence,
-        downloadPath: match.downloadPath || '',
-        downloadSuccess: match.downloadSuccess || false
-      }));
-
-      // Return results formatted for async mode
+      }, 100); // Small delay to ensure job is stored
+      
+      // Return job ID for polling
       return NextResponse.json({
-        jobId: 'sync-' + Date.now(), // Fake job ID
-        status: 'completed',
-        results: {
-          success: true,
-          matches: formattedMatches,
-          summary: {
-            videosProcessed: videos.length,
-            videosSuccessful: results.filter(r => r.success).length,
-            clipsFound: matches.length,
-            clipsDownloaded: 0,
-            avgConfidence: statistics.averageConfidence,
-            aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
-                     modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
-                     'Claude 3.7 Sonnet',
-            processingTimeMs: 0,
-            transcriptionQuality: 'High',
-            cacheHitRate: '0%'
-          }
-        }
+        jobId,
+        status: 'processing'
       });
     }
 

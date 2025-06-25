@@ -275,6 +275,13 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
       console.log(`  Extracting chunk ${chunkIndex + 1}: ${currentTime.toFixed(1)}s - ${(currentTime + duration).toFixed(1)}s`);
       
       try {
+        // Verify the input audio file still exists before extracting
+        try {
+          await fs.access(audioPath);
+        } catch {
+          throw new Error(`Input audio file no longer exists: ${audioPath}`);
+        }
+        
         await execAsync(extractCmd, { 
           timeout: 180000, // 3 minute timeout per chunk
           maxBuffer: 50 * 1024 * 1024 // 50MB buffer
@@ -642,16 +649,24 @@ export async function downloadAudioInChunks(
     
     // Fall back to global cookie file
     if (!cookieFlag) {
-      const cookieFile = '/app/temp/youtube_cookies.txt';
-      if (require('fs').existsSync(cookieFile)) {
-        cookieFlag = `--cookies ${cookieFile} --no-cookies-from-browser`;
+      const globalCookieFile = isDocker 
+        ? '/app/temp/youtube_cookies.txt'
+        : path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
+        
+      if (require('fs').existsSync(globalCookieFile)) {
+        cookieFlag = `--cookies "${globalCookieFile}"`;
+        console.log('Using global YouTube cookies');
       }
+    }
+    
+    if (!cookieFlag) {
+      console.log('⚠️ No YouTube cookies found - download may fail for restricted content');
     }
     
     // Use download-sections to download specific time range
     const command = isDocker
       ? `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --download-sections "*${startTime}-${endTime}" -f "140/bestaudio[ext=m4a]/worstaudio" --no-check-certificate -o "${chunkPath}" "${videoUrl}"`
-      : `"${ytDlpPath}" --download-sections "*${startTime}-${endTime}" -f "worstaudio" -o "${chunkPath}" "${videoUrl}"`;
+      : `"${ytDlpPath}" ${cookieFlag} --download-sections "*${startTime}-${endTime}" -f "worstaudio" -o "${chunkPath}" "${videoUrl}"`;
     
     try {
       await execAsync(command, {

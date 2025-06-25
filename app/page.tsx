@@ -91,6 +91,9 @@ export default function Home() {
       setLoadingProgress(5);
 
       // First, start the async processing
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout
+      
       const startResponse = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +103,10 @@ export default function Home() {
           async: true,  // Enable async mode
           modelSettings // Pass model settings to API
         }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       console.log('Start response status:', startResponse.status);
       
@@ -117,7 +123,28 @@ export default function Home() {
       if (startData.status === 'completed' && startData.results) {
         console.log('Received immediate results (sync mode)');
         
-        // Process the results immediately
+        // Simulate progress animation for better UX
+        const animateProgress = async () => {
+          const steps = [
+            { progress: 20, status: 'Extracting audio from videos...', delay: 400 },
+            { progress: 40, status: 'Transcribing with AI (Whisper)...', delay: 600 },
+            { progress: 60, status: 'Analyzing transcripts...', delay: 500 },
+            { progress: 80, status: 'Finding perfect matches with Claude AI...', delay: 700 },
+            { progress: 95, status: 'Finalizing results...', delay: 400 },
+            { progress: 100, status: 'Complete!', delay: 200 }
+          ];
+          
+          for (const step of steps) {
+            setLoadingProgress(step.progress);
+            setLoadingStatus(step.status);
+            await new Promise(resolve => setTimeout(resolve, step.delay));
+          }
+        };
+        
+        // Start animation and wait for it to complete
+        await animateProgress();
+        
+        // Process the results after animation
         const data = startData.results;
 
         // Convert the new format to match the UI expectations
@@ -168,17 +195,12 @@ export default function Home() {
         setStats(data.summary || null);
         setRawMatches(data.matches || []); // Store raw matches
         
-        setLoadingProgress(100);
-        setLoadingStatus('Complete!');
-        
-        // Set loading to false when complete
-        setLoading(false);
-        
-        // Reset progress after a short delay
+        // Set loading to false after a small delay to let UI update
         setTimeout(() => {
+          setLoading(false);
           setLoadingProgress(0);
           setLoadingStatus('');
-        }, 1000);
+        }, 500);
         
         return; // Exit early, no need to poll
       }

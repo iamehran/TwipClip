@@ -126,6 +126,10 @@ export async function processVideosWithPerfectMatching(
       
       console.log(`  ✅ Got ${transcript.segments.length} segments from ${videoUrl}`);
       
+      // Update progress after each video is transcribed
+      const completedProgress = 10 + ((index + 1) * 30 / videos.length);
+      progressCallback?.(completedProgress, `Transcribed video ${index + 1}/${videos.length}`);
+      
       return {
         videoUrl,
         segments: transcript.segments,
