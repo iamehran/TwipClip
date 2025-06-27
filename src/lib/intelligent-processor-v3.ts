@@ -7,14 +7,20 @@ import {
   getMatchStatistics 
 } from '../../app/utils/perfect-matching-optimized';
 import { findContextAwareMatches, ContextualMatch } from '../../app/utils/context-aware-matching';
+import { findContextAwareMatchesFast } from '../../app/utils/context-aware-matching-fast';
 import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
 import { YouTubeAuthConfig } from './youtube-auth-v2';
 
 // Configuration: Use context-aware processing for better quality
-const USE_CONTEXT_AWARE_MATCHING = true;
+const USE_CONTEXT_AWARE_MATCHING = process.env.USE_CONTEXT_AWARE !== 'false'; // Default true
+const USE_FAST_MATCHING = process.env.USE_FAST_MATCHING !== 'false'; // Default true
 const USE_INDIVIDUAL_PROCESSING = false; // Fallback option
+
+// Performance tuning
+const MAX_CONCURRENT_TRANSCRIPTS = parseInt(process.env.MAX_CONCURRENT_TRANSCRIPTS || '3');
+const ENABLE_TRANSCRIPT_CACHE = process.env.ENABLE_TRANSCRIPT_CACHE !== 'false';
 
 export interface VideoClip {
   startTime: number;
@@ -113,7 +119,20 @@ export async function processVideosWithPerfectMatching(
   console.log('\n📹 Getting video transcripts...');
   progressCallback?.(10, 'Extracting video transcripts...');
   
-  const transcriptPromises = videos.map(async (videoUrl, index) => {
+  // Process videos in batches to avoid overwhelming the system
+  const processInBatches = async <T>(items: T[], batchSize: number, processor: (item: T, index: number) => Promise<any>) => {
+    const results = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map((item, idx) => processor(item, i + idx))
+      );
+      results.push(...batchResults);
+    }
+    return results;
+  };
+  
+  const transcriptResults = await processInBatches(videos, MAX_CONCURRENT_TRANSCRIPTS, async (videoUrl, index) => {
     try {
       console.log(`  Processing: ${videoUrl}`);
       const progress = 10 + (index * 30 / videos.length);
@@ -146,8 +165,6 @@ export async function processVideosWithPerfectMatching(
     }
   });
   
-  const transcriptResults = await Promise.all(transcriptPromises);
-  
   // Filter out failed transcripts
   for (const transcript of transcriptResults) {
     if (transcript) {
@@ -170,7 +187,10 @@ export async function processVideosWithPerfectMatching(
   
   // Use context-aware matching if enabled
   if (USE_CONTEXT_AWARE_MATCHING) {
-    const contextMatches = await findContextAwareMatches(tweets, videoTranscripts, modelSettings);
+    const contextMatches = USE_FAST_MATCHING 
+      ? await findContextAwareMatchesFast(tweets, videoTranscripts, modelSettings)
+      : await findContextAwareMatches(tweets, videoTranscripts, modelSettings);
+    
     // Convert ContextualMatch to PerfectMatch format for compatibility
     matches = contextMatches.map(cm => ({
       tweetId: cm.tweetId,

@@ -1,13 +1,28 @@
-# Railway Environment Variables
-# Copy these to your Railway dashboard
+﻿# Railway Performance Optimizations
 
-# Required: OpenAI API Key for Whisper transcription and AI matching
-OPENAI_API_KEY=your_openai_api_key_here
+# Enable fast matching for better performance
+USE_FAST_MATCHING=true
+USE_CONTEXT_AWARE=true
 
-# Railway automatically sets this
-RAILWAY_ENVIRONMENT=production
+# Increase concurrent transcript processing
+# Adjust based on your Railway plan resources
+MAX_CONCURRENT_TRANSCRIPTS=5
 
-# Optional: Port (Railway provides this automatically)
+# Enable transcript caching
+ENABLE_TRANSCRIPT_CACHE=true
+
+# Whisper API optimization
+# Use larger batch sizes for better throughput
+WHISPER_BATCH_SIZE=5
+
+# FFmpeg optimization
+# Use hardware acceleration if available
+FFMPEG_THREADS=4
+
+# Node.js optimization
+NODE_OPTIONS="--max-old-space-size=4096"
+
+# Railway-specific optimizations
+# These are automatically set by Railway but included for reference
+# RAILWAY_ENVIRONMENT=production
 # PORT=3000
-
-# Note: FFmpeg and yt-dlp will be installed automatically via nixpacks.toml 
