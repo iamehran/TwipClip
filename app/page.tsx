@@ -162,31 +162,42 @@ export default function Home() {
         
         // Then populate with actual matches
         if (data.matches && data.matches.length > 0) {
-          data.matches.forEach((match: any) => {
-            // Only include matches with 80% confidence or higher
-            if (match.confidence >= 0.8) {
-              // Find which tweet this match belongs to
-              const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
-              if (tweetIndex !== -1) {
-                const tweetKey = `tweet-${tweetIndex + 1}`;
-                formattedResults[tweetKey].clips.push({
-                  videoId: match.videoUrl,
-                  title: 'AI Matched Clip',
-                  thumbnail: '/default-thumbnail.jpg',
-                  startTime: match.startTime,
-                  endTime: match.endTime,
-                  matchScore: match.confidence || 0,
-                  transcriptText: match.text || '',
-                  channelTitle: 'Video',
-                  clipDuration: `${match.endTime - match.startTime}s`,
-                  matchMethod: 'semantic' as const,
-                  confidence: match.confidence || 0,
-                  transcriptQuality: 'high' as const,
-                  transcriptSource: 'whisper',
-                  downloadPath: match.downloadPath,
-                  downloadSuccess: match.downloadSuccess
-                });
-              }
+          // Filter matches by confidence threshold (75%)
+          const highConfidenceMatches = data.matches.filter((match: any) => 
+            match.confidence >= 0.75
+          );
+          
+          const lowConfidenceCount = data.matches.length - highConfidenceMatches.length;
+          
+          if (lowConfidenceCount > 0) {
+            setNotification({
+              type: 'warning',
+              message: `${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%). Consider providing more specific content or additional videos.`
+            });
+          }
+          
+          highConfidenceMatches.forEach((match: any) => {
+            // Find which tweet this match belongs to
+            const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+            if (tweetIndex !== -1) {
+              const tweetKey = `tweet-${tweetIndex + 1}`;
+              formattedResults[tweetKey].clips.push({
+                videoId: match.videoUrl,
+                title: 'AI Matched Clip',
+                thumbnail: '/default-thumbnail.jpg',
+                startTime: match.startTime,
+                endTime: match.endTime,
+                matchScore: match.confidence || 0,
+                transcriptText: match.text || '',
+                channelTitle: 'Video',
+                clipDuration: `${match.endTime - match.startTime}s`,
+                matchMethod: 'semantic' as const,
+                confidence: match.confidence || 0,
+                transcriptQuality: 'high' as const,
+                transcriptSource: 'whisper',
+                downloadPath: match.downloadPath,
+                downloadSuccess: match.downloadSuccess
+              });
             }
           });
         }
@@ -261,13 +272,25 @@ export default function Home() {
             
             // Then populate with actual matches
             if (data.matches && data.matches.length > 0) {
-              data.matches.forEach((match: any) => {
-                // Only include matches with 80% confidence or higher
-                if (match.confidence >= 0.8) {
-                  // Find which tweet this match belongs to
-                  const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
-                  if (tweetIndex !== -1) {
-                    const tweetKey = `tweet-${tweetIndex + 1}`;
+              // Filter matches by confidence threshold (75%)
+              const highConfidenceMatches = data.matches.filter((match: any) => 
+                match.confidence >= 0.75
+              );
+              
+              const lowConfidenceCount = data.matches.length - highConfidenceMatches.length;
+              
+              if (lowConfidenceCount > 0) {
+                setNotification({
+                  type: 'warning',
+                  message: `${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%). Consider providing more specific content or additional videos.`
+                });
+              }
+              
+              highConfidenceMatches.forEach((match: any) => {
+                // Find which tweet this match belongs to
+                const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
+                if (tweetIndex !== -1) {
+                  const tweetKey = `tweet-${tweetIndex + 1}`;
           formattedResults[tweetKey].clips.push({
             videoId: match.videoUrl,
             title: 'AI Matched Clip',

@@ -6,13 +6,15 @@ import {
   PerfectMatch, 
   getMatchStatistics 
 } from '../../app/utils/perfect-matching-optimized';
+import { findContextAwareMatches, ContextualMatch } from '../../app/utils/context-aware-matching';
 import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
 import { YouTubeAuthConfig } from './youtube-auth-v2';
 
-// Configuration: Use individual processing for better quality
-const USE_INDIVIDUAL_PROCESSING = true;
+// Configuration: Use context-aware processing for better quality
+const USE_CONTEXT_AWARE_MATCHING = true;
+const USE_INDIVIDUAL_PROCESSING = false; // Fallback option
 
 export interface VideoClip {
   startTime: number;
@@ -164,12 +166,31 @@ export async function processVideosWithPerfectMatching(
   console.log('\n🎯 Finding perfect matches...');
   progressCallback?.(60, 'Finding perfect matches for each tweet...');
   
-  // Use individual or batch processing based on configuration
-  const findPerfectMatches = USE_INDIVIDUAL_PROCESSING 
-    ? findPerfectMatchesIndividual 
-    : findPerfectMatchesOptimized;
+  let matches: PerfectMatch[] = [];
   
-  const matches = await findPerfectMatches(tweets, videoTranscripts, modelSettings);
+  // Use context-aware matching if enabled
+  if (USE_CONTEXT_AWARE_MATCHING) {
+    const contextMatches = await findContextAwareMatches(tweets, videoTranscripts, modelSettings);
+    // Convert ContextualMatch to PerfectMatch format for compatibility
+    matches = contextMatches.map(cm => ({
+      tweetId: cm.tweetId,
+      tweetText: cm.tweetText,
+      videoUrl: cm.videoUrl,
+      startTime: cm.startTime,
+      endTime: cm.endTime,
+      transcriptText: cm.transcriptText,
+      confidence: cm.confidence,
+      matchQuality: cm.matchQuality,
+      reasoning: cm.reasoning
+    } as PerfectMatch));
+  } else {
+    // Fallback to previous matching methods
+    const findPerfectMatches = USE_INDIVIDUAL_PROCESSING 
+      ? findPerfectMatchesIndividual 
+      : findPerfectMatchesOptimized;
+    
+    matches = await findPerfectMatches(tweets, videoTranscripts, modelSettings);
+  }
   
   progressCallback?.(80, 'Formatting results...');
   

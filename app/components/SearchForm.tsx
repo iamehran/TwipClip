@@ -199,7 +199,8 @@ https://example.com/video.mp4`}
 
       {/* Submit Section */}
       <div className="space-y-4">
-        {/* Force Refresh Option */}
+        {/* Force Refresh Option - Hidden for now but functionality preserved */}
+        {/* 
         <div className="flex items-center gap-3 bg-[#b8a887]/10 border border-[#b8a887]/20 rounded-lg p-4">
           <input
             type="checkbox"
@@ -215,6 +216,7 @@ https://example.com/video.mp4`}
             </p>
           </label>
         </div>
+        */}
 
         <button
           type="submit"
