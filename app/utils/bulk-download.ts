@@ -405,12 +405,18 @@ export async function createDownloadZip(
   const zip = new AdmZip();
   
   // Add each successful download to the ZIP
+  let clipIndex = 1;
   for (const result of downloadResults) {
     if (result.success && result.downloadPath) {
       try {
         const fileBuffer = await fs.readFile(result.downloadPath);
-        const filename = `tweet_${result.tweetId}_clip.mp4`;
+        // Generate unique filename even if tweetId is undefined
+        const filename = result.tweetId && result.tweetId !== 'undefined' 
+          ? `tweet_${result.tweetId}_clip.mp4`
+          : `clip_${clipIndex}_${formatTime(result.startTime)}-${formatTime(result.endTime)}.mp4`.replace(/:/g, '-');
+        
         zip.addFile(filename, fileBuffer);
+        clipIndex++;
       } catch (error) {
         console.warn(`Failed to add ${result.downloadPath} to ZIP:`, error);
       }
@@ -420,8 +426,8 @@ export async function createDownloadZip(
   // Add the summary JSON
   const summary = {
     created: new Date().toISOString(),
-    clips: downloadResults.map(r => ({
-      tweetId: r.tweetId,
+    clips: downloadResults.map((r, index) => ({
+      tweetId: r.tweetId || `clip_${index + 1}`,
       success: r.success,
       error: r.error,
       duration: r.duration,
