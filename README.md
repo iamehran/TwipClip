@@ -11,7 +11,12 @@ TwipClip analyzes your thread content and searches through multiple YouTube vide
 - **AI-Powered Matching**: Uses Claude AI to intelligently match tweet content with video transcripts
 - **Browser-Based YouTube Authentication**: Automatic cookie extraction from your browser - no manual setup required
 - **Precise Clip Extraction**: Downloads only the relevant portions of videos
-- **Bulk Download**: Download all matched clips as a ZIP file
+- **Bulk Download with Smart Optimization**: 
+  - Download all matched clips as a ZIP file
+  - Automatic optimization to 720p quality
+  - File size limited to 512MB per video (perfect for social media)
+  - Duration limited to 10 minutes per video
+  - H.264 codec for maximum compatibility
 - **Model Selection**: Choose between Claude Opus 4 (highest quality) or Sonnet 4 (faster)
 - **Thinking Mode**: Enable step-by-step reasoning for better accuracy
 - **Token Usage Control**: Adjust processing depth (Low/Medium/High)
@@ -88,7 +93,7 @@ docker run -p 3000:3000 --env-file .env.local twipclip
 
 4. **Search**: Click search to find matching clips
 
-5. **Download**: Download individual clips or all clips as a ZIP file
+5. **Download**: Download individual clips or all clips as a ZIP file (optimized for social media platforms)
 
 ## 🏗️ Architecture
 

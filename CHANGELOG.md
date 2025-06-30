@@ -5,6 +5,29 @@ All notable changes to TwipClip will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2024-01-XX
+
+### Added
+- **Typefully-Optimized Bulk Downloads**: Enhanced bulk download feature specifically optimized for Typefully
+  - Automatic video optimization to 720p quality
+  - File size limiting to 512MB (Typefully's limit)
+  - Duration limiting to 10 minutes per video
+  - H.264 codec for maximum compatibility
+  - Detailed status reporting for excluded videos
+  - Improved UI with Typefully requirements information
+- **File Serving Capability**: Added support for serving zip files in download route
+- **Comprehensive Documentation**: New bulk download guide for Typefully users
+
+### Fixed
+- **Bulk Download "Site Not Available" Error**: Fixed critical issue preventing zip file downloads
+- **Download Route Enhancement**: Added proper file serving with security checks
+- **Error Handling**: Improved error messages and user feedback
+
+### Changed
+- **Video Encoding Settings**: Optimized FFmpeg settings for better quality/size balance (CRF 23)
+- **BulkDownloadButton UI**: Enhanced with Typefully-specific information and status display
+- **Download Route**: Now handles both file downloads and video downloads seamlessly
+
 ## [0.2.0] - 2024-01-XX
 
 ### Added

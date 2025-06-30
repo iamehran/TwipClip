@@ -188,6 +188,67 @@ export async function GET(request: Request) {
   
   try {
     const { searchParams } = new URL(request.url);
+    
+    // Check if this is a zip file download request
+    const filePath = searchParams.get('file');
+    if (filePath) {
+      try {
+        // Decode the file path
+        const decodedPath = decodeURIComponent(filePath);
+        
+        // Security check: ensure the file is in the temp directory
+        const normalizedPath = path.normalize(decodedPath);
+        const tempDirPath = path.normalize(os.tmpdir());
+        
+        if (!normalizedPath.startsWith(tempDirPath)) {
+          return NextResponse.json(
+            { error: 'Invalid file path' },
+            { status: 403 }
+          );
+        }
+        
+        // Check if file exists
+        const stats = await fs.stat(normalizedPath);
+        if (!stats.isFile()) {
+          return NextResponse.json(
+            { error: 'File not found' },
+            { status: 404 }
+          );
+        }
+        
+        // Read the file
+        const fileBuffer = await fs.readFile(normalizedPath);
+        const fileName = path.basename(normalizedPath);
+        
+        // Clean up the file after serving
+        setTimeout(async () => {
+          try {
+            await fs.unlink(normalizedPath);
+            console.log(`Cleaned up zip file: ${normalizedPath}`);
+          } catch (err) {
+            console.error('Failed to clean up zip file:', err);
+          }
+        }, 60000); // Clean up after 1 minute
+        
+        // Return the zip file
+        return new NextResponse(fileBuffer, {
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Content-Length': stats.size.toString(),
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
+      } catch (error) {
+        console.error('Error serving zip file:', error);
+        return NextResponse.json(
+          { error: 'Failed to download file' },
+          { status: 500 }
+        );
+      }
+    }
+    
+    // Original video download logic
     const videoId = searchParams.get('videoId');
     const start = searchParams.get('start');
     const end = searchParams.get('end');

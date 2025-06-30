@@ -95,15 +95,17 @@ async function downloadClip(
       onProgress?.(`⚠️ No authentication configured - downloads may fail for restricted content`);
     }
     
-    // Download the video with proper quality settings
-    const heightLimit = quality === '1080p' ? '1080' : '720';
-    // Improved format selection for better quality
-    downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+    // Optimized format selection for Typefully
+    // Force 720p for consistent quality and reasonable file sizes
+    downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
+    downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
+    downloadCmd += ` --merge-output-format mp4`;
+    downloadCmd += ` --no-warnings --quiet`;
     
     // Add retry options for reliability
     downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
     
-    onProgress?.(`Downloading video (${quality})...`);
+    onProgress?.(`Downloading video (720p optimized for Typefully)...`);
     
     let downloadAttempts = 0;
     const maxAttempts = 3;
@@ -134,7 +136,10 @@ async function downloadClip(
               downloadCmd = `"${ytDlpPath}"`;
               const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
               downloadCmd += ` ${cookieArgs.join(' ')}`;
-              downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}" -f "bestvideo[height<=${heightLimit}]+bestaudio/best" --merge-output-format mp4 --no-warnings --quiet`;
+              downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
+              downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
+              downloadCmd += ` --merge-output-format mp4`;
+              downloadCmd += ` --no-warnings --quiet`;
               downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
               continue; // Retry with new browser
             }
@@ -154,12 +159,22 @@ async function downloadClip(
       throw lastError;
     }
     
-    // Step 2: Extract the specific clip using FFmpeg with accurate seeking
-    onProgress?.(`Extracting clip (${startTimeStr} - ${endTimeStr})...`);
+    // Step 2: Extract the specific clip using FFmpeg with Typefully-optimized settings
+    onProgress?.(`Extracting and optimizing clip (${startTimeStr} - ${endTimeStr})...`);
     
-    // Use accurate seeking with re-encoding for precise cuts
-    // First try with fast preset for speed, but better quality (lower CRF = better quality)
-    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration} -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart -avoid_negative_ts make_zero "${outputPath}" -y`;
+    // Optimized FFmpeg settings for Typefully
+    // - CRF 23 for good quality/size balance (lower = better quality, higher = smaller size)
+    // - H264 codec for maximum compatibility
+    // - AAC audio at 128k for good quality without excessive size
+    // - Fast start for web playback
+    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration}`;
+    extractCmd += ` -c:v libx264 -preset medium -crf 23`;
+    extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
+    extractCmd += ` -pix_fmt yuv420p`;
+    extractCmd += ` -c:a aac -b:a 128k -ar 44100`;
+    extractCmd += ` -movflags +faststart`;
+    extractCmd += ` -avoid_negative_ts make_zero`;
+    extractCmd += ` "${outputPath}" -y`;
     
     try {
       await execAsync(extractCmd, {
@@ -169,7 +184,13 @@ async function downloadClip(
     } catch (extractError) {
       // If that fails, try with input seeking for better compatibility
       onProgress?.(`Retrying with alternative extraction method...`);
-      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration} -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}" -y`;
+      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration}`;
+      extractCmd += ` -c:v libx264 -preset medium -crf 23`;
+      extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
+      extractCmd += ` -pix_fmt yuv420p`;
+      extractCmd += ` -c:a aac -b:a 128k -ar 44100`;
+      extractCmd += ` -movflags +faststart`;
+      extractCmd += ` "${outputPath}" -y`;
       
       await execAsync(extractCmd, {
         timeout: 180000, // 3 minute timeout
@@ -177,7 +198,7 @@ async function downloadClip(
       });
     }
     
-    // Step 3: Verify the extracted clip duration
+    // Step 3: Verify the extracted clip
     try {
       const durationCmd = `"${ffmpegPath}" -i "${outputPath}" 2>&1`;
       const durationOutput = await execAsync(durationCmd, {
@@ -211,13 +232,19 @@ async function downloadClip(
       console.warn(`Failed to clean up temp file: ${tempVideoPath}`);
     }
     
-    // Step 5: Verify the output file exists and has size
+    // Step 5: Verify the output file exists and check size
     const stats = await fs.stat(outputPath);
     if (stats.size < 1000) {
       throw new Error('Output file is too small, likely corrupted');
     }
     
-    onProgress?.(`✅ Successfully extracted ${duration}s clip`);
+    // Warn if file is too large for Typefully
+    if (stats.size > 512 * 1024 * 1024) { // 512MB
+      console.warn(`⚠️ File size (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds Typefully's 512MB limit`);
+    }
+    
+    const fileSizeMB = (stats.size / 1024 / 1024).toFixed(1);
+    onProgress?.(`✅ Successfully extracted ${duration}s clip (${fileSizeMB}MB)`);
     
     return {
       tweetId: match.tweetId,
