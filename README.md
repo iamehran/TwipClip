@@ -195,3 +195,6 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment instructions.
 - GitHub Issues: [Report bugs or request features](https://github.com/yourusername/twipclip/issues)
 - Documentation: Check the [docs](./docs) folder
 - Troubleshooting: See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+
+Test addition for a commit!
