@@ -93,11 +93,11 @@ export default function Home() {
       // First, start the async processing
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout
-      
+
       const startResponse = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           thread: threadContent,
           videos: videoUrls,
           async: true,  // Enable async mode
@@ -105,11 +105,11 @@ export default function Home() {
         }),
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
 
       console.log('Start response status:', startResponse.status);
-      
+
       if (!startResponse.ok) {
         const errorData = await startResponse.json();
         console.error('Start response error:', errorData);
@@ -118,11 +118,11 @@ export default function Home() {
 
       const startData = await startResponse.json();
       console.log('Start response data:', startData);
-      
+
       // Check if we got immediate results (sync mode)
       if (startData.status === 'completed' && startData.results) {
         console.log('Received immediate results (sync mode)');
-        
+
         // Simulate progress animation for better UX
         const animateProgress = async () => {
           const steps = [
@@ -133,23 +133,23 @@ export default function Home() {
             { progress: 95, status: 'Finalizing results...', delay: 400 },
             { progress: 100, status: 'Complete!', delay: 200 }
           ];
-          
+
           for (const step of steps) {
             setLoadingProgress(step.progress);
             setLoadingStatus(step.status);
             await new Promise(resolve => setTimeout(resolve, step.delay));
           }
         };
-        
+
         // Start animation and wait for it to complete
         await animateProgress();
-        
+
         // Process the results after animation
         const data = startData.results;
 
         // Convert the new format to match the UI expectations
         const formattedResults: SearchResults = {};
-        
+
         // First, initialize all tweets with empty clips arrays
         const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
         tweetTexts.forEach((text, index) => {
@@ -159,23 +159,21 @@ export default function Home() {
             clips: []
           };
         });
-        
+
         // Then populate with actual matches
         if (data.matches && data.matches.length > 0) {
           // Filter matches by confidence threshold (75%)
-          const highConfidenceMatches = data.matches.filter((match: any) => 
+          const highConfidenceMatches = data.matches.filter((match: any) =>
             match.confidence >= 0.75
           );
-          
+
           const lowConfidenceCount = data.matches.length - highConfidenceMatches.length;
-          
+
+          // Log warning about filtered matches
           if (lowConfidenceCount > 0) {
-            setNotification({
-              type: 'warning',
-              message: `${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%). Consider providing more specific content or additional videos.`
-            });
+            console.warn(`${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%)`);
           }
-          
+
           highConfidenceMatches.forEach((match: any) => {
             // Find which tweet this match belongs to
             const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
@@ -205,23 +203,23 @@ export default function Home() {
         setResults(formattedResults);
         setStats(data.summary || null);
         setRawMatches(data.matches || []); // Store raw matches
-        
+
         // Set loading to false after a small delay to let UI update
         setTimeout(() => {
           setLoading(false);
           setLoadingProgress(0);
           setLoadingStatus('');
         }, 500);
-        
+
         return; // Exit early, no need to poll
       }
-      
+
       const { jobId } = startData;
       if (!jobId) {
         console.error('No job ID received:', startData);
         throw new Error('No job ID received from server');
       }
-      
+
       console.log('Processing started with job ID:', jobId);
 
       // Now poll for status updates
@@ -253,13 +251,13 @@ export default function Home() {
           if (statusData.status === 'completed' && statusData.results) {
             clearInterval(pollInterval);
             clearInterval(progressInterval);
-            
+
             // Process the results
             const data = statusData.results;
 
             // Convert the new format to match the UI expectations
             const formattedResults: SearchResults = {};
-            
+
             // First, initialize all tweets with empty clips arrays
             const tweetTexts = threadContent.split('---').map(t => t.trim()).filter(t => t.length > 0);
             tweetTexts.forEach((text, index) => {
@@ -269,23 +267,21 @@ export default function Home() {
                 clips: []
               };
             });
-            
+
             // Then populate with actual matches
             if (data.matches && data.matches.length > 0) {
               // Filter matches by confidence threshold (75%)
-              const highConfidenceMatches = data.matches.filter((match: any) => 
+              const highConfidenceMatches = data.matches.filter((match: any) =>
                 match.confidence >= 0.75
               );
-              
+
               const lowConfidenceCount = data.matches.length - highConfidenceMatches.length;
-              
+
+              // Log warning about filtered matches
               if (lowConfidenceCount > 0) {
-                setNotification({
-                  type: 'warning',
-                  message: `${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%). Consider providing more specific content or additional videos.`
-                });
+                console.warn(`${lowConfidenceCount} match${lowConfidenceCount > 1 ? 'es' : ''} filtered out due to low confidence (<75%)`);
               }
-              
+
               highConfidenceMatches.forEach((match: any) => {
                 // Find which tweet this match belongs to
                 const tweetIndex = tweetTexts.findIndex(text => text === match.tweet);
@@ -315,13 +311,13 @@ export default function Home() {
             setResults(formattedResults);
             setStats(data.summary || null);
             setRawMatches(data.matches || []); // Store raw matches
-            
+
             setLoadingProgress(100);
             setLoadingStatus('Complete!');
-            
+
             // Set loading to false when complete
             setLoading(false);
-            
+
             // Reset progress after a short delay
             setTimeout(() => {
               setLoadingProgress(0);
@@ -350,7 +346,7 @@ export default function Home() {
           if (prev < lastProgress) {
             return lastProgress;
           }
-          
+
           // Only animate if we haven't received real progress
           if (prev < 85 && lastProgress < 85) {
             const increment = Math.random() * 2 + 0.5; // 0.5-2.5% increment
@@ -363,13 +359,13 @@ export default function Home() {
     } catch (err) {
       clearInterval(progressInterval);
       clearInterval(pollInterval);
-      
+
       let errorMessage = 'An error occurred';
-      
+
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
       console.error('Processing error:', err);
       setShowSearchForm(true); // Show form again on error
@@ -378,7 +374,7 @@ export default function Home() {
   };
 
   const totalClips = Object.values(results).reduce((sum, r) => sum + r.clips.length, 0);
-  const totalLowConfidenceMatches = rawMatches.filter(m => m.confidence < 0.8).length;
+  const totalLowConfidenceMatches = rawMatches.filter(m => m.confidence < 0.75).length;
 
   return (
     <main className="min-h-screen bg-[#0e1e2d]">
@@ -388,13 +384,15 @@ export default function Home() {
           <div className="flex items-center justify-between">
             {/* Logo and Title */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <h1 className="text-xl sm:text-2xl font-bold text-[#b8a887]">
-                TwipClip
-              </h1>
-              <span className="hidden sm:inline text-gray-500 text-sm">by</span>
-              <ThoughtleadrLogo className="w-6 h-6 sm:w-7 sm:h-7" />
+              <a href="/" className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity">
+                <h1 className="text-xl sm:text-2xl font-bold text-[#b8a887]">
+                  TwipClip
+                </h1>
+                <span className="hidden sm:inline text-gray-500 text-sm">by</span>
+                <ThoughtleadrLogo className="w-6 h-6 sm:w-7 sm:h-7" />
+              </a>
             </div>
-            
+
             {/* Authentication Section */}
             <YouTubeAuth onAuthChange={(authenticated) => setIsYouTubeAuthenticated(authenticated)} />
           </div>
@@ -453,24 +451,20 @@ export default function Home() {
 
           {/* Error Display */}
           {error && (
-            <ErrorDisplay 
-              error={error} 
-              onRetry={lastSearch ? () => handleSearch(lastSearch.threadContent, lastSearch.videoUrls, false, lastSearch.modelSettings) : undefined} 
+            <ErrorDisplay
+              error={error}
+              onRetry={lastSearch ? () => handleSearch(lastSearch.threadContent, lastSearch.videoUrls, false, lastSearch.modelSettings) : undefined}
             />
           )}
 
           {/* Loading State */}
-          {console.log('Loading state check:', { loading, loadingStatus, loadingProgress })}
           {loading && (
-            <>
-              {console.log('Showing loading state:', { loadingStatus, loadingProgress })}
-            <LoadingState 
+            <LoadingState
               status={loadingStatus}
               progress={loadingProgress}
               currentVideo={loadingProgress > 40 ? Math.min(Math.ceil((loadingProgress - 40) / 30 * (lastSearch?.videoUrls.length || 1)), lastSearch?.videoUrls.length || 1) : undefined}
               totalVideos={lastSearch?.videoUrls.length}
             />
-            </>
           )}
 
           {/* Results Summary */}
@@ -479,8 +473,8 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                 <h3 className="text-base sm:text-lg font-semibold text-white">Results Summary</h3>
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <BulkDownloadButton 
-                    matches={rawMatches.filter(m => m.confidence >= 0.8)}
+                  <BulkDownloadButton
+                    matches={rawMatches.filter(m => m.confidence >= 0.75)}
                     authConfig={authConfig}
                     isAuthenticated={isYouTubeAuthenticated}
                   />
@@ -513,7 +507,7 @@ export default function Home() {
                   <p className="text-xs sm:text-sm text-gray-400">Avg Confidence</p>
                 </div>
               </div>
-              
+
               {/* Quality Indicator */}
               <div className="mt-4 pt-4 border-t border-gray-700/50">
                 <p className="text-xs text-gray-400 text-center">
@@ -522,7 +516,7 @@ export default function Home() {
                 </p>
                 {totalLowConfidenceMatches > 0 && (
                   <p className="text-xs text-yellow-500 text-center mt-2">
-                    ⚠️ {totalLowConfidenceMatches} low-confidence matches (below 80%) were filtered out. Please provide more relevant YouTube videos for better results.
+                    ⚠️ {totalLowConfidenceMatches} low-confidence matches (below 75%) were filtered out. Please provide more relevant YouTube videos for better results.
                   </p>
                 )}
               </div>
@@ -539,7 +533,7 @@ export default function Home() {
                 <div>
                   <h3 className="text-lg font-semibold text-yellow-500 mb-2">No High-Quality Matches Found</h3>
                   <p className="text-sm text-gray-300 mb-3">
-                    We found {totalLowConfidenceMatches} potential matches, but they all had confidence scores below 80%, 
+                    We found {totalLowConfidenceMatches} potential matches, but they all had confidence scores below 75%,
                     indicating they may not be relevant to your thread.
                   </p>
                   <p className="text-sm text-gray-400">
@@ -573,11 +567,11 @@ export default function Home() {
                 </div>
 
                 {/* Video Clips */}
-                  <div className="grid gap-4">
-                    {tweetData.clips.map((clip, index) => (
-                      <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
-                    ))}
-                  </div>
+                <div className="grid gap-4">
+                  {tweetData.clips.map((clip, index) => (
+                    <VideoResult key={`${clip.videoId}-${index}`} clip={clip} />
+                  ))}
+                </div>
               </div>
             </div>
           ))}
