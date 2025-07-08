@@ -104,7 +104,10 @@ export class VideoDownloader {
       '--no-warnings',
       '--no-playlist',
       '--merge-output-format', 'mp4',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language: en-US,en;q=0.9',
+      '--add-header', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      '--no-check-certificate'
     );
     
     // Add retry options for reliability
@@ -254,7 +257,9 @@ export class VideoDownloader {
       '--no-progress',
       '--extract-flat',
       '--no-check-certificate',
-      '--user-agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
+      '--user-agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
+      '--add-header', '"Accept-Language: en-US,en;q=0.9"',
+      '--add-header', '"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"',
       '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--no-playlist',
@@ -352,18 +357,19 @@ async function downloadFullVideo(videoUrl: string, outputPath: string, sessionId
     console.log('⚠️ No YouTube cookies found - download may fail for restricted content');
   }
   
-  // Build command based on environment
+  // Build command based on environment with anti-bot headers
   const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   let command: string;
   
   if (isRailway) {
     // On Railway, FFmpeg is in PATH
-    command = `${ytdlpCmd} ${cookieFlag} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    command = `${ytdlpCmd} ${cookieFlag} --user-agent "${userAgent}" --add-header "Accept-Language: en-US,en;q=0.9" --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" --no-check-certificate -f "bestvideo[height<=720]+bestaudio/best[height<=720]" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   } else {
     // In development, specify FFmpeg location
     const ffmpegPath = getFFmpegPath();
     const ffmpegDir = path.dirname(ffmpegPath);
-    command = `${ytdlpCmd} ${cookieFlag} -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
+    command = `${ytdlpCmd} ${cookieFlag} --user-agent "${userAgent}" --add-header "Accept-Language: en-US,en;q=0.9" --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" --no-check-certificate -f "bestvideo[height<=720]+bestaudio/best[height<=720]" --ffmpeg-location "${ffmpegDir}" "${videoUrl}" -o "${outputPath}.%(ext)s"`;
   }
   
   console.log(`Running: ${command}`);
@@ -580,7 +586,8 @@ export async function extractAudio(videoUrl: string, videoId: string, sessionId?
     console.log('⚠️ No YouTube cookies found - audio extraction may fail for restricted content');
   }
   
-  const command = `${ytdlpCmd} ${cookieFlag} -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  const command = `${ytdlpCmd} ${cookieFlag} --user-agent "${userAgent}" --add-header "Accept-Language: en-US,en;q=0.9" --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" --no-check-certificate -f "bestaudio[ext=m4a]/bestaudio/best" -o "${tempPath}" "${videoUrl}"`;
   
   await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
   

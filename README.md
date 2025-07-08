@@ -175,6 +175,10 @@ TwipClip uses yt-dlp's native browser cookie extraction for seamless YouTube aut
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for common issues and solutions.
 
+### YouTube Authentication Issues
+
+If you're getting "Sign in to confirm you're not a bot" errors, see [YouTube Authentication Troubleshooting](docs/YOUTUBE_AUTH_TROUBLESHOOTING.md).
+
 ### Quick Fixes:
 
 - **"Sign in to confirm you're not a bot"**: Set up browser authentication

@@ -72,6 +72,14 @@ async function downloadClip(
     // Build download command with authentication
     let downloadCmd = `"${ytDlpPath}"`;
     
+    // Add user-agent to prevent bot detection
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    downloadCmd += ` --user-agent "${userAgent}"`;
+    
+    // Add additional headers to prevent bot detection
+    downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
+    downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
+    
     // Check for per-user cookies first
     let hasAuth = false;
     if (sessionId) {
@@ -95,7 +103,7 @@ async function downloadClip(
       onProgress?.(`⚠️ No authentication configured - downloads may fail for restricted content`);
     }
     
-    // Optimized format selection for Typefully
+    // Optimized format selection for social media
     // Force 720p for consistent quality and reasonable file sizes
     downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
     downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
@@ -105,7 +113,10 @@ async function downloadClip(
     // Add retry options for reliability
     downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
     
-    onProgress?.(`Downloading video (720p optimized for Typefully)...`);
+    // Add no-check-certificate to handle SSL issues
+    downloadCmd += ` --no-check-certificate`;
+    
+    onProgress?.(`Downloading video (720p optimized)...`);
     
     let downloadAttempts = 0;
     const maxAttempts = 3;
@@ -134,6 +145,9 @@ async function downloadClip(
               onProgress?.(`🔄 Trying fallback browser: ${authConfig.browser}`);
               // Rebuild command with new browser
               downloadCmd = `"${ytDlpPath}"`;
+              downloadCmd += ` --user-agent "${userAgent}"`;
+              downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
+              downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
               const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
               downloadCmd += ` ${cookieArgs.join(' ')}`;
               downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
@@ -141,6 +155,7 @@ async function downloadClip(
               downloadCmd += ` --merge-output-format mp4`;
               downloadCmd += ` --no-warnings --quiet`;
               downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
+              downloadCmd += ` --no-check-certificate`;
               continue; // Retry with new browser
             }
           }
@@ -372,89 +387,4 @@ export async function downloadAllClips(
     successfulDownloads: results.filter(r => r.success).length,
     failedDownloads: results.filter(r => !r.success).length,
     totalSize: results.reduce((sum, r) => sum + (r.fileSize || 0), 0),
-    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}` : 'none',
-    results: results.map(r => ({
-      tweetId: r.tweetId,
-      filename: path.basename(r.downloadPath),
-      success: r.success,
-      error: r.error,
-      fileSize: r.fileSize,
-      duration: r.duration,
-      videoUrl: r.videoUrl,
-      clipRange: `${formatTime(r.startTime)} - ${formatTime(r.endTime)}`
-    }))
-  }, null, 2));
-  
-  console.log(`\n📊 Download Summary:`);
-  console.log(`  Total clips: ${matches.length}`);
-  console.log(`  Successful: ${results.filter(r => r.success).length}`);
-  console.log(`  Failed: ${results.filter(r => !r.success).length}`);
-  console.log(`  Output directory: ${outputDir}`);
-  console.log(`  Summary file: ${summaryPath}`);
-  
-  return results;
-}
-
-/**
- * Create a ZIP file of all downloaded clips
- */
-export async function createDownloadZip(
-  downloadResults: DownloadResult[],
-  outputPath: string
-): Promise<string> {
-  const zip = new AdmZip();
-  
-  // Add each successful download to the ZIP
-  let clipIndex = 1;
-  for (const result of downloadResults) {
-    if (result.success && result.downloadPath) {
-      try {
-        const fileBuffer = await fs.readFile(result.downloadPath);
-        // Generate unique filename even if tweetId is undefined
-        const filename = result.tweetId && result.tweetId !== 'undefined' 
-          ? `tweet_${result.tweetId}_clip.mp4`
-          : `clip_${clipIndex}_${formatTime(result.startTime)}-${formatTime(result.endTime)}.mp4`.replace(/:/g, '-');
-        
-        zip.addFile(filename, fileBuffer);
-        clipIndex++;
-      } catch (error) {
-        console.warn(`Failed to add ${result.downloadPath} to ZIP:`, error);
-      }
-    }
-  }
-  
-  // Add the summary JSON
-  const summary = {
-    created: new Date().toISOString(),
-    clips: downloadResults.map((r, index) => ({
-      tweetId: r.tweetId || `clip_${index + 1}`,
-      success: r.success,
-      error: r.error,
-      duration: r.duration,
-      videoUrl: r.videoUrl,
-      timeRange: `${formatTime(r.startTime)} - ${formatTime(r.endTime)}`
-    }))
-  };
-  
-  zip.addFile('summary.json', Buffer.from(JSON.stringify(summary, null, 2)));
-  
-  // Write the ZIP file
-  zip.writeZip(outputPath);
-  
-  return outputPath;
-}
-
-/**
- * Clean up downloaded files after creating ZIP
- */
-export async function cleanupDownloads(downloadResults: DownloadResult[]): Promise<void> {
-  for (const result of downloadResults) {
-    if (result.downloadPath) {
-      try {
-        await fs.unlink(result.downloadPath);
-      } catch (error) {
-        // Ignore cleanup errors
-      }
-    }
-  }
-} 
+    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}`

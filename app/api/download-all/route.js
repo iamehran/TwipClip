@@ -7,7 +7,7 @@ import os from 'os';
 
 export async function POST(request) {
   try {
-    const { matches } = await request.json();
+    const { matches, authConfig } = await request.json();
     
     if (!matches || !Array.isArray(matches) || matches.length === 0) {
       return NextResponse.json({ 
@@ -25,11 +25,19 @@ export async function POST(request) {
       console.log(`Using session ID: ${sessionId.substring(0, 8)}...`);
     }
 
-    // Download all clips with Typefully-optimized settings
+    // Log authentication configuration
+    if (authConfig) {
+      console.log(`Authentication config provided: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
+    } else {
+      console.log('No authentication config provided in request');
+    }
+
+    // Download all clips with optimized settings
     const results = await downloadAllClips(matches, {
       maxConcurrent: 2, // Limit concurrent downloads to avoid overwhelming the system
-      quality: '720p', // Force 720p for Typefully compatibility
+      quality: '720p', // Force 720p for compatibility
       sessionId, // Pass session ID for per-user cookies
+      authConfig, // Pass the authentication config from frontend
       onProgress: (progress) => {
         console.log(`Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(1)}%)`);
       },
@@ -38,12 +46,12 @@ export async function POST(request) {
           const sizeMB = result.fileSize ? (result.fileSize / 1024 / 1024).toFixed(1) : 'unknown';
           console.log(`✓ Downloaded clip for tweet ${result.tweetId} (${sizeMB}MB, ${result.duration}s)`);
           
-          // Warn about Typefully limits
+          // Warn about limits
           if (result.fileSize && result.fileSize > 512 * 1024 * 1024) {
-            console.warn(`⚠️ Tweet ${result.tweetId} exceeds Typefully's 512MB limit`);
+            console.warn(`⚠️ Tweet ${result.tweetId} exceeds 512MB limit`);
           }
           if (result.duration && result.duration > 600) { // 10 minutes
-            console.warn(`⚠️ Tweet ${result.tweetId} exceeds Typefully's 10-minute limit`);
+            console.warn(`⚠️ Tweet ${result.tweetId} exceeds 10-minute limit`);
           }
         } else {
           console.log(`✗ Failed to download clip for tweet ${result.tweetId}: ${result.error}`);

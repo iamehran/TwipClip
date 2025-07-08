@@ -8,25 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2024-01-XX
 
 ### Added
-- **Typefully-Optimized Bulk Downloads**: Enhanced bulk download feature specifically optimized for Typefully
+- **Social Media-Optimized Bulk Downloads**: Enhanced bulk download feature optimized for social media platforms
   - Automatic video optimization to 720p quality
-  - File size limiting to 512MB (Typefully's limit)
+  - File size limiting to 512MB
   - Duration limiting to 10 minutes per video
   - H.264 codec for maximum compatibility
   - Detailed status reporting for excluded videos
-  - Improved UI with Typefully requirements information
+  - Improved UI with optimization information
 - **File Serving Capability**: Added support for serving zip files in download route
-- **Comprehensive Documentation**: New bulk download guide for Typefully users
+- **Comprehensive Documentation**: New bulk download guide and YouTube authentication troubleshooting
+- **Anti-Bot Detection Measures**: Enhanced download commands with proper headers to prevent YouTube bot detection
+  - User-Agent headers for all downloads
+  - Accept-Language and Accept headers
+  - SSL certificate handling
+- **Authentication Testing Script**: New script to test and verify YouTube authentication setup
+  - `scripts/test-youtube-auth.js` for verifying cookie authentication
+  - Tests uploaded cookies validity
+  - Checks for essential YouTube cookies (LOGIN_INFO, SID, HSID)
+  - Verifies anti-bot headers are working properly
+- **Unique Filename Generation**: Fixed issue where videos with undefined tweetIds would overwrite each other
 
 ### Fixed
 - **Bulk Download "Site Not Available" Error**: Fixed critical issue preventing zip file downloads
 - **Download Route Enhancement**: Added proper file serving with security checks
 - **Error Handling**: Improved error messages and user feedback
+- **YouTube Bot Detection**: Fixed "Sign in to confirm you're not a bot" errors
+  - Added proper headers to mimic real browser behavior
+  - Fixed authConfig propagation from frontend to backend
+  - Improved retry logic with browser fallback
+- **Duplicate Video Issue**: Fixed bug where only one video appeared in ZIP when multiple were downloaded
+- **Authentication: All download functions now use uploaded cookies and anti-bot headers**
+  - Individual download route (`/api/download`) now uses session cookies
+  - Added anti-bot headers (User-Agent, Accept-Language, Accept) to all yt-dlp calls
+  - VideoDownloader class updated with consistent authentication
+  - This prevents "Sign in to confirm you're not a bot" errors when cookies are uploaded
 
 ### Changed
 - **Video Encoding Settings**: Optimized FFmpeg settings for better quality/size balance (CRF 23)
-- **BulkDownloadButton UI**: Enhanced with Typefully-specific information and status display
+- **BulkDownloadButton UI**: Made more generic while maintaining optimization features
 - **Download Route**: Now handles both file downloads and video downloads seamlessly
+- **Authentication Flow**: Properly passes authConfig from YouTubeAuth component to bulk download
 
 ## [0.2.0] - 2024-01-XX
 

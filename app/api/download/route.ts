@@ -5,6 +5,8 @@ import path from 'path';
 import os from 'os';
 import { promisify } from 'util';
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from '../../utils/system-tools';
+import { cookies } from 'next/headers';
+import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -19,7 +21,7 @@ async function checkFFmpegAvailable(): Promise<boolean> {
 }
 
 // Download with FFmpeg for precise clipping
-async function downloadWithFFmpeg(videoId: string, start: number, end: number, quality: string): Promise<NextResponse> {
+async function downloadWithFFmpeg(videoId: string, start: number, end: number, quality: string, sessionId?: string): Promise<NextResponse> {
   // Create temporary directory
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twipclip-download-'));
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -36,6 +38,9 @@ async function downloadWithFFmpeg(videoId: string, start: number, end: number, q
     'worstvideo[ext=mp4]+worstaudio[ext=m4a]/worst[ext=mp4]/worst' :
     `bestvideo[height<=${quality.replace('p', '')}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${quality.replace('p', '')}][ext=mp4]/best`;
   
+  // Build command with anti-bot headers and cookies
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  
   const downloadCommand = [
     `"${ytDlpPath}"`,
     `"${videoUrl}"`,
@@ -48,12 +53,26 @@ async function downloadWithFFmpeg(videoId: string, start: number, end: number, q
     '--no-warnings',
     '--socket-timeout 30',
     '--fragment-retries 3',
-    '--retries 3'
-  ].join(' ');
+    '--retries 3',
+    '--no-check-certificate',
+    `--user-agent "${userAgent}"`,
+    `--add-header "Accept-Language: en-US,en;q=0.9"`,
+    `--add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`
+  ];
   
-  console.log('Executing download command:', downloadCommand);
+  // Check for user-specific cookies
+  if (sessionId) {
+    const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    if (existsSync(userCookiePath)) {
+      downloadCommand.push(`--cookies "${userCookiePath}"`);
+      console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+    }
+  }
   
-  await execAsync(downloadCommand, {
+  const fullCommand = downloadCommand.join(' ');
+  console.log('Executing download command with authentication...');
+  
+  await execAsync(fullCommand, {
     timeout: 180000, // 3 minute timeout
     maxBuffer: 100 * 1024 * 1024 // 100MB buffer
   });
@@ -108,7 +127,7 @@ async function downloadWithFFmpeg(videoId: string, start: number, end: number, q
 }
 
 // Fallback: Download full video with timestamps in filename
-async function downloadFullVideoFallback(videoId: string, quality: string, start: number, end: number): Promise<NextResponse> {
+async function downloadFullVideoFallback(videoId: string, quality: string, start: number, end: number, sessionId?: string): Promise<NextResponse> {
   // Create temporary directory
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twipclip-download-'));
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -124,6 +143,9 @@ async function downloadFullVideoFallback(videoId: string, quality: string, start
     'worst[ext=mp4]/worst' :
     `best[height<=${quality.replace('p', '')}][ext=mp4]/best[ext=mp4]/best`;
   
+  // Build command with anti-bot headers and cookies
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  
   const downloadCommand = [
     `"${ytDlpPath}"`,
     `"${videoUrl}"`,
@@ -133,12 +155,26 @@ async function downloadFullVideoFallback(videoId: string, quality: string, start
     '--no-warnings',
     '--socket-timeout 30',
     '--fragment-retries 3',
-    '--retries 3'
-  ].join(' ');
+    '--retries 3',
+    '--no-check-certificate',
+    `--user-agent "${userAgent}"`,
+    `--add-header "Accept-Language: en-US,en;q=0.9"`,
+    `--add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`
+  ];
   
-  console.log('Downloading full video (FFmpeg not available):', downloadCommand);
+  // Check for user-specific cookies
+  if (sessionId) {
+    const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    if (existsSync(userCookiePath)) {
+      downloadCommand.push(`--cookies "${userCookiePath}"`);
+      console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+    }
+  }
   
-  await execAsync(downloadCommand, {
+  const fullCommand = downloadCommand.join(' ');
+  console.log('Downloading full video with authentication...');
+  
+  await execAsync(fullCommand, {
     timeout: 300000, // 5 minute timeout for full video
     maxBuffer: 200 * 1024 * 1024 // 200MB buffer
   });
@@ -187,6 +223,10 @@ export async function GET(request: Request) {
   let tempDir: string | null = null;
   
   try {
+    // Get session ID from cookies
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('twipclip_session')?.value;
+    
     const { searchParams } = new URL(request.url);
     
     // Check if this is a zip file download request
@@ -306,10 +346,10 @@ export async function GET(request: Request) {
       
       if (ffmpegAvailable) {
         console.log('Downloading video clip with yt-dlp + ffmpeg...');
-        return await downloadWithFFmpeg(videoId, startSeconds, endSeconds, quality);
+        return await downloadWithFFmpeg(videoId, startSeconds, endSeconds, quality, sessionId);
       } else {
         console.log('FFmpeg not available - downloading full video instead...');
-        return await downloadFullVideoFallback(videoId, quality, startSeconds, endSeconds);
+        return await downloadFullVideoFallback(videoId, quality, startSeconds, endSeconds, sessionId);
       }
     } catch (error: any) {
       console.error('Download error:', error);

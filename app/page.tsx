@@ -394,7 +394,7 @@ export default function Home() {
             </div>
 
             {/* Authentication Section */}
-            <YouTubeAuth onAuthChange={(authenticated) => setIsYouTubeAuthenticated(authenticated)} />
+            <YouTubeAuth onAuthChange={handleAuthChange} />
           </div>
         </div>
       </div>
