@@ -387,4 +387,87 @@ export async function downloadAllClips(
     successfulDownloads: results.filter(r => r.success).length,
     failedDownloads: results.filter(r => !r.success).length,
     totalSize: results.reduce((sum, r) => sum + (r.fileSize || 0), 0),
-    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}`
+    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}` : 'none',
+    results: results.map(r => ({
+      tweetId: r.tweetId,
+      success: r.success,
+      fileSize: r.fileSize,
+      duration: r.duration,
+      error: r.error
+    }))
+  }, null, 2));
+  
+  return results;
+}
+
+/**
+ * Create a ZIP file containing all downloaded clips
+ */
+export async function createZipFile(
+  downloadResults: DownloadResult[],
+  outputPath: string
+): Promise<string> {
+  const zip = new AdmZip();
+  
+  // Add successfully downloaded files to the ZIP
+  for (const result of downloadResults) {
+    if (result.success && result.downloadPath) {
+      try {
+        const stats = await fs.stat(result.downloadPath);
+        if (stats.isFile()) {
+          const filename = path.basename(result.downloadPath);
+          const fileContent = await fs.readFile(result.downloadPath);
+          zip.addFile(filename, fileContent, `Tweet ${result.tweetId} - ${formatTime(result.startTime)} to ${formatTime(result.endTime)}`);
+          console.log(`  Added to ZIP: ${filename}`);
+        }
+      } catch (error) {
+        console.warn(`  Failed to add file to ZIP: ${result.downloadPath}`, error);
+      }
+    }
+  }
+  
+  // Add summary file
+  const summary = {
+    timestamp: new Date().toISOString(),
+    totalClips: downloadResults.length,
+    successfulDownloads: downloadResults.filter(r => r.success).length,
+    failedDownloads: downloadResults.filter(r => !r.success).length,
+    clips: downloadResults.map(r => ({
+      tweetId: r.tweetId,
+      videoUrl: r.videoUrl,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      duration: r.endTime - r.startTime,
+      success: r.success,
+      fileSize: r.fileSize,
+      error: r.error
+    }))
+  };
+  
+  zip.addFile('summary.json', Buffer.from(JSON.stringify(summary, null, 2)));
+  
+  // Write the ZIP file
+  await new Promise<void>((resolve, reject) => {
+    zip.writeZip(outputPath, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+  
+  const stats = await fs.stat(outputPath);
+  console.log(`📦 Created ZIP file: ${outputPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+  
+  return outputPath;
+}
+
+/**
+ * Clean up temporary download files
+ */
+export async function cleanupDownloads(outputDir: string): Promise<void> {
+  try {
+    await fs.rm(outputDir, { recursive: true, force: true });
+    console.log(`🗑️ Cleaned up temporary files: ${outputDir}`);
+  } catch (error) {
+    console.warn('Failed to cleanup download directory:', error);
+  }
+}
