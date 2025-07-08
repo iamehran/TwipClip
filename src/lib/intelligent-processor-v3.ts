@@ -8,7 +8,7 @@ import {
 } from '../../app/utils/perfect-matching-optimized';
 import { findContextAwareMatches, ContextualMatch } from '../../app/utils/context-aware-matching';
 import { findContextAwareMatchesFast } from '../../app/utils/context-aware-matching-fast';
-import { downloadAllClips, createDownloadZip, cleanupDownloads } from '../../app/utils/bulk-download';
+import { downloadAllClips, createZipFile, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
 import { YouTubeAuthConfig } from './youtube-auth-v2';
@@ -266,7 +266,7 @@ export async function processVideosWithPerfectMatching(
     if (createZip && successfulDownloads.length > 0) {
       console.log('\n📦 Creating ZIP archive...');
       const zipPath = path.join(outputDir, `twipclip-${Date.now()}.zip`);
-      downloadZipPath = await createDownloadZip(downloadResults, zipPath);
+                downloadZipPath = await createZipFile(downloadResults, zipPath);
       console.log(`✅ ZIP created: ${downloadZipPath}`);
     }
   }

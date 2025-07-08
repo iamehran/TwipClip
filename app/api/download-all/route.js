@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { downloadAllClips, createDownloadZip } from '../../utils/bulk-download';
+import { downloadAllClips, createZipFile } from '../../utils/bulk-download';
 import { cookies } from 'next/headers';
 import { YouTubeAuthManagerV2 } from '../../../src/lib/youtube-auth-v2';
 import path from 'path';
@@ -82,7 +82,7 @@ export async function POST(request) {
 
     console.log(`Creating zip file with ${typeFullyCompatible.length} Typefully-compatible clips...`);
     const zipPath = path.join(os.tmpdir(), `twipclip-${Date.now()}.zip`);
-    const finalZipPath = await createDownloadZip(typeFullyCompatible, zipPath);
+    const finalZipPath = await createZipFile(typeFullyCompatible, zipPath);
     
     // Generate download URL
     const downloadUrl = `/api/download?file=${encodeURIComponent(finalZipPath)}`;
