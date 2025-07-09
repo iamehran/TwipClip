@@ -415,10 +415,14 @@ export async function createZipFile(
       try {
         const stats = await fs.stat(result.downloadPath);
         if (stats.isFile()) {
-          const filename = path.basename(result.downloadPath);
+          // Create a clean filename for the ZIP using the tweet ID
+          // Extract the number from tweetId (e.g., "tweet-1" -> "1")
+          const tweetNumber = result.tweetId.replace(/[^0-9]/g, '') || result.tweetId;
+          const zipFilename = `Tweet ${tweetNumber}.mp4`;
           const fileContent = await fs.readFile(result.downloadPath);
-          zip.addFile(filename, fileContent, `Tweet ${result.tweetId} - ${formatTime(result.startTime)} to ${formatTime(result.endTime)}`);
-          console.log(`  Added to ZIP: ${filename}`);
+          const comment = `${formatTime(result.startTime)} to ${formatTime(result.endTime)}`;
+          zip.addFile(zipFilename, fileContent, comment);
+          console.log(`  Added to ZIP: ${zipFilename} (original: ${path.basename(result.downloadPath)})`);
         }
       } catch (error) {
         console.warn(`  Failed to add file to ZIP: ${result.downloadPath}`, error);

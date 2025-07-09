@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { YouTubeAuthManagerV2 } from '../../../src/lib/youtube-auth-v2';
 import path from 'path';
 import os from 'os';
+import { existsSync } from 'fs';
 
 export async function POST(request) {
   try {
@@ -21,23 +22,32 @@ export async function POST(request) {
     const cookieStore = await cookies();
     const sessionId = cookieStore.get('twipclip_session')?.value;
     
+    // Check if user has uploaded cookies
+    let hasCookies = false;
     if (sessionId) {
-      console.log(`Using session ID: ${sessionId.substring(0, 8)}...`);
+      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      hasCookies = existsSync(userCookiePath);
+      console.log(`Session ID: ${sessionId.substring(0, 8)}...`);
+      console.log(`Cookie file exists: ${hasCookies}`);
+      
+      if (hasCookies) {
+        console.log('✅ Using uploaded YouTube cookies for authentication');
+      }
     }
 
     // Log authentication configuration
-    if (authConfig) {
-      console.log(`Authentication config provided: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
-    } else {
-      console.log('No authentication config provided in request');
+    if (!hasCookies && authConfig) {
+      console.log(`Browser auth config provided: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
+    } else if (!hasCookies && !authConfig) {
+      console.log('⚠️ No authentication configured - downloads may fail');
     }
 
     // Download all clips with optimized settings
     const results = await downloadAllClips(matches, {
       maxConcurrent: 2, // Limit concurrent downloads to avoid overwhelming the system
       quality: '720p', // Force 720p for compatibility
-      sessionId, // Pass session ID for per-user cookies
-      authConfig, // Pass the authentication config from frontend
+      sessionId, // Always pass session ID for cookie-based auth
+      authConfig: hasCookies ? undefined : authConfig, // Only use browser auth if no cookies
       onProgress: (progress) => {
         console.log(`Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(1)}%)`);
       },

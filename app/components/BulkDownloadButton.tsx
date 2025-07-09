@@ -31,6 +31,18 @@ export default function BulkDownloadButton({ matches, authConfig, isAuthenticate
       setProgress('Preparing downloads...');
       setDownloadStatus(null);
 
+      // First, check if authentication is still valid
+      try {
+        const authCheckResponse = await fetch('/api/auth/youtube/status');
+        const authStatus = await authCheckResponse.json();
+        
+        if (!authStatus.authenticated && !authConfig) {
+          throw new Error('YouTube authentication expired. Please re-authenticate and try again.');
+        }
+      } catch (authError) {
+        console.warn('Failed to verify auth status, proceeding anyway:', authError);
+      }
+
       const response = await fetch('/api/download-all', {
         method: 'POST',
         headers: {

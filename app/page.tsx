@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SearchForm from './components/SearchForm';
 import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
@@ -51,9 +51,24 @@ export default function Home() {
   const [authConfig, setAuthConfig] = useState<YouTubeAuthConfig | undefined>();
   const [isYouTubeAuthenticated, setIsYouTubeAuthenticated] = useState(false);
 
+  // Keep session alive by refreshing it every 2 minutes
+  useEffect(() => {
+    const keepAlive = setInterval(async () => {
+      try {
+        // Refresh the session to extend its lifetime
+        await fetch('/api/auth/youtube/refresh', { method: 'POST' });
+      } catch (error) {
+        console.log('Session refresh failed:', error);
+      }
+    }, 120000); // 2 minutes
+
+    return () => clearInterval(keepAlive);
+  }, []);
+
   const handleAuthChange = (isAuthenticated: boolean, browser?: string, profile?: string) => {
     setIsYouTubeAuthenticated(isAuthenticated);
-    if (isAuthenticated && browser) {
+    if (isAuthenticated && browser && browser !== 'cookies') {
+      // Only set authConfig for browser-based auth, not cookie-based
       setAuthConfig({ browser, profile });
     } else {
       setAuthConfig(undefined);

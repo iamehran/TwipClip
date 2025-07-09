@@ -10,10 +10,11 @@ interface AuthStatus {
   browser?: string;
   expiresAt?: number;
   daysRemaining?: number;
+  method?: 'cookies' | 'browser'; // Add method to distinguish auth type
 }
 
 interface YouTubeAuthProps {
-  onAuthChange?: (authenticated: boolean) => void;
+  onAuthChange?: (authenticated: boolean, browser?: string, profile?: string) => void;
 }
 
 // Modal component that uses portal
@@ -80,7 +81,12 @@ export default function YouTubeAuth({ onAuthChange }: YouTubeAuthProps) {
       const response = await fetch('/api/auth/youtube/status');
       const data = await response.json();
       setAuthStatus(data);
-      onAuthChange?.(data.authenticated);
+      // When using cookies, pass 'cookies' as the browser parameter
+      if (data.authenticated && data.method === 'cookies') {
+        onAuthChange?.(data.authenticated, 'cookies');
+      } else {
+        onAuthChange?.(data.authenticated);
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
       setAuthStatus({ authenticated: false });
@@ -91,6 +97,12 @@ export default function YouTubeAuth({ onAuthChange }: YouTubeAuthProps) {
 
   const handleEdit = () => {
     setShowUpload(true);
+  };
+
+  // Refresh auth status when modal closes
+  const handleModalClose = () => {
+    setShowUpload(false);
+    checkAuthStatus(); // Re-check auth status after upload
   };
 
   if (loading) {
@@ -136,7 +148,7 @@ export default function YouTubeAuth({ onAuthChange }: YouTubeAuthProps) {
       {/* Upload Modal */}
       <UploadModal 
         show={showUpload} 
-        onClose={() => setShowUpload(false)} 
+        onClose={handleModalClose} 
         authStatus={authStatus}
       />
     </>

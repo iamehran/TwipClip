@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added anti-bot headers (User-Agent, Accept-Language, Accept) to all yt-dlp calls
   - VideoDownloader class updated with consistent authentication
   - This prevents "Sign in to confirm you're not a bot" errors when cookies are uploaded
+- **Proper Tweet Naming in ZIP Files**: Videos in bulk download ZIP now use actual tweet numbers
+  - Files are named "Tweet 1.mp4", "Tweet 2.mp4", "Tweet 6.mp4" etc.
+  - Reflects actual tweet numbers from the thread, not sequential numbering
+  - Makes it easy to identify which video corresponds to which tweet
+- **Session Management Improvements**: Fixed authentication timeout issues
+  - Added session keep-alive mechanism (refreshes every 2 minutes)
+  - Cookie-based auth now prioritized over browser auth when available
+  - Added session refresh endpoint to extend session lifetime
+  - Bulk download verifies auth status before starting
+  - Prevents "Please login to YouTube" errors after delays
 
 ### Changed
 - **Video Encoding Settings**: Optimized FFmpeg settings for better quality/size balance (CRF 23)
