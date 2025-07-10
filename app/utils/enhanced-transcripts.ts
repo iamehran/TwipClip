@@ -361,8 +361,11 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
           console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
-            cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
+          
+          // Use synchronous check like video-metadata.ts does
+          const fsSync = require('fs');
+          if (fsSync.existsSync(userCookieFile)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
             console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
             
             // Debug: Check first few lines of cookie file
@@ -398,7 +401,7 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
         if (sessionId) {
           const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
           console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies "${userCookieFile}"`;
             console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
           } else {
@@ -431,7 +434,7 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
             ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies ${userCookieFile}`;
           }
         }
@@ -758,7 +761,7 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
             ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
             console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
             
@@ -807,7 +810,7 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
         
         if (sessionId) {
           const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies "${userCookieFile}"`;
             console.log('Using YouTube cookies for session (Windows strategies):', sessionId.substring(0, 8) + '...');
           }
@@ -977,7 +980,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
             ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
             console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
             
@@ -1014,7 +1017,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         if (sessionId) {
           const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
           console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies "${userCookieFile}"`;
             console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
           } else {
@@ -1047,7 +1050,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
             ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
-          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+          if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies ${userCookieFile}`;
           }
         }

@@ -10,9 +10,9 @@ interface SearchFormProps {
 }
 
 interface Example {
-  id: number;
-  category: string;
+  id: string;
   title: string;
+  description?: string;
   thread: string;
   videos: string[];
 }
@@ -26,7 +26,7 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
     thinkingEnabled: false,
     tokenUsage: 'medium'
   });
-  const [lastUsedExampleId, setLastUsedExampleId] = useState<number | null>(null);
+  const [lastUsedExampleId, setLastUsedExampleId] = useState<string | null>(null);
 
   const handleModelSettingsChange = useCallback((settings: ModelSettings) => {
     setModelSettings(settings);
@@ -48,7 +48,7 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
   const loadExample = () => {
     try {
       // Type assertion to ensure TypeScript knows this is an array of Examples
-      const examples = examplesData as Example[];
+      const examples = (examplesData as any).examples as Example[];
       
       // Edge case: No examples available
       if (!examples || examples.length === 0) {
@@ -82,7 +82,7 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
       setLastUsedExampleId(selectedExample.id);
 
       // Optional: Show a subtle notification of which example was loaded
-      console.log(`Loaded example: ${selectedExample.title} (${selectedExample.category})`);
+      console.log(`Loaded example: ${selectedExample.title}`);
       
     } catch (error) {
       console.error('Error loading example:', error);
