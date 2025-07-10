@@ -360,9 +360,10 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
             ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
             : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
+          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
           if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
             cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
-            console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+            console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
             
             // Debug: Check first few lines of cookie file
             try {
@@ -392,8 +393,20 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
         
         extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
-        // Windows/local command
-        extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
+        // Windows/local command - also check for cookies
+        let cookieFlag = '';
+        if (sessionId) {
+          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
+            console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
+          } else {
+            console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
+          }
+        }
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
       }
       
       console.log(`Running: ${extractCommand}`);
@@ -426,7 +439,7 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
         // Fallback: Try format 140 directly without extraction
         const fallbackCommand = isDocker 
           ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`;
+          : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
@@ -788,33 +801,45 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
           }
         );
       } else {
+        // Windows strategies - check for cookies
+        let cookieFlag = '';
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        if (sessionId) {
+          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
+            console.log('Using YouTube cookies for session (Windows strategies):', sessionId.substring(0, 8) + '...');
+          }
+        }
+        
         // If user is authenticated, use cookies first
         if (hasYouTubeAuth) {
           strategies.push({
-            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --cookies "${cookieFile}" -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --cookies "${cookieFile}" --user-agent "${userAgent}" -o "${outputPattern}" "${videoUrl}"`,
             timeout: 120000
           });
         }
         
         strategies.push(
-          // Strategy 1: Download worst audio quality (smaller file size)
+          // Strategy 1: Download worst audio quality (smaller file size) with cookies
           {
-            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -f "worstaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" --ffmpeg-location "${ffmpegPath}" -f "worstaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
             timeout: 120000 // 2 minutes
           },
           // Strategy 2: Direct audio download without conversion
           {
-            command: `"${ytDlpPath}" -f "worstaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
             timeout: 120000
           },
           // Strategy 3: Try bestaudio if worstaudio fails
           {
-            command: `"${ytDlpPath}" -f "bestaudio[filesize<50M]/bestaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio[filesize<50M]/bestaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
             timeout: 120000
           },
           // Strategy 4: Fallback - any audio format
           {
-            command: `"${ytDlpPath}" -f "bestaudio/best" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`,
+            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio/best" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
             timeout: 180000 // 3 minutes
           }
         );
@@ -984,8 +1009,20 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         
         extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
       } else {
-        // Windows/local command
-        extractCommand = `"${ytDlpCmd}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`;
+        // Windows/local command - also check for cookies
+        let cookieFlag = '';
+        if (sessionId) {
+          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+          if (await fs.access(userCookieFile).then(() => true).catch(() => false)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
+            console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
+          } else {
+            console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
+          }
+        }
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
       }
       
       console.log(`Running: ${extractCommand}`);
@@ -1018,7 +1055,7 @@ async function executeTranscriptStrategy(strategy: { method: string; priority: n
         // Fallback: Try format 140 directly without extraction
         const fallbackCommand = isDocker 
           ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`;
+          : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
         
         console.log('Trying fallback command:', fallbackCommand);
         await execAsync(fallbackCommand, {
