@@ -94,6 +94,7 @@ export async function POST(request) {
       
       // Log job creation
       console.log('📋 Job created and stored:', jobs.get(jobId));
+      console.log('🗺️ Jobs Map instance ID:', jobs);
       
       // Start processing in the background (simulated)
       setTimeout(async () => {

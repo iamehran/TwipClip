@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 
 // In-memory storage for job statuses
 // In production, use Redis or a database
-export const jobs = new Map();
+// Use global to persist across hot reloads in development
+if (!global.twipclipJobs) {
+  global.twipclipJobs = new Map();
+}
+export const jobs = global.twipclipJobs;
 
 // Helper function to clean up old jobs (older than 1 hour)
 function cleanupOldJobs() {
@@ -26,6 +30,7 @@ export async function GET(request) {
   
   console.log(`📊 Status check for job ${jobId}:`, status ? `Found (${status.status})` : 'Not found');
   console.log(`📋 Total jobs in memory: ${jobs.size}`);
+  console.log('🗺️ Jobs Map instance ID:', jobs);
   
   if (!status) {
     // Log all job IDs for debugging
@@ -40,7 +45,11 @@ export async function GET(request) {
 }
 
 // Track cleanup timeouts to prevent duplicates
-const cleanupTimeouts = new Map();
+// Use global to persist across hot reloads in development
+if (!global.twipclipCleanupTimeouts) {
+  global.twipclipCleanupTimeouts = new Map();
+}
+const cleanupTimeouts = global.twipclipCleanupTimeouts;
 
 // Helper function to update status (exported for use in process route)
 export function updateProcessingStatus(jobId, update) {
@@ -79,11 +88,17 @@ export function updateProcessingStatus(jobId, update) {
 
 // Helper to create a new job
 export function createProcessingJob(jobId) {
-  jobs.set(jobId, {
+  const jobData = {
     status: 'processing',
     progress: 0,
     message: 'Starting processing...',
     startTime: Date.now(),
-    lastUpdate: Date.now()
-  });
+    lastUpdate: Date.now(),
+    createdAt: Date.now()
+  };
+  
+  jobs.set(jobId, jobData);
+  console.log(`✅ Job ${jobId} created in jobs Map`);
+  console.log(`📊 Total jobs after creation: ${jobs.size}`);
+  console.log(`🔍 Verification - job exists: ${jobs.has(jobId)}`);
 } 
