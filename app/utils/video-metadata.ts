@@ -39,10 +39,15 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
     
     // First check for per-user cookies if sessionId is provided
     if (sessionId) {
-      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
+      const userCookiePath = isDocker 
+        ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+        : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+        
       if (require('fs').existsSync(userCookiePath)) {
         cookieFlag = `--cookies "${userCookiePath}"`;
         console.log(`Using user-specific YouTube cookies for session: ${sessionId.substring(0, 8)}...`);
+        console.log(`Cookie path: ${userCookiePath}`);
         
         // Debug: Check cookie file content
         try {
@@ -58,6 +63,8 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
         } catch (e) {
           console.error('Failed to read cookie file:', e);
         }
+      } else {
+        console.log(`Cookie file not found at: ${userCookiePath}`);
       }
     }
     
@@ -78,9 +85,21 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
       console.log('⚠️ No YouTube cookies found - metadata extraction may fail for restricted content');
     }
     
-    command = `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" --dump-json --no-warnings "${videoUrl}"`;
+    // Add anti-bot headers to prevent detection
+    const headers = [
+      `--user-agent "${userAgent}"`,
+      '--add-header "Accept-Language: en-US,en;q=0.9"',
+      '--add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"',
+      '--no-check-certificate'
+    ].join(' ');
+    
+    command = `${ytDlpPath} ${cookieFlag} ${headers} --dump-json --no-warnings "${videoUrl}"`;
     
     console.log('🔍 Getting video metadata...');
+    
+    // Log the command for debugging (hide the full cookie path for security)
+    const debugCommand = command.replace(/--cookies\s+"[^"]+"/g, '--cookies "***"');
+    console.log('Command:', debugCommand);
     
     const { stdout, stderr } = await execAsync(command, {
       timeout: 30000, // 30 seconds
@@ -89,6 +108,12 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
     
     if (stderr && stderr.includes('ERROR')) {
       console.error('yt-dlp error:', stderr);
+      // Log the full error for debugging
+      if (stderr.includes('Sign in to confirm')) {
+        console.error('Bot detection triggered despite cookies and headers');
+        console.error('Session ID:', sessionId || 'none');
+        console.error('Cookie flag present:', !!cookieFlag);
+      }
       return null;
     }
     

@@ -202,6 +202,16 @@ TEMP_DIR=               # Temporary file storage
 - Memory usage monitoring
 - Request timeout handling
 
+### 4. Multi-User Concurrency
+- Global request queue with configurable limits
+- YouTube rate limiting (30 requests/minute default)
+- Per-user session isolation
+- Directory naming collision prevention
+- Queue monitoring at `/api/queue-status`
+- Environment variables:
+  - `MAX_GLOBAL_DOWNLOADS`: Total concurrent downloads (default: 6)
+  - `YOUTUBE_RATE_LIMIT`: Requests per minute (default: 30)
+
 ## Error Handling
 
 ### Graceful Degradation

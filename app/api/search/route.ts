@@ -8,6 +8,8 @@ import {
 } from '../../utils/ai-matching';
 import axios from 'axios';
 import { YOUTUBE_API_KEY } from '../../config';
+import { cookies } from 'next/headers'; // Add cookies import
+import { getVideoMetadata as getAuthenticatedVideoMetadata } from '../../utils/video-metadata'; // Import authenticated metadata function
 
 interface VideoClip {
   videoId: string;
@@ -62,9 +64,9 @@ function parseDuration(duration: string): number {
 }
 
 /**
- * Get video metadata
+ * Get video metadata using YouTube API
  */
-async function getVideoMetadata(videoUrls: string[]): Promise<Map<string, VideoMetadata>> {
+async function getVideoMetadataFromAPI(videoUrls: string[]): Promise<Map<string, VideoMetadata>> {
   const metadata = new Map<string, VideoMetadata>();
   
   if (videoUrls.length === 0) return metadata;
@@ -157,6 +159,11 @@ export async function POST(request: Request) {
       forceRefresh?: boolean;
     };
     
+    // Get session ID for authentication
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get('twipclip_session')?.value;
+    console.log('🔐 Session ID:', sessionId ? sessionId.substring(0, 8) + '...' : 'none');
+    
     // Clear caches if forceRefresh is requested
     if (forceRefresh) {
       console.log('🔄 Force refresh requested - clearing caches...');
@@ -212,8 +219,31 @@ export async function POST(request: Request) {
     
     console.log(`✅ Processing ${validVideos.length} valid videos`);
     
-    // Get video metadata
-    const videoMetadata = await getVideoMetadata(validVideos.map(v => v.url));
+    // Get video metadata with authentication for better reliability
+    const videoMetadata = new Map<string, VideoMetadata>();
+    
+    // Try to get metadata with authentication first
+    for (const { url } of validVideos) {
+      const authMetadata = await getAuthenticatedVideoMetadata(url, sessionId);
+      if (authMetadata) {
+        videoMetadata.set(url, {
+          title: authMetadata.title || 'Untitled',
+          channelTitle: authMetadata.uploader || 'Unknown Channel',
+          duration: authMetadata.duration || 0,
+          publishedAt: new Date().toISOString()
+        });
+      }
+    }
+    
+    // Fall back to API metadata for any missing videos
+    if (videoMetadata.size < validVideos.length) {
+      const apiMetadata = await getVideoMetadataFromAPI(
+        validVideos.filter(v => !videoMetadata.has(v.url)).map(v => v.url)
+      );
+      apiMetadata.forEach((value, key) => {
+        videoMetadata.set(key, value);
+      });
+    }
     
     // Process each video
     let totalVideosProcessed = 0;
@@ -225,8 +255,8 @@ export async function POST(request: Request) {
       totalVideosProcessed++;
       
       try {
-        // Get transcript
-        const transcript = await getEnhancedTranscript(url);
+        // Get transcript with session ID for authentication
+        const transcript = await getEnhancedTranscript(url, sessionId);
         
         if (!transcript || transcript.segments.length === 0) {
           console.warn(`❌ No transcript available for ${info.platform}:${info.id}`);

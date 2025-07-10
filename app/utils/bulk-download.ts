@@ -7,6 +7,7 @@ import os from 'os';
 import { getYtDlpCommand, getFFmpegCommand } from '../../src/lib/system-tools';
 import AdmZip from 'adm-zip';
 import { YouTubeAuthManagerV2, YouTubeAuthConfig } from '../../src/lib/youtube-auth-v2';
+import { globalQueue, youtubeRateLimiter } from './request-queue';
 
 const execAsync = promisify(exec);
 
@@ -83,7 +84,9 @@ async function downloadClip(
     // Check for per-user cookies first
     let hasAuth = false;
     if (sessionId) {
-      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
+      const baseDir = isDocker ? '/app' : process.cwd();
+      const userCookiePath = path.join(baseDir, 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
       if (require('fs').existsSync(userCookiePath)) {
         downloadCmd += ` --cookies "${userCookiePath}"`;
         onProgress?.(`Using user-specific YouTube cookies...`);
@@ -125,9 +128,15 @@ async function downloadClip(
     while (downloadAttempts < maxAttempts) {
       try {
         downloadAttempts++;
-        await execAsync(downloadCmd, { 
-          timeout: 300000, // 5 minute timeout
-          maxBuffer: 10 * 1024 * 1024 
+        // Wait for rate limit slot
+        await youtubeRateLimiter.waitForSlot();
+        
+        // Queue the download job
+        await globalQueue.addDownloadJob(async () => {
+          return await execAsync(downloadCmd, { 
+            timeout: 300000, // 5 minute timeout
+            maxBuffer: 10 * 1024 * 1024 
+          });
         });
         break; // Success, exit loop
       } catch (error: any) {
@@ -321,7 +330,7 @@ export async function downloadAllClips(
   options: BulkDownloadOptions = {}
 ): Promise<DownloadResult[]> {
   const {
-    outputDir = path.join(os.tmpdir(), 'twipclip-downloads', Date.now().toString()),
+    outputDir = path.join(os.tmpdir(), 'twipclip-downloads', `${Date.now()}-${Math.random().toString(36).substring(7)}`),
     maxConcurrent = 3,
     quality = '720p',
     authConfig,
@@ -350,34 +359,32 @@ export async function downloadAllClips(
     percentage: 0
   };
   
-  // Process in batches to avoid overwhelming the system
-  for (let i = 0; i < matches.length; i += maxConcurrent) {
-    const batch = matches.slice(i, i + maxConcurrent);
+  // Process all downloads through the global queue
+  // The queue will handle concurrency limits across all users
+  const downloadPromises = matches.map(async (match) => {
+    progress.currentFile = `Tweet ${match.tweetId}`;
+    onProgress?.(progress);
     
-    const batchPromises = batch.map(async (match) => {
-      progress.currentFile = `Tweet ${match.tweetId}`;
-      onProgress?.(progress);
-      
-      const result = await downloadClip(match, outputDir, quality, authConfig, sessionId, (status) => {
-        console.log(`  ${status}`);
-      });
-      
-      if (result.success) {
-        progress.completed++;
-      } else {
-        progress.failed++;
-      }
-      
-      progress.percentage = ((progress.completed + progress.failed) / progress.total) * 100;
-      onProgress?.(progress);
-      onClipComplete?.(result);
-      
-      return result;
+    const result = await downloadClip(match, outputDir, quality, authConfig, sessionId, (status) => {
+      console.log(`  ${status}`);
     });
     
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults);
-  }
+    if (result.success) {
+      progress.completed++;
+    } else {
+      progress.failed++;
+    }
+    
+    progress.percentage = ((progress.completed + progress.failed) / progress.total) * 100;
+    onProgress?.(progress);
+    onClipComplete?.(result);
+    
+    return result;
+  });
+  
+  // Wait for all downloads to complete
+  const downloadResults = await Promise.all(downloadPromises);
+  results.push(...downloadResults);
   
   // Create a summary file
   const summaryPath = path.join(outputDir, 'download-summary.json');

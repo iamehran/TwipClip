@@ -5,6 +5,23 @@ All notable changes to TwipClip will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2024-01-XX
+
+### Added
+- **Multi-User Concurrency Support**:
+  - Global request queue to prevent overwhelming YouTube
+  - Rate limiting (30 requests/minute by default) 
+  - Queue monitoring endpoint at `/api/queue-status`
+  - Monitoring script at `scripts/monitor-queue.js`
+  - `MAX_GLOBAL_DOWNLOADS` and `YOUTUBE_RATE_LIMIT` environment variables
+  - Protection against directory naming collisions
+  - Limited global concurrent downloads to 6 (configurable)
+
+### Fixed
+- **Resource Exhaustion**: Prevented multiple users from overwhelming server
+- **YouTube Rate Limiting**: Added protection against IP-based blocking
+- **File Collisions**: Fixed potential conflicts when users download simultaneously
+
 ## [0.3.0] - 2024-01-XX
 
 ### Added
@@ -52,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added session refresh endpoint to extend session lifetime
   - Bulk download verifies auth status before starting
   - Prevents "Please login to YouTube" errors after delays
+- **Docker/Railway Cookie Path Fix**: Fixed cookie authentication on production deployments
+  - Consistent Docker path handling (/app vs process.cwd())
+  - Search route now uses authenticated metadata extraction
+  - All cookie operations use environment-aware paths
+  - Added debugging logs for cookie path resolution
+  - Enhanced anti-bot headers for metadata extraction
 
 ### Changed
 - **Video Encoding Settings**: Optimized FFmpeg settings for better quality/size balance (CRF 23)

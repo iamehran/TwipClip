@@ -16,7 +16,9 @@ export async function GET() {
     }
     
     // Check for user-specific cookie file
-    const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+    const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
+    const baseDir = isDocker ? '/app' : process.cwd();
+    const userCookiePath = path.join(baseDir, 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
     
     if (existsSync(userCookiePath)) {
       try {

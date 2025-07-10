@@ -38,8 +38,14 @@ export async function POST(request: NextRequest) {
       sessionId = randomUUID();
     }
     
+    // Determine the correct path based on environment
+    const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
+    const baseDir = isDocker ? '/app' : process.cwd();
+    
     // Create user-specific directory
-    const userCookieDir = join(process.cwd(), 'temp', 'user-cookies', sessionId);
+    const userCookieDir = join(baseDir, 'temp', 'user-cookies', sessionId);
+    console.log(`Creating cookie directory at: ${userCookieDir}`);
+    
     if (!existsSync(userCookieDir)) {
       await mkdir(userCookieDir, { recursive: true });
     }
@@ -48,11 +54,22 @@ export async function POST(request: NextRequest) {
     const cookiePath = join(userCookieDir, 'youtube_cookies.txt');
     await writeFile(cookiePath, content);
     
+    console.log(`✅ Cookies saved to: ${cookiePath}`);
+    console.log(`📊 Cookie file size: ${content.length} bytes`);
+    
+    // Count actual cookie entries
+    const cookieLines = content.split('\n').filter(line => 
+      line.trim() && !line.startsWith('#') && line.includes('\t')
+    );
+    console.log(`🍪 Found ${cookieLines.length} cookie entries`);
+    
     // Set session cookie (expires in 7 days)
     const response = NextResponse.json({ 
       success: true,
       message: 'Cookies uploaded successfully',
-      sessionId: sessionId.substring(0, 8) + '...' // Show partial session ID for debugging
+      sessionId: sessionId.substring(0, 8) + '...', // Show partial session ID for debugging
+      cookieCount: cookieLines.length,
+      environment: isDocker ? 'docker/railway' : 'local'
     });
     
     response.cookies.set('twipclip_session', sessionId, {

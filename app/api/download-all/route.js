@@ -25,9 +25,12 @@ export async function POST(request) {
     // Check if user has uploaded cookies
     let hasCookies = false;
     if (sessionId) {
-      const userCookiePath = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
+      const baseDir = isDocker ? '/app' : process.cwd();
+      const userCookiePath = path.join(baseDir, 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
       hasCookies = existsSync(userCookiePath);
       console.log(`Session ID: ${sessionId.substring(0, 8)}...`);
+      console.log(`Cookie path: ${userCookiePath}`);
       console.log(`Cookie file exists: ${hasCookies}`);
       
       if (hasCookies) {
