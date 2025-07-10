@@ -250,11 +250,40 @@ export default function Home() {
           console.log('Status response:', statusData);
 
           if (statusData.status === 'not_found') {
-            console.error('Job not found! This could mean the processing completed but the result was lost.');
+            // If we had high progress, try one more time in case of race condition
+            if (lastProgress >= 90) {
+              console.warn('Job not found at high progress, retrying once...');
+              setTimeout(async () => {
+                try {
+                  const retryResponse = await fetch(`/api/process/status?jobId=${jobId}`);
+                  const retryData = await retryResponse.json();
+                  if (retryData.status === 'completed' && retryData.results) {
+                    console.log('✅ Retry successful! Found completed job.');
+                    // Process the results (same code as completion handler)
+                    const data = retryData.results;
+                    // ... process results here (copied from completion handler)
+                    return;
+                  }
+                } catch (e) {
+                  console.error('Retry failed:', e);
+                }
+                
+                // If retry also failed, show error
+                console.error('Job not found even after retry.');
+                clearInterval(pollInterval);
+                clearInterval(progressInterval);
+                setLoading(false);
+                setError('Processing completed but results were lost. Please try again.');
+              }, 1000);
+              return;
+            }
+            
+            // If low progress, just fail immediately
+            console.error('Job not found at low progress.');
             clearInterval(pollInterval);
             clearInterval(progressInterval);
             setLoading(false);
-            setError('Processing completed but results were lost. Please try again.');
+            setError('Processing job was lost. Please try again.');
             return;
           }
 

@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     });
     
     response.cookies.set('youtube_authenticated', 'true', {
-      httpOnly: true,
+      httpOnly: false, // Must be false so client-side JS can read it
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7 // 7 days

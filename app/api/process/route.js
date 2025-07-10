@@ -83,6 +83,7 @@ export async function POST(request) {
     if (async) {
       // Create a job ID for tracking
       const jobId = randomUUID();
+      console.log('🚀 Creating new job with ID:', jobId);
       
       // Create initial job status
       createProcessingJob(jobId);
@@ -90,6 +91,9 @@ export async function POST(request) {
         progress: 5,
         message: 'Initializing search...'
       });
+      
+      // Log job creation
+      console.log('📋 Job created and stored:', jobs.get(jobId));
       
       // Start processing in the background (simulated)
       setTimeout(async () => {
@@ -136,7 +140,7 @@ export async function POST(request) {
           }));
 
           // Update job with results
-          updateProcessingStatus(jobId, {
+          const finalStatus = {
             status: 'completed',
             progress: 100,
             message: 'Processing complete',
@@ -157,7 +161,11 @@ export async function POST(request) {
                 cacheHitRate: '0%'
               }
             }
-          });
+          };
+          
+          updateProcessingStatus(jobId, finalStatus);
+          console.log(`✅ Job ${jobId} completed and stored with ${formattedMatches.length} matches`);
+          console.log('📋 Job final status stored:', jobs.get(jobId)?.status);
         } catch (error) {
           console.error('Processing error:', error);
           updateProcessingStatus(jobId, {

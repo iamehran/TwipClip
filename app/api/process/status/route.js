@@ -24,7 +24,12 @@ export async function GET(request) {
   
   const status = jobs.get(jobId);
   
+  console.log(`📊 Status check for job ${jobId}:`, status ? `Found (${status.status})` : 'Not found');
+  console.log(`📋 Total jobs in memory: ${jobs.size}`);
+  
   if (!status) {
+    // Log all job IDs for debugging
+    console.log('🔍 Available job IDs:', Array.from(jobs.keys()));
     return NextResponse.json({ 
       status: 'not_found',
       message: 'Job not found or expired' 
@@ -33,6 +38,9 @@ export async function GET(request) {
   
   return NextResponse.json(status);
 }
+
+// Track cleanup timeouts to prevent duplicates
+const cleanupTimeouts = new Map();
 
 // Helper function to update status (exported for use in process route)
 export function updateProcessingStatus(jobId, update) {
@@ -49,17 +57,23 @@ export function updateProcessingStatus(jobId, update) {
     lastUpdate: Date.now()
   });
   
-  // Clean up old jobs after 1 hour
-  // Don't clean up completed jobs immediately to allow frontend to fetch results
-  if (update.status !== 'completed') {
-    setTimeout(() => {
+  // Only set cleanup timeout for terminal states
+  if (update.status === 'completed' || update.status === 'failed') {
+    // Clear any existing cleanup timeout
+    if (cleanupTimeouts.has(jobId)) {
+      clearTimeout(cleanupTimeouts.get(jobId));
+    }
+    
+    const cleanupDelay = update.status === 'completed' ? 600000 : // 10 minutes for completed
+                         300000;                                  // 5 minutes for failed
+    
+    const timeoutId = setTimeout(() => {
+      console.log(`🗑️ Cleaning up job ${jobId} (was ${update.status})`);
       jobs.delete(jobId);
-    }, 3600000);
-  } else {
-    // Give frontend 5 minutes to fetch completed results
-    setTimeout(() => {
-      jobs.delete(jobId);
-    }, 300000); // 5 minutes
+      cleanupTimeouts.delete(jobId);
+    }, cleanupDelay);
+    
+    cleanupTimeouts.set(jobId, timeoutId);
   }
 }
 

@@ -39,9 +39,10 @@ export default function YouTubeCookieUpload() {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        // Force a hard refresh to clear any cached auth status
         setTimeout(() => {
-          window.location.reload();
-        }, 2000);
+          window.location.href = window.location.href; // Force hard refresh
+        }, 1500);
       } else {
         setError(data.error || 'Failed to upload cookies');
       }
