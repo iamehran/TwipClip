@@ -50,9 +50,17 @@ export function updateProcessingStatus(jobId, update) {
   });
   
   // Clean up old jobs after 1 hour
-  setTimeout(() => {
-    jobs.delete(jobId);
-  }, 3600000);
+  // Don't clean up completed jobs immediately to allow frontend to fetch results
+  if (update.status !== 'completed') {
+    setTimeout(() => {
+      jobs.delete(jobId);
+    }, 3600000);
+  } else {
+    // Give frontend 5 minutes to fetch completed results
+    setTimeout(() => {
+      jobs.delete(jobId);
+    }, 300000); // 5 minutes
+  }
 }
 
 // Helper to create a new job

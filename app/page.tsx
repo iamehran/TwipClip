@@ -239,6 +239,9 @@ export default function Home() {
 
       // Now poll for status updates
       let lastProgress = 0;
+      let stuckCounter = 0;
+      let lastProgressTime = Date.now();
+      
       pollInterval = setInterval(async () => {
         try {
           console.log('Polling status for job:', jobId);
@@ -247,14 +250,37 @@ export default function Home() {
           console.log('Status response:', statusData);
 
           if (statusData.status === 'not_found') {
+            console.error('Job not found! This could mean the processing completed but the result was lost.');
             clearInterval(pollInterval);
-            throw new Error('Processing job not found');
+            clearInterval(progressInterval);
+            setLoading(false);
+            setError('Processing completed but results were lost. Please try again.');
+            return;
           }
 
           // Update progress based on actual backend progress
           if (statusData.progress !== undefined) {
+            if (statusData.progress > lastProgress) {
+              lastProgressTime = Date.now();
+              stuckCounter = 0;
+            }
             setLoadingProgress(statusData.progress);
             lastProgress = statusData.progress;
+          }
+          
+          // Check if we've been stuck for too long (30 seconds at high progress)
+          if (lastProgress >= 85 && Date.now() - lastProgressTime > 30000) {
+            stuckCounter++;
+            console.warn(`Stuck at ${lastProgress}% for over 30 seconds (count: ${stuckCounter})`);
+            
+            if (stuckCounter >= 3) {
+              console.error('Processing appears to be stuck. Stopping polling.');
+              clearInterval(pollInterval);
+              clearInterval(progressInterval);
+              setLoading(false);
+              setError('Processing appears to be stuck. The results may be ready but failed to load. Please refresh the page and try again.');
+              return;
+            }
           }
 
           // Update status message from backend
@@ -264,6 +290,7 @@ export default function Home() {
 
           // Check if completed
           if (statusData.status === 'completed' && statusData.results) {
+            console.log('✅ Job completed! Processing results...');
             clearInterval(pollInterval);
             clearInterval(progressInterval);
 
@@ -323,6 +350,7 @@ export default function Home() {
               });
             }
 
+            // Update UI state FIRST
             setResults(formattedResults);
             setStats(data.summary || null);
             setRawMatches(data.matches || []); // Store raw matches
@@ -330,14 +358,18 @@ export default function Home() {
             setLoadingProgress(100);
             setLoadingStatus('Complete!');
 
-            // Set loading to false when complete
-            setLoading(false);
+            // Small delay to ensure state updates are processed
+            setTimeout(() => {
+              // Set loading to false after UI updates
+              setLoading(false);
+              console.log('✅ UI updated, loading set to false');
+            }, 100);
 
-            // Reset progress after a short delay
+            // Reset progress after a longer delay
             setTimeout(() => {
               setLoadingProgress(0);
               setLoadingStatus('');
-            }, 1000);
+            }, 2000);
           }
 
           // Check if failed
@@ -350,6 +382,10 @@ export default function Home() {
 
         } catch (pollError) {
           console.error('Polling error:', pollError);
+          // Check if it's a network error
+          if (pollError instanceof TypeError && pollError.message.includes('fetch')) {
+            console.error('Network error during polling, will retry...');
+          }
           // Don't throw here, just log and continue polling
         }
       }, 2000); // Poll every 2 seconds
