@@ -2,6 +2,10 @@
 
 This guide covers common issues and their solutions.
 
+> **📚 New to TwipClip?** Start with our [User Guide](../USER_GUIDE.md) or [Quick Start Guide](../QUICK_START.md) for setup instructions.
+> 
+> **🔍 Visual learner?** Check out our [Troubleshooting Flowchart](TROUBLESHOOTING_FLOWCHART.md) for step-by-step visual guides.
+
 ## Table of Contents
 
 1. [Common Issues](#common-issues)

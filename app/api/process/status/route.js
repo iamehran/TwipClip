@@ -18,6 +18,10 @@ function cleanupOldJobs() {
   }
 }
 
+// Job timeout configuration
+const JOB_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+const STUCK_THRESHOLD = 30 * 1000; // 30 seconds without progress update
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const jobId = searchParams.get('jobId');
@@ -35,9 +39,53 @@ export async function GET(request) {
   if (!status) {
     // Log all job IDs for debugging
     console.log('🔍 Available job IDs:', Array.from(jobs.keys()));
+    
+    // Check if this might be a high-progress job that needs retry
+    const action = searchParams.get('action');
+    if (action === 'retry-high-progress') {
+      return NextResponse.json({ 
+        status: 'retry',
+        message: 'Job may have completed, please refresh' 
+      });
+    }
+    
     return NextResponse.json({ 
       status: 'not_found',
       message: 'Job not found or expired' 
+    });
+  }
+  
+  // Check for stuck jobs
+  const now = Date.now();
+  const timeSinceUpdate = now - (status.lastUpdate || status.startTime);
+  const totalDuration = now - status.startTime;
+  
+  // Detect stuck jobs (no update for 30s while processing)
+  if (status.status === 'processing' && status.progress >= 85 && timeSinceUpdate > STUCK_THRESHOLD) {
+    const stuckDuration = timeSinceUpdate;
+    console.log(`⚠️ Job ${jobId} appears stuck at ${status.progress}% for ${stuckDuration}ms`);
+    
+    // Auto-retry mechanism
+    return NextResponse.json({
+      ...status,
+      stuck: true,
+      stuckDuration,
+      message: 'Processing appears stuck, checking completion...'
+    });
+  }
+  
+  // Check for timeout
+  if (status.status === 'processing' && totalDuration > JOB_TIMEOUT) {
+    console.log(`⏱️ Job ${jobId} timed out after ${totalDuration}ms`);
+    updateProcessingStatus(jobId, {
+      status: 'failed',
+      error: 'Processing timeout exceeded',
+      progress: status.progress
+    });
+    return NextResponse.json({
+      ...status,
+      status: 'failed',
+      error: 'Processing timeout exceeded'
     });
   }
   

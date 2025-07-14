@@ -2,6 +2,13 @@
 
 An intelligent video clip extraction tool that automatically finds and extracts the most relevant video segments for your Twitter/X threads using AI-powered content matching.
 
+## 📚 Documentation
+
+- **[Quick Start Guide](QUICK_START.md)** - Get up and running in 5 minutes
+- **[User Guide](USER_GUIDE.md)** - Comprehensive guide with troubleshooting
+- [Installation Guide](docs/INSTALLATION.md) - Detailed setup instructions
+- [API Documentation](docs/API.md) - For developers
+
 ## 🚀 Overview
 
 TwipClip analyzes your thread content and searches through multiple YouTube videos to find the perfect clips that match each tweet. It uses advanced AI models (Claude Opus 4 / Sonnet 4) to understand context and deliver highly relevant video segments.
