@@ -1,87 +1,78 @@
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
 console.log('🚀 Starting TwipClip production server...');
 
-// Function to copy cookies
-async function copyCookies() {
-  const sourcePath = path.join(process.cwd(), 'app/api/auth/youtube/cookies/youtube_cookies.txt');
-  const destPath = path.join(process.cwd(), 'temp/youtube_cookies.txt');
-  const dockerDestPath = '/app/temp/youtube_cookies.txt';
+// Ensure necessary directories exist
+function ensureDirectories() {
+  const dirs = [
+    'temp',
+    'temp/user-cookies',
+    'public/downloads'
+  ];
   
-  // Ensure temp directory exists
-  const tempDir = path.join(process.cwd(), 'temp');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-  
-  // Check if source cookie file exists
-  if (fs.existsSync(sourcePath)) {
-    try {
-      // Copy to local temp directory
-      fs.copyFileSync(sourcePath, destPath);
-      console.log('✅ Cookies copied to temp directory');
-      
-      // If running in Docker/Railway, also ensure the docker path
-      if (process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production') {
-        const dockerTempDir = '/app/temp';
-        if (!fs.existsSync(dockerTempDir)) {
-          fs.mkdirSync(dockerTempDir, { recursive: true });
-        }
-        fs.copyFileSync(sourcePath, dockerDestPath);
-        console.log('✅ Cookies copied to Docker temp directory');
+  dirs.forEach(dir => {
+    const fullPath = path.join(process.cwd(), dir);
+    if (!fs.existsSync(fullPath)) {
+      try {
+        fs.mkdirSync(fullPath, { recursive: true });
+        console.log(`✅ Created directory: ${dir}`);
+      } catch (error) {
+        console.warn(`⚠️ Could not create directory ${dir}:`, error.message);
       }
-      
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to copy cookies:', error);
-      return false;
     }
-  } else {
-    console.log('⚠️ No YouTube cookies found - authentication may be required');
-    return false;
-  }
+  });
 }
 
-// Copy cookies first
-copyCookies().then(() => {
-  // Set production environment if not already set
-  process.env.NODE_ENV = process.env.NODE_ENV || 'production';
-
-  // Start the Next.js server
-  const startCommand = 'next start';
+// Main startup
+async function start() {
+  console.log('📁 Ensuring directories exist...');
+  ensureDirectories();
   
-  console.log(`Running: ${startCommand}`);
+  console.log('🌐 Starting Next.js server...');
   
-  const server = exec(startCommand, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error: ${error}`);
-      return;
+  const port = process.env.PORT || 3000;
+  console.log(`📍 Port: ${port}`);
+  
+  // Start Next.js
+  const server = spawn('npm', ['run', 'start'], {
+    stdio: 'inherit',
+    shell: true,
+    env: {
+      ...process.env,
+      PORT: port
     }
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
   });
 
-  // Forward stdout and stderr
-  server.stdout.on('data', (data) => {
-    console.log(data.toString());
+  server.on('error', (error) => {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
   });
 
-  server.stderr.on('data', (data) => {
-    console.error(data.toString());
+  server.on('exit', (code) => {
+    if (code !== 0) {
+      console.error(`❌ Server exited with code ${code}`);
+      process.exit(code);
+    }
   });
 
-  // Handle process termination
+  // Handle graceful shutdown
   process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully...');
+    console.log('📴 SIGTERM received, shutting down gracefully...');
     server.kill();
     process.exit(0);
   });
 
   process.on('SIGINT', () => {
-    console.log('SIGINT received, shutting down gracefully...');
+    console.log('📴 SIGINT received, shutting down gracefully...');
     server.kill();
     process.exit(0);
   });
+}
+
+// Start the application
+start().catch(error => {
+  console.error('❌ Startup failed:', error);
+  process.exit(1);
 }); 

@@ -3,9 +3,9 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/copy-cookies.js && next dev",
+    "dev": "next dev",
     "build": "next build",
-    "start": "node scripts/copy-cookies.js && next start",
+    "start": "next start",
     "start:prod": "node scripts/start-production.js",
     "lint": "next lint"
   },

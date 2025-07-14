@@ -68,6 +68,7 @@ USER appuser
 # Environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
 # Force Chromium to run in headless mode
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
@@ -78,5 +79,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Start the application
-CMD ["npm", "run", "start:prod"] 
+# Start the application directly with Next.js
+CMD ["npm", "start"] 
