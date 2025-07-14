@@ -183,15 +183,41 @@ async function downloadClip(
       throw lastError;
     }
     
-    // Step 2: Extract the specific clip using FFmpeg with Typefully-optimized settings
-    onProgress?.(`Extracting and optimizing clip (${startTimeStr} - ${endTimeStr})...`);
+    // Step 2: Get video duration first to validate seek times
+    let videoDuration = 0;
+    try {
+      const probeCmd = `"${ffmpegPath}" -i "${tempVideoPath}" 2>&1`;
+      const probeOutput = await execAsync(probeCmd, { maxBuffer: 10 * 1024 * 1024 }).catch(e => e);
+      const durationMatch = probeOutput.stdout?.match(/Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+      if (durationMatch) {
+        const hours = parseInt(durationMatch[1]);
+        const minutes = parseInt(durationMatch[2]);
+        const seconds = parseFloat(durationMatch[3]);
+        videoDuration = hours * 3600 + minutes * 60 + seconds;
+        console.log(`Video duration: ${videoDuration}s, requested clip: ${match.startTime}s - ${match.endTime}s`);
+      }
+    } catch (e) {
+      console.warn('Could not determine video duration, proceeding anyway');
+    }
+    
+    // Validate and adjust times if necessary
+    const validStartTime = Math.max(0, Math.min(match.startTime, videoDuration - 1));
+    const validEndTime = Math.min(match.endTime, videoDuration);
+    const validDuration = validEndTime - validStartTime;
+    
+    if (validStartTime !== match.startTime || validEndTime !== match.endTime) {
+      console.warn(`Adjusted clip times: ${match.startTime}-${match.endTime} → ${validStartTime}-${validEndTime}`);
+    }
+    
+    // Step 3: Extract the specific clip using FFmpeg with Typefully-optimized settings
+    onProgress?.(`Extracting and optimizing clip (${formatTime(validStartTime)} - ${formatTime(validEndTime)})...`);
     
     // Optimized FFmpeg settings for Typefully
     // - CRF 23 for good quality/size balance (lower = better quality, higher = smaller size)
     // - H264 codec for maximum compatibility
     // - AAC audio at 128k for good quality without excessive size
     // - Fast start for web playback
-    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${match.startTime} -t ${duration}`;
+    let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${validStartTime} -t ${validDuration}`;
     extractCmd += ` -c:v libx264 -preset medium -crf 23`;
     extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
     extractCmd += ` -pix_fmt yuv420p`;
@@ -208,7 +234,7 @@ async function downloadClip(
     } catch (extractError) {
       // If that fails, try with input seeking for better compatibility
       onProgress?.(`Retrying with alternative extraction method...`);
-      extractCmd = `"${ffmpegPath}" -ss ${match.startTime} -accurate_seek -i "${tempVideoPath}" -t ${duration}`;
+      extractCmd = `"${ffmpegPath}" -ss ${validStartTime} -accurate_seek -i "${tempVideoPath}" -t ${validDuration}`;
       extractCmd += ` -c:v libx264 -preset medium -crf 23`;
       extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
       extractCmd += ` -pix_fmt yuv420p`;

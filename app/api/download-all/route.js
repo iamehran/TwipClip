@@ -17,6 +17,17 @@ export async function POST(request) {
     }
 
     console.log(`Starting bulk download for ${matches.length} clips`);
+    
+    // Fix match structure - ensure each match has a tweetId
+    const fixedMatches = matches.map((match, index) => {
+      if (!match.tweetId && match.tweet) {
+        // Extract tweet ID from tweet text or use index
+        const tweetMatch = match.tweet.match(/tweet[- ]?(\d+)/i);
+        const tweetId = tweetMatch ? tweetMatch[1] : `${index + 1}`;
+        return { ...match, tweetId };
+      }
+      return match;
+    });
 
     // Get session ID for per-user cookies
     const cookieStore = await cookies();
@@ -46,7 +57,7 @@ export async function POST(request) {
     }
 
     // Download all clips with optimized settings
-    const results = await downloadAllClips(matches, {
+    const results = await downloadAllClips(fixedMatches, {
       maxConcurrent: 2, // Limit concurrent downloads to avoid overwhelming the system
       quality: '720p', // Force 720p for compatibility
       sessionId, // Always pass session ID for cookie-based auth
