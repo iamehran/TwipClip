@@ -7,21 +7,6 @@
   "deploy": {
     "startCommand": "npm start",
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 300,
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3,
-    "numReplicas": 1,
-    "region": "us-west1"
-  },
-  "environments": {
-    "production": {
-      "build": {
-        "buildCommand": "npm run build"
-      },
-      "deploy": {
-        "numReplicas": 2,
-        "region": "us-west1"
-      }
-    }
+    "healthcheckTimeout": 30
   }
 } 
