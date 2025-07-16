@@ -22,7 +22,7 @@ export default function SearchForm({ onSearch, loading }: SearchFormProps) {
   const [videoUrlsText, setVideoUrlsText] = useState('');
   const [forceRefresh, setForceRefresh] = useState(false);
   const [modelSettings, setModelSettings] = useState<ModelSettings>({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-4-sonnet',
     thinkingEnabled: false,
     tokenUsage: 'medium'
   });
@@ -193,8 +193,7 @@ https://example.com/video.mp4`}
 
       {/* Model Selector */}
       <ModelSelector 
-        onSettingsChange={handleModelSettingsChange}
-        disabled={loading}
+        onModelChange={handleModelSettingsChange}
       />
 
       {/* Submit Section */}

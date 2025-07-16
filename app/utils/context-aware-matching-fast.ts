@@ -46,7 +46,7 @@ export async function findContextAwareMatchesFast(
 ): Promise<ContextualMatch[]> {
   console.log('\n Starting FAST context-aware matching...');
   
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = modelSettings?.model === 'claude-4-opus' ? 'claude-opus-4-20250514' : 'claude-sonnet-4-20250514';
   const matches: ContextualMatch[] = [];
   const usedRanges = new Map<string, Array<{ start: number; end: number }>>();
   

@@ -6,7 +6,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
 }) : null;
 
 export interface ModelSettings {
-  model: 'claude-opus-4-20250514' | 'claude-sonnet-4-20250514';
+  model: 'claude-4-opus' | 'claude-4-sonnet';
   thinkingEnabled: boolean;
   tokenUsage: 'low' | 'medium' | 'high';
 }
@@ -47,7 +47,7 @@ interface BatchMatchResult {
  */
 function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; maxCandidates: number } {
   const tokenUsage = modelSettings?.tokenUsage || 'medium';
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+      const model = getApiModelName(modelSettings?.model);
   
   // Base token limits
   let maxTokens = 2000;
@@ -71,6 +71,21 @@ function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; max
 }
 
 /**
+ * Get appropriate model name for API calls
+ */
+function getApiModelName(model?: string): string {
+  // Map frontend model names to actual API model names
+  switch (model) {
+    case 'claude-4-opus':
+      return 'claude-opus-4-20250514';
+    case 'claude-4-sonnet':
+      return 'claude-sonnet-4-20250514';
+    default:
+      return 'claude-sonnet-4-20250514'; // Default to Sonnet 4
+  }
+}
+
+/**
  * Batch analyze matches with model settings
  */
 async function batchAnalyzeMatches(
@@ -85,7 +100,7 @@ async function batchAnalyzeMatches(
   }
   
   const { maxTokens, maxCandidates } = getTokenLimits(modelSettings);
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = getApiModelName(modelSettings?.model);
   const useThinking = modelSettings?.thinkingEnabled || false;
   
   // Calculate fair distribution of candidates per video
@@ -421,7 +436,7 @@ async function findBestMatchForSingleTweet(
   }
 
   const { maxTokens, maxCandidates } = getTokenLimits(modelSettings);
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = getApiModelName(modelSettings?.model);
   const useThinking = modelSettings?.thinkingEnabled || false;
 
   console.log(`\n🎯 Finding best match for tweet: "${tweet.text.substring(0, 50)}..."`);
@@ -606,7 +621,7 @@ export async function findPerfectMatchesIndividual(
     throw new Error('No video transcripts provided');
   }
   
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = getApiModelName(modelSettings?.model);
   
   console.log(`\n🚀 Starting individual perfect matching for ${tweets.length} tweets across ${videoTranscripts.length} videos`);
   console.log(`📊 Using model: ${model}`);
@@ -705,4 +720,4 @@ export async function findPerfectMatchesIndividual(
   console.log(`  Match rate: ${((matches.length / tweets.length) * 100).toFixed(0)}%`);
   
   return matches;
-} 
+}

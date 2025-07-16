@@ -93,7 +93,7 @@ export async function processVideosWithPerfectMatching(
 
   const { progressCallback } = options;
   
-  console.log(`🤖 Model: ${modelSettings?.model || 'claude-3-7-sonnet-latest'}`);
+  console.log(`🤖 Model: ${modelSettings?.model || 'claude-4-sonnet'}`);
   console.log(`🧠 Thinking: ${modelSettings?.thinkingEnabled ? 'Enabled' : 'Disabled'}`);
   console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'medium'}`);
 

@@ -55,7 +55,7 @@ export async function findAIMatchingSegments(
     try {
       // Ask Claude to analyze the relevance
       const response = await anthropic.messages.create({
-        model: 'claude-3-7-sonnet-latest',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 200,
         temperature: 0.3,
         messages: [{
@@ -193,7 +193,7 @@ export async function analyzeTweetIntent(tweetText: string): Promise<{
   
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-7-sonnet-latest',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 150,
       temperature: 0.3,
       messages: [{
@@ -242,10 +242,10 @@ export async function explainMatches(
       `${i + 1}. ${m.reasoning} (${(m.score * 100).toFixed(0)}% relevant)`
     ).join('\n');
     
-    const response = await anthropic.messages.create({
-      model: 'claude-3-7-sonnet-latest',
-      max_tokens: 100,
-      temperature: 0.3,
+      const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 100,
+    temperature: 0.3,
       messages: [{
         role: 'user',
         content: `Summarize in one sentence why these video segments are relevant to the tweet:

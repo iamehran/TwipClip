@@ -86,7 +86,7 @@ async function getEmbedding(text: string): Promise<number[] | null> {
     // Shorter timeout for faster failures
     const embedding = await Promise.race([
       anthropic.messages.create({
-        model: 'claude-3-7-sonnet-latest',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 200,
         temperature: 0.3,
         messages: [{
@@ -221,7 +221,7 @@ export async function findAIMatchingSegments(
     try {
       // Ask Claude to analyze the relevance
       const response = await anthropic.messages.create({
-        model: 'claude-3-7-sonnet-latest',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 200,
         temperature: 0.3,
         messages: [{
@@ -333,7 +333,7 @@ export async function findPrecisionAIMatches(
   
   // First, get an AI understanding of what we're looking for
   const analysisResponse = await anthropic.messages.create({
-    model: 'claude-3-7-sonnet-latest',
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 300,
     temperature: 0.3,
     messages: [{
@@ -367,7 +367,7 @@ Be concise.`
     
     try {
       const response = await anthropic.messages.create({
-        model: 'claude-3-7-sonnet-latest',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 300,
         temperature: 0.3,
         messages: [{
@@ -488,7 +488,7 @@ export async function analyzeTweetWithAI(tweetText: string): Promise<{
   
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-7-sonnet-latest',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 200,
       temperature: 0.3,
       messages: [{

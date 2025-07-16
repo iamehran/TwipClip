@@ -69,7 +69,7 @@ Only include matches with confidence > 0.6. Return empty array if no good matche
     console.log('🤖 Using Claude 3.7 Sonnet for intelligent matching...');
     
     const response = await client.messages.create({
-      model: 'claude-3-7-sonnet-latest',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4000,
       temperature: 0.3,
       system: 'You are an expert at finding semantic connections between social media content and video transcripts. Be thorough but only match content that is genuinely related. Think deeply about the connections.',

@@ -42,7 +42,7 @@ async function analyzeTweetsContext(
   tweets: Array<{ id: string; text: string }>,
   modelSettings?: ModelSettings
 ): Promise<TweetAnalysis[]> {
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = modelSettings?.model === 'claude-4-opus' ? 'claude-opus-4-20250514' : 'claude-sonnet-4-20250514';
   
   const prompt = `Analyze this Twitter/X thread to understand what each tweet is really about and how they relate to each other.
 
@@ -114,7 +114,7 @@ async function analyzeVideoContext(
   windowSize: number = 15,
   modelSettings?: ModelSettings
 ): Promise<Map<string, string>> {
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = modelSettings?.model === 'claude-4-opus' ? 'claude-opus-4-20250514' : 'claude-sonnet-4-20250514';
   const contextMap = new Map<string, string>();
   
   // Create windows of segments for context analysis
@@ -338,7 +338,7 @@ async function evaluateContextualMatch(
   videoContext: string,
   modelSettings?: ModelSettings
 ): Promise<{ score: number; quality: 'perfect' | 'excellent' | 'good' | 'acceptable'; reasoning: string }> {
-  const model = modelSettings?.model || 'claude-3-7-sonnet-latest';
+  const model = modelSettings?.model === 'claude-4-opus' ? 'claude-opus-4-20250514' : 'claude-sonnet-4-20250514';
   
   const prompt = `Evaluate how well this video segment matches the tweet's needs.
 
