@@ -61,6 +61,7 @@ export default function ModelSelector({ onModelChange }: ModelSelectorProps) {
         <label className="block text-xs text-gray-400 mb-1">Token Usage</label>
         <div className="flex space-x-2">
           <button
+            type="button"
             onClick={() => handleChange({ tokenUsage: 'low' })}
             className={`flex-1 text-xs py-1 px-2 rounded ${
               settings.tokenUsage === 'low' 
@@ -71,6 +72,7 @@ export default function ModelSelector({ onModelChange }: ModelSelectorProps) {
             Low
           </button>
           <button
+            type="button"
             onClick={() => handleChange({ tokenUsage: 'medium' })}
             className={`flex-1 text-xs py-1 px-2 rounded ${
               settings.tokenUsage === 'medium' 
@@ -81,6 +83,7 @@ export default function ModelSelector({ onModelChange }: ModelSelectorProps) {
             Medium
           </button>
           <button
+            type="button"
             onClick={() => handleChange({ tokenUsage: 'high' })}
             className={`flex-1 text-xs py-1 px-2 rounded ${
               settings.tokenUsage === 'high' 
