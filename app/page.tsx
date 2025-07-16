@@ -525,7 +525,11 @@ export default function Home() {
           {/* Search Form - Collapsible */}
           {showSearchForm && (
             <div className="mb-8">
-              <SearchForm onSearch={handleSearch} loading={loading} />
+              <SearchForm 
+                onSearch={handleSearch} 
+                loading={loading}
+                initialValues={lastSearch || undefined}
+              />
             </div>
           )}
 

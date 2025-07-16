@@ -10,14 +10,17 @@ export interface ModelSettings {
 
 interface ModelSelectorProps {
   onModelChange: (settings: ModelSettings) => void;
+  initialSettings?: ModelSettings;
 }
 
-export default function ModelSelector({ onModelChange }: ModelSelectorProps) {
-  const [settings, setSettings] = useState<ModelSettings>({
-    model: 'claude-4-sonnet',
-    thinkingEnabled: false,
-    tokenUsage: 'medium'
-  });
+export default function ModelSelector({ onModelChange, initialSettings }: ModelSelectorProps) {
+  const [settings, setSettings] = useState<ModelSettings>(
+    initialSettings || {
+      model: 'claude-4-sonnet',
+      thinkingEnabled: false,
+      tokenUsage: 'medium'
+    }
+  );
 
   const handleChange = (updates: Partial<ModelSettings>) => {
     const newSettings = { ...settings, ...updates };

@@ -7,6 +7,11 @@ import examplesData from '../data/examples.json';
 interface SearchFormProps {
   onSearch: (threadContent: string, videoUrls: string[], forceRefresh: boolean, modelSettings: ModelSettings) => void;
   loading: boolean;
+  initialValues?: {
+    threadContent: string;
+    videoUrls: string[];
+    modelSettings: ModelSettings;
+  };
 }
 
 interface Example {
@@ -17,15 +22,17 @@ interface Example {
   videos: string[];
 }
 
-export default function SearchForm({ onSearch, loading }: SearchFormProps) {
-  const [threadContent, setThreadContent] = useState('');
-  const [videoUrlsText, setVideoUrlsText] = useState('');
+export default function SearchForm({ onSearch, loading, initialValues }: SearchFormProps) {
+  const [threadContent, setThreadContent] = useState(initialValues?.threadContent || '');
+  const [videoUrlsText, setVideoUrlsText] = useState(initialValues?.videoUrls.join('\n') || '');
   const [forceRefresh, setForceRefresh] = useState(false);
-  const [modelSettings, setModelSettings] = useState<ModelSettings>({
-    model: 'claude-4-sonnet',
-    thinkingEnabled: false,
-    tokenUsage: 'medium'
-  });
+  const [modelSettings, setModelSettings] = useState<ModelSettings>(
+    initialValues?.modelSettings || {
+      model: 'claude-4-sonnet',
+      thinkingEnabled: false,
+      tokenUsage: 'medium'
+    }
+  );
   const [lastUsedExampleId, setLastUsedExampleId] = useState<string | null>(null);
 
   const handleModelSettingsChange = useCallback((settings: ModelSettings) => {
@@ -194,6 +201,7 @@ https://example.com/video.mp4`}
       {/* Model Selector */}
       <ModelSelector 
         onModelChange={handleModelSettingsChange}
+        initialSettings={modelSettings}
       />
 
       {/* Submit Section */}
