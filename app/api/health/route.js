@@ -8,7 +8,15 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       service: 'TwipClip',
       version: '1.0.0',
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      environment: {
+        NODE_ENV: process.env.NODE_ENV,
+        PORT: process.env.PORT,
+        USE_RAPIDAPI: process.env.USE_RAPIDAPI,
+        hasRapidAPIKey: !!process.env.RAPIDAPI_KEY,
+        hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+        hasOpenAIKey: !!process.env.OPENAI_API_KEY
+      }
     });
   } catch (error) {
     return NextResponse.json(
