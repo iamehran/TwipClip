@@ -37,6 +37,9 @@ RUN npm install
 # Copy application files
 COPY . .
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Build the application
 RUN npm run build
 
@@ -57,16 +60,12 @@ USER appuser
 # Environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
 # Force Chromium to run in headless mode
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-EXPOSE 3000
+# Use Railway's PORT
+EXPOSE ${PORT:-3000}
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/api/health || exit 1
-
-# Start the application directly with Next.js
-CMD ["npm", "start"] 
+# Start the application with shell script
+CMD ["./start.sh"] 

@@ -5,9 +5,9 @@
     "dockerfilePath": "./Dockerfile.railway"
   },
   "deploy": {
-    "startCommand": "node server.js",
+    "startCommand": "./start.sh",
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 30,
+    "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
