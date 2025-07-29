@@ -63,5 +63,5 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Use Railway's PORT
 EXPOSE ${PORT:-3000}
 
-# Start the application with shell script
-CMD ["./start.sh"] 
+# Start the application directly - bypass shell script issues
+CMD ["sh", "-c", "exec node_modules/.bin/next start -p ${PORT:-3000} -H 0.0.0.0"] 
