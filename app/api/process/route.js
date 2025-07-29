@@ -77,18 +77,22 @@ export async function POST(request) {
       console.log('📋 Job created and stored:', jobs.get(jobId));
       console.log('🗺️ Jobs Map instance ID:', jobs);
       
-      // Start processing in the background (simulated)
-      setTimeout(async () => {
+      // Start processing in the background
+      // Use Promise instead of setTimeout to maintain async context
+      (async () => {
         try {
+          // Small delay to ensure response is sent first
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
           // Update progress periodically
           const updateProgress = (progress, message) => {
-            if (typeof updateProcessingStatus === 'function') {
+            try {
               updateProcessingStatus(jobId, {
                 progress,
                 message
               });
-            } else {
-              console.error('updateProcessingStatus is not a function:', typeof updateProcessingStatus);
+            } catch (err) {
+              console.error('Error updating progress:', err);
             }
           };
           
@@ -143,24 +147,32 @@ export async function POST(request) {
                          'Claude 3.7 Sonnet',
                 processingTimeMs: statistics.processingTimeMs || 0,
                 transcriptionQuality: 'High',
-                cacheHitRate: '0%'
+                transcriptWords: statistics.totalTranscriptWords || 0
               }
             }
           };
-          
+
           updateProcessingStatus(jobId, finalStatus);
-          console.log(`✅ Job ${jobId} completed and stored with ${formattedMatches.length} matches`);
-          console.log('📋 Job final status stored:', jobs.get(jobId)?.status);
+          
+          // Log job completion
+          console.log(`✅ Job ${jobId} completed and stored with ${matches.length} matches`);
+          console.log('📋 Job final status stored:', finalStatus.status);
+
         } catch (error) {
-          console.error('Processing error:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`Error processing job ${jobId}:`, error);
+          
+          // Update job status with error
           updateProcessingStatus(jobId, {
             status: 'failed',
-            error: error.message || 'Processing failed',
             progress: 0,
-            message: 'Processing failed'
+            message: 'Processing failed',
+            error: errorMessage
           });
         }
-      }, 100); // Small delay to ensure job is stored
+      })().catch(err => {
+        console.error('Async processing error:', err);
+      });
       
       // Return job ID for polling
       return NextResponse.json({

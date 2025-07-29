@@ -1,9 +1,3 @@
-// Extend global type
-declare global {
-  var twipclipJobs: Map<string, any> | undefined;
-  var twipclipCleanupTimeouts: Map<string, NodeJS.Timeout> | undefined;
-}
-
 // In-memory storage for job statuses
 // In production, use Redis or a database
 // Use global to persist across hot reloads in development
@@ -29,7 +23,7 @@ function cleanupOldJobs() {
 }
 
 // Helper function to update status
-export function updateProcessingStatus(jobId: string, update: any) {
+export function updateProcessingStatus(jobId, update) {
   const current = jobs.get(jobId) || {
     status: 'processing',
     progress: 0,
@@ -61,7 +55,7 @@ export function updateProcessingStatus(jobId: string, update: any) {
 }
 
 // Helper to create a new job
-export function createProcessingJob(jobId: string) {
+export function createProcessingJob(jobId) {
   // Clean up old jobs periodically
   cleanupOldJobs();
   

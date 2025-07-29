@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jobs } from '../../../../src/lib/job-manager';
+import { jobs } from '../../../../src/lib/job-manager.js';
 
 // Job timeout configuration
 const JOB_TIMEOUT = 10 * 60 * 1000; // 10 minutes
