@@ -8,8 +8,10 @@ import { transcribeLargeAudio } from './audio-chunking';
 import { getVideoMetadata, determineProcessingStrategy, shouldProcessVideo } from './video-metadata';
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
 import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
-import { downloadViaInvidious } from '../../src/lib/invidious-fallback';
-import { setupYouTubeCookies } from '../../src/lib/cookie-setup';
+import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
+
+// Add RapidAPI integration
+const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
 
 // Fix for File API in Node.js environment
 if (typeof globalThis.File === 'undefined') {
@@ -335,120 +337,144 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
     let actualAudioPath = audioPath;
     
     try {
-      // Extract audio using simple yt-dlp command
-      console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
-      
-      const ytDlpCmd = await getYtDlpCommand();
-      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
-      
-      // Get video metadata first to determine best strategy
-      const metadata = await getVideoMetadata(videoInfo.url, sessionId);
-      
-      // For very large files, we'll download the full audio and then chunk it locally
-      // This is more efficient than downloading chunks separately
-      let extractCommand: string;
-      if (isDocker) {
-        // Enhanced command for Docker/Railway with cookies and user-agent
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      // Check if we should use RapidAPI
+      if (USE_RAPIDAPI) {
+        console.log(`🚀 Using RapidAPI for audio extraction...`);
         
-        // Check for cookie options
-        let cookieFlag = '';
+        // Download audio using RapidAPI
+        await rapidAPIClient.downloadAudio(videoInfo.url, audioPath);
         
-        // Check if cookie file exists for this session
-        if (sessionId) {
-          const userCookieFile = isDocker 
-            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
-            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-            
-          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+        // RapidAPI might download in different formats, check actual file
+        if (!require('fs').existsSync(audioPath)) {
+          // Check for other audio formats
+          const baseName = path.basename(audioPath, path.extname(audioPath));
+          const possibleExtensions = ['.mp3', '.opus', '.webm', '.m4a'];
           
-          // Use synchronous check like video-metadata.ts does
-          const fsSync = require('fs');
-          if (fsSync.existsSync(userCookieFile)) {
-            cookieFlag = `--cookies "${userCookieFile}"`;
-            console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+          for (const ext of possibleExtensions) {
+            const possiblePath = path.join(tempDir, baseName + ext);
+            if (require('fs').existsSync(possiblePath)) {
+              console.log(`Found audio file at: ${possiblePath}`);
+              actualAudioPath = possiblePath;
+              break;
+            }
+          }
+        }
+      } else {
+        // Original yt-dlp logic (kept for fallback, but won't be used with USE_RAPIDAPI=true)
+        console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+        
+        const ytDlpCmd = await getYtDlpCommand();
+        const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+        
+        // Get video metadata first to determine best strategy
+        const metadata = await getVideoMetadata(videoInfo.url, sessionId);
+        
+        // For very large files, we'll download the full audio and then chunk it locally
+        // This is more efficient than downloading chunks separately
+        let extractCommand: string;
+        if (isDocker) {
+          // Enhanced command for Docker/Railway with cookies and user-agent
+          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          
+          // Check for cookie options
+          let cookieFlag = '';
+          
+          // Check if cookie file exists for this session
+          if (sessionId) {
+            const userCookieFile = isDocker 
+              ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+              : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+              
+            console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
             
-            // Debug: Check first few lines of cookie file
-            try {
-              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
-              const lines = cookieContent.split('\n').slice(0, 3);
-              console.log('Cookie file preview:', lines.join(' | '));
-              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
-            } catch (e) {
-              console.log('Could not read cookie file for preview');
+            // Use synchronous check like video-metadata.ts does
+            const fsSync = require('fs');
+            if (fsSync.existsSync(userCookieFile)) {
+              cookieFlag = `--cookies "${userCookieFile}"`;
+              console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+              
+              // Debug: Check first few lines of cookie file
+              try {
+                const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
+                const lines = cookieContent.split('\n').slice(0, 3);
+                console.log('Cookie file preview:', lines.join(' | '));
+                console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
+              } catch (e) {
+                console.log('Could not read cookie file for preview');
+              }
+            } else {
+              console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
             }
           } else {
-            console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
+            console.log('No session ID provided - authentication may be required');
           }
-        } else {
-          console.log('No session ID provided - authentication may be required');
-        }
-        
-        // Use the format selection strategy based on metadata
-        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
-        let formatSelection = '';
-        
-        if (videoSizeMB > 1000) { // Over 1GB
-          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
-        } else {
-          formatSelection = '-f "worstaudio/bestaudio"';
-        }
-        
-        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
-      } else {
-        // Windows/local command - also check for cookies
-        let cookieFlag = '';
-        if (sessionId) {
-          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
-          if (require('fs').existsSync(userCookieFile)) {
-            cookieFlag = `--cookies "${userCookieFile}"`;
-            console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
+          
+          // Use the format selection strategy based on metadata
+          const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
+          let formatSelection = '';
+          
+          if (videoSizeMB > 1000) { // Over 1GB
+            formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
           } else {
-            console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
+            formatSelection = '-f "worstaudio/bestaudio"';
           }
-        }
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
-      }
-      
-      console.log(`Running: ${extractCommand}`);
-      
-      try {
-        await execAsync(extractCommand, {
-          timeout: 600000, // 10 minutes (increased from 5)
-          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
-        });
-      } catch (error) {
-        console.error('Audio extraction failed:', error);
-        
-        // Try without audio extraction flag
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        
-        // Same cookie logic as above
-        let cookieFlag = '';
-        
-        // Check if cookie file exists for this session
-        if (sessionId) {
-          const userCookieFile = isDocker 
-            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
-            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-            
-          if (require('fs').existsSync(userCookieFile)) {
-            cookieFlag = `--cookies ${userCookieFile}`;
+          
+          extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
+        } else {
+          // Windows/local command - also check for cookies
+          let cookieFlag = '';
+          if (sessionId) {
+            const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+            if (require('fs').existsSync(userCookieFile)) {
+              cookieFlag = `--cookies "${userCookieFile}"`;
+              console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
+            } else {
+              console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
+            }
           }
+          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
         }
         
-        // Fallback: Try format 140 directly without extraction
-        const fallbackCommand = isDocker 
-          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
-          : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
+        console.log(`Running: ${extractCommand}`);
         
-        console.log('Trying fallback command:', fallbackCommand);
-        await execAsync(fallbackCommand, {
-          timeout: 600000, // 10 minutes (increased from 5)
-          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
-        });
+        try {
+          await execAsync(extractCommand, {
+            timeout: 600000, // 10 minutes (increased from 5)
+            maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+          });
+        } catch (error) {
+          console.error('Audio extraction failed:', error);
+          
+          // Try without audio extraction flag
+          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          
+          // Same cookie logic as above
+          let cookieFlag = '';
+          
+          // Check if cookie file exists for this session
+          if (sessionId) {
+            const userCookieFile = isDocker 
+              ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+              : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+              
+            if (require('fs').existsSync(userCookieFile)) {
+              cookieFlag = `--cookies ${userCookieFile}`;
+            }
+          }
+          
+          // Fallback: Try format 140 directly without extraction
+          const fallbackCommand = isDocker 
+            ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
+            : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
+          
+          console.log('Trying fallback command:', fallbackCommand);
+          await execAsync(fallbackCommand, {
+            timeout: 600000, // 10 minutes (increased from 5)
+            maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+          });
+        }
       }
       
       // Check if audio file was created
@@ -702,19 +728,7 @@ async function extractAudioMultiStrategy(videoInfo: VideoInfo, outputPath: strin
     }
   }
   
-  // If all yt-dlp strategies failed and it's a YouTube video, try Invidious as last resort
-  if (videoInfo.platform === 'youtube') {
-    console.log('🔄 All yt-dlp strategies failed. Attempting Invidious fallback...');
-    try {
-      const success = await downloadViaInvidious(videoInfo.url, outputPath);
-      if (success) {
-        console.log('✅ Invidious fallback successful!');
-        return true;
-      }
-    } catch (invidiousError) {
-      console.error('❌ Invidious fallback also failed:', invidiousError);
-    }
-  }
+  // With RapidAPI, we don't need Invidious fallback
   
   return false;
 }
@@ -764,16 +778,6 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
           if (require('fs').existsSync(userCookieFile)) {
             cookieFlag = `--cookies ${userCookieFile} --no-cookies-from-browser`;
             console.log('Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
-            
-            // Debug: Check first few lines of cookie file
-            try {
-              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
-              const lines = cookieContent.split('\n').slice(0, 3);
-              console.log('Cookie file preview:', lines.join(' | '));
-              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
-            } catch (e) {
-              console.log('Could not read cookie file for preview');
-            }
           } else {
             console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
           }
@@ -781,71 +785,29 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
           console.log('No session ID provided - authentication may be required');
         }
         
-        strategies.push(
-          // Strategy 1: Try format 140 (m4a audio) which is most stable for long videos
-          {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 --fragment-retries 10 --retry-sleep 3 --buffer-size 16K --concurrent-fragments 4 --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 1200000 // 20 minutes for large files
-          },
-          // Strategy 2: Extract audio with specific codec
-          {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-check-certificate --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 600000
-          },
-          // Strategy 3: Without cookies but with better format selection
-          {
-            command: `${ytDlpPath} --user-agent "${userAgent}" -f "140/worstaudio" --no-check-certificate --extractor-retries 3 --no-playlist -o ${outputPattern} ${videoUrl}`,
-            timeout: 600000
-          },
-          // Strategy 4: Use sponsorblock to skip segments (might help with some videos)
-          {
-            command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --sponsorblock-remove all --no-check-certificate --no-playlist -o ${outputPattern} ${videoUrl}`.trim(),
-            timeout: 600000
-          }
-        );
-      } else {
-        // Windows strategies - check for cookies
-        let cookieFlag = '';
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        // Strategy 1: Best audio format (bestaudio)
+        strategies.push({
+          command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --no-part --no-mtime -o ${outputPattern} ${videoUrl}`,
+          timeout: 300000 // 5 minutes
+        });
         
-        if (sessionId) {
-          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-          if (require('fs').existsSync(userCookieFile)) {
-            cookieFlag = `--cookies "${userCookieFile}"`;
-            console.log('Using YouTube cookies for session (Windows strategies):', sessionId.substring(0, 8) + '...');
-          }
-        }
+        // Strategy 2: Specific format codes with fallback
+        strategies.push({
+          command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f "140/139/251/250/249" --no-playlist --no-check-certificate --no-part --no-mtime -o ${outputPattern} ${videoUrl}`,
+          timeout: 300000
+        });
         
-        // If user is authenticated, use cookies first
-        if (hasYouTubeAuth) {
-          strategies.push({
-            command: `"${ytDlpPath}" --ffmpeg-location "${ffmpegPath}" -x --audio-format m4a --no-playlist --cookies "${cookieFile}" --user-agent "${userAgent}" -o "${outputPattern}" "${videoUrl}"`,
-            timeout: 120000
-          });
-        }
+        // Strategy 3: Worst audio (smaller file, faster)
+        strategies.push({
+          command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f worstaudio --extract-audio --audio-format m4a --audio-quality 9 --no-playlist --no-check-certificate --no-part --no-mtime -o ${outputPattern} ${videoUrl}`,
+          timeout: 300000
+        });
         
-        strategies.push(
-          // Strategy 1: Download worst audio quality (smaller file size) with cookies
-          {
-            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" --ffmpeg-location "${ffmpegPath}" -f "worstaudio" --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
-            timeout: 120000 // 2 minutes
-          },
-          // Strategy 2: Direct audio download without conversion
-          {
-            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
-            timeout: 120000
-          },
-          // Strategy 3: Try bestaudio if worstaudio fails
-          {
-            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio[filesize<50M]/bestaudio" --extract-audio --audio-format m4a --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
-            timeout: 120000
-          },
-          // Strategy 4: Fallback - any audio format
-          {
-            command: `"${ytDlpPath}" ${cookieFlag} --user-agent "${userAgent}" -f "bestaudio/best" --no-playlist --no-warnings -o "${outputPattern}" "${videoUrl}"`.trim(),
-            timeout: 180000 // 3 minutes
-          }
-        );
+        // Strategy 4: Any audio format without conversion
+        strategies.push({
+          command: `${ytDlpPath} ${cookieFlag} --user-agent "${userAgent}" -f bestaudio/worstaudio --no-playlist --no-check-certificate --no-part --no-mtime -o ${outputPattern} ${videoUrl}`,
+          timeout: 300000
+        });
       }
       break;
       
@@ -900,28 +862,7 @@ async function getAudioExtractionStrategies(videoInfo: VideoInfo, fullOutputPath
  */
 async function getDetailedVideoInfo(videoInfo: VideoInfo): Promise<VideoInfo | null> {
   try {
-    if (videoInfo.platform === 'youtube') {
-      // Use YouTube API if available
-      if (process.env.YOUTUBE_API_KEY) {
-        const response = await axios.get(
-          `https://youtube.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,status&id=${videoInfo.id}&key=${process.env.YOUTUBE_API_KEY}`,
-          { timeout: 5000 }
-        );
-        
-        const videoData = response.data?.items?.[0];
-        if (videoData) {
-          const duration = parseDuration(videoData.contentDetails?.duration || 'PT0S');
-    
-    return {
-            ...videoInfo,
-            title: videoData.snippet?.title,
-            duration,
-            isLive: videoData.snippet?.liveBroadcastContent === 'live',
-            isPrivate: videoData.status?.privacyStatus === 'private'
-          };
-        }
-      }
-    }
+    // With RapidAPI, video info will be fetched during processing
     
     // Fallback: return basic info for other platforms
     return {
@@ -1290,17 +1231,8 @@ function enhancePunctuation(segments: TranscriptSegment[]): TranscriptSegment[] 
  * Get video information to determine if it's suitable for processing
  */
 async function getVideoInfo(videoId: string) {
-  try {
-    const response = await axios.get(
-      `https://youtube.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${videoId}&key=${process.env.YOUTUBE_API_KEY}`,
-      { timeout: 5000 }
-    );
-    
-    return response.data?.items?.[0] || null;
-  } catch (error) {
-    console.warn('Failed to get video info:', error);
-    return null;
-  }
+  // This function is disabled with RapidAPI
+  return null;
 }
 
 /**

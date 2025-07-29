@@ -20,7 +20,7 @@ export function handleError(error: any): { message: string; statusCode: number }
   }
   
   // Handle specific error types
-  if (error.message?.includes('yt-dlp')) {
+  if (error.message?.includes('RapidAPI') || error.message?.includes('yt-dlp')) {
     return {
       message: 'Video download service temporarily unavailable',
       statusCode: 503

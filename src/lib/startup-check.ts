@@ -12,17 +12,20 @@ export async function performStartupCheck(): Promise<boolean> {
   console.log('\n📋 Environment Check:');
   console.log(`OpenAI API Key: ${hasOpenAI ? '✅' : '❌'}`);
   
-  // Both OpenAI and yt-dlp are required
+  // Check required services
   if (!hasOpenAI) {
     console.error('\n❌ OpenAI API key is required but not found!');
     console.error('Please set OPENAI_API_KEY environment variable.');
     return false;
   }
   
-  if (!tools.ytdlp.available) {
-    console.error('\n❌ yt-dlp is required but not found!');
-    console.error('The application cannot function without yt-dlp.');
-    return false;
+  // With RapidAPI, we don't need yt-dlp anymore
+  if (process.env.USE_RAPIDAPI !== 'true') {
+    if (!tools.ytdlp.available) {
+      console.error('\n❌ yt-dlp is required but not found!');
+      console.error('The application cannot function without yt-dlp or RapidAPI.');
+      return false;
+    }
   }
   
   if (!tools.ffmpeg.available) {
@@ -33,9 +36,12 @@ export async function performStartupCheck(): Promise<boolean> {
   
   console.log('\n✅ All systems ready!');
   console.log('   - OpenAI API configured');
-  console.log('   - yt-dlp available');
+  if (process.env.USE_RAPIDAPI === 'true') {
+    console.log('   - RapidAPI configured (no yt-dlp needed)');
+  } else {
+    console.log('   - yt-dlp available');
+  }
   console.log('   - FFmpeg available');
-  console.log('   - YouTube authentication: User-based (via helper app)');
   
   return true;
 } 

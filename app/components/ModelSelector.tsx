@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 export interface ModelSettings {
-  model: 'claude-4-opus' | 'claude-4-sonnet';
+  model: 'claude-opus-4-20250514' | 'claude-sonnet-4-20250514';
   thinkingEnabled: boolean;
   tokenUsage: 'low' | 'medium' | 'high';
 }
@@ -16,9 +16,9 @@ interface ModelSelectorProps {
 export default function ModelSelector({ onModelChange, initialSettings }: ModelSelectorProps) {
   const [settings, setSettings] = useState<ModelSettings>(
     initialSettings || {
-      model: 'claude-4-sonnet',
+      model: 'claude-sonnet-4-20250514',
       thinkingEnabled: false,
-      tokenUsage: 'medium'
+      tokenUsage: 'high' // Always use high
     }
   );
 
@@ -40,8 +40,8 @@ export default function ModelSelector({ onModelChange, initialSettings }: ModelS
           onChange={(e) => handleChange({ model: e.target.value as ModelSettings['model'] })}
           className="w-full bg-gray-700 text-white text-sm rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="claude-4-sonnet">Claude 4 Sonnet (Fast)</option>
-          <option value="claude-4-opus">Claude 4 Opus (Best Quality, 5x cost)</option>
+          <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Fast)</option>
+          <option value="claude-opus-4-20250514">Claude Opus 4 (Best Quality, 5x cost)</option>
         </select>
       </div>
 
@@ -59,52 +59,12 @@ export default function ModelSelector({ onModelChange, initialSettings }: ModelS
         </label>
       </div>
 
-      {/* Token Usage */}
-      <div>
-        <label className="block text-xs text-gray-400 mb-1">Token Usage</label>
-        <div className="flex space-x-2">
-          <button
-            type="button"
-            onClick={() => handleChange({ tokenUsage: 'low' })}
-            className={`flex-1 text-xs py-1 px-2 rounded ${
-              settings.tokenUsage === 'low' 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            Low
-          </button>
-          <button
-            type="button"
-            onClick={() => handleChange({ tokenUsage: 'medium' })}
-            className={`flex-1 text-xs py-1 px-2 rounded ${
-              settings.tokenUsage === 'medium' 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            Medium
-          </button>
-          <button
-            type="button"
-            onClick={() => handleChange({ tokenUsage: 'high' })}
-            className={`flex-1 text-xs py-1 px-2 rounded ${
-              settings.tokenUsage === 'high' 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            High
-          </button>
-        </div>
-      </div>
-
       {/* Cost Indicator */}
       <div className="text-xs text-gray-500">
-        {settings.model === 'claude-4-opus' && (
+        {settings.model === 'claude-opus-4-20250514' && (
           <span className="text-yellow-500">⚡ 5x higher cost for premium quality</span>
         )}
-        {settings.model === 'claude-4-sonnet' && (
+        {settings.model === 'claude-sonnet-4-20250514' && (
           <span>✓ Balanced performance</span>
         )}
       </div>

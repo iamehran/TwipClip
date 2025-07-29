@@ -6,12 +6,10 @@ import VideoResult from './components/VideoResult';
 import LoadingState from './components/LoadingState';
 import ErrorDisplay from './components/ErrorDisplay';
 import ExportButton from './components/ExportButton';
-import YouTubeAuth from './components/YouTubeAuth';
+// YouTube Auth removed - using RapidAPI
 import ThoughtleadrLogo from './components/ThoughtleadrLogo';
 import BulkDownloadButton from './components/BulkDownloadButton';
 import ModelSelector, { ModelSettings } from './components/ModelSelector';
-import { cookies } from 'next/headers';
-import { YouTubeAuthConfig } from '../src/lib/youtube-auth-v2';
 
 interface VideoClip {
   videoId: string;
@@ -48,8 +46,6 @@ export default function Home() {
   const [lastSearch, setLastSearch] = useState<{ threadContent: string; videoUrls: string[]; modelSettings: ModelSettings } | null>(null);
   const [showSearchForm, setShowSearchForm] = useState(true);
   const [rawMatches, setRawMatches] = useState<any[]>([]); // Store raw matches from API
-  const [authConfig, setAuthConfig] = useState<YouTubeAuthConfig | undefined>();
-  const [isYouTubeAuthenticated, setIsYouTubeAuthenticated] = useState(false);
 
   // Keep session alive by refreshing it every 2 minutes
   useEffect(() => {
@@ -65,15 +61,7 @@ export default function Home() {
     return () => clearInterval(keepAlive);
   }, []);
 
-  const handleAuthChange = (isAuthenticated: boolean, browser?: string, profile?: string) => {
-    setIsYouTubeAuthenticated(isAuthenticated);
-    if (isAuthenticated && browser && browser !== 'cookies') {
-      // Only set authConfig for browser-based auth, not cookie-based
-      setAuthConfig({ browser, profile });
-    } else {
-      setAuthConfig(undefined);
-    }
-  };
+  // No authentication needed with RapidAPI
 
   const handleSearch = async (threadContent: string, videoUrls: string[], forceRefresh: boolean = false, modelSettings: ModelSettings) => {
     console.log('handleSearch called with model settings:', modelSettings);
@@ -473,8 +461,15 @@ export default function Home() {
               </a>
             </div>
 
-            {/* Authentication Section */}
-            <YouTubeAuth onAuthChange={handleAuthChange} />
+            {/* RapidAPI Status - No authentication needed! */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-600/20 border border-green-600/50 rounded-lg">
+                <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-medium text-green-500">RapidAPI Active</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -559,8 +554,6 @@ export default function Home() {
                 <div className="flex flex-col sm:flex-row gap-3">
                   <BulkDownloadButton
                     matches={rawMatches.filter(m => m.confidence >= 0.75)}
-                    authConfig={authConfig}
-                    isAuthenticated={isYouTubeAuthenticated}
                   />
                   <ExportButton data={results} />
                 </div>

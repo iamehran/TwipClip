@@ -3,24 +3,7 @@ import { YoutubeTranscript } from 'youtube-transcript';
 
 // Get transcript using the youtube-transcript package
 export async function getTranscriptFromYouTube(videoId: string) {
-  // Fast path - exit early for very short videos which rarely have transcripts
-  try {
-    // Check if video is too short for transcript (under 30 sec)
-    const videoResponse = await axios.get(
-      `https://youtube.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${process.env.YOUTUBE_API_KEY}`,
-      { timeout: 3000 } // Short timeout to avoid waiting too long
-    );
-    
-    if (videoResponse.data?.items?.[0]?.contentDetails?.duration) {
-      const duration = parseDuration(videoResponse.data.items[0].contentDetails.duration);
-      if (duration < 30) {
-        console.log(`Video ${videoId} is too short (${duration}s), skipping transcript`);
-        return [];
-      }
-    }
-  } catch (e) {
-    // Continue even if this check fails
-  }
+  // With RapidAPI, we'll check duration during processing
 
   try {
     console.log(`Fetching transcript for video: ${videoId}`);
@@ -226,60 +209,6 @@ export function findBestMatchingSegment(transcript: any[], queryText: string, wi
 
 // Get simulated transcript from video details
 async function getSimulatedTranscript(videoId: string) {
-  try {
-    console.log('Getting simulated transcript from video details');
-    
-    // Get video details to create a basic transcript from the title and description
-    const videoResponse = await axios.get(
-      `https://youtube.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${process.env.YOUTUBE_API_KEY}`,
-      { timeout: 5000 }
-    );
-    
-    if (videoResponse.data && videoResponse.data.items && videoResponse.data.items.length > 0) {
-      const videoDetails = videoResponse.data.items[0];
-      const snippet = videoDetails.snippet;
-      const duration = videoDetails.contentDetails?.duration || 'PT1M'; // Default 1 minute
-      const durationSeconds = parseDuration(duration);
-      
-      console.log(`Creating simulated transcript from video details (${durationSeconds}s)`);
-      
-      // Create simulated segments from the title and description
-      const simulatedTranscript = [];
-      
-      // Add title as first segment
-      simulatedTranscript.push({
-        text: snippet.title || 'Video title',
-        offset: 0,
-        duration: 5
-      });
-      
-      // Add description parts as segments (split by sentences)
-      if (snippet.description) {
-        const sentences = snippet.description
-          .split(/[.!?]+/)
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length > 0);
-        
-        const segmentDuration = Math.max(5, Math.floor(durationSeconds / (sentences.length + 1)));
-        
-        // Limit the number of sentences to avoid too much processing
-        const maxSentences = Math.min(sentences.length, 20);
-        sentences.slice(0, maxSentences).forEach((sentence: string, index: number) => {
-          simulatedTranscript.push({
-            text: sentence,
-            offset: (index + 1) * segmentDuration,
-            duration: segmentDuration
-          });
-        });
-      }
-      
-      console.log(`Created ${simulatedTranscript.length} simulated transcript segments`);
-      return simulatedTranscript;
-    }
-    
-    throw new Error('No video details available');
-  } catch (error) {
-    console.error('Failed to get video details for simulated transcript:', error);
-    throw error;
-  }
+  // This function is disabled with RapidAPI - transcripts will be generated from audio
+  return [];
 } 

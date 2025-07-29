@@ -1,9 +1,7 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
-import { getYtDlpCommand } from '../../src/lib/system-tools';
+import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
 
-const execAsync = promisify(exec);
+// Check if RapidAPI is enabled
+const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
 
 export interface VideoMetadata {
   duration: number; // in seconds
@@ -24,10 +22,61 @@ export interface VideoMetadata {
 }
 
 /**
- * Get video metadata using yt-dlp without downloading
+ * Get video metadata
  */
 export async function getVideoMetadata(videoUrl: string, sessionId?: string): Promise<VideoMetadata | null> {
   try {
+    if (USE_RAPIDAPI) {
+      // Extract video ID from URL
+      const videoIdMatch = videoUrl.match(/(?:v=|\/shorts\/|youtu\.be\/)([^&\n?#]+)/);
+      if (!videoIdMatch) {
+        console.error('Could not extract video ID from URL');
+        return null;
+      }
+      const videoId = videoIdMatch[1];
+      
+      console.log('🚀 Using RapidAPI for video metadata...');
+      
+      // Use RapidAPI's get-video-info endpoint
+      const axios = require('axios');
+      const response = await axios.get(
+        `https://${process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com'}/get-video-info/${videoId}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+            'X-RapidAPI-Host': process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com'
+          },
+          timeout: 30000
+        }
+      );
+      
+      const data = response.data;
+      
+      const result: VideoMetadata = {
+        duration: parseInt(data.lengthSeconds) || 0,
+        title: data.title,
+        uploader: data.author || data.ownerChannelName,
+        description: data.description,
+        thumbnail: data.thumbnail?.[0]?.url,
+        isLive: data.isLiveContent || false,
+        isPrivate: false, // RapidAPI doesn't provide this
+        hasSubtitles: true // Assume subtitles are available
+      };
+      
+      console.log(`📊 Video metadata from RapidAPI:`);
+      console.log(`  Duration: ${formatDuration(result.duration)}`);
+      console.log(`  Title: ${result.title}`);
+      console.log(`  Live: ${result.isLive ? 'Yes' : 'No'}`);
+      
+      return result;
+    }
+    
+    // Original yt-dlp logic (as fallback)
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const path = require('path');
+    const { getYtDlpCommand } = require('../../src/lib/system-tools');
+    const execAsync = promisify(exec);
     const ytDlpPath = await getYtDlpCommand();
     
     // Build command to get JSON metadata
@@ -54,7 +103,7 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
           const fs = require('fs');
           const cookieContent = fs.readFileSync(userCookiePath, 'utf-8');
           const lines = cookieContent.split('\n');
-          const cookieLines = lines.filter(l => l.trim() && !l.startsWith('#'));
+          const cookieLines = lines.filter((l: string) => l.trim() && !l.startsWith('#'));
           console.log(`Cookie file has ${cookieLines.length} cookie entries`);
           if (cookieLines.length === 0) {
             console.warn('⚠️ Cookie file exists but contains no valid cookies!');

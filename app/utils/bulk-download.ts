@@ -6,8 +6,11 @@ import path from 'path';
 import os from 'os';
 import { getYtDlpCommand, getFFmpegCommand } from '../../src/lib/system-tools';
 import AdmZip from 'adm-zip';
-import { YouTubeAuthManagerV2, YouTubeAuthConfig } from '../../src/lib/youtube-auth-v2';
+import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
 import { globalQueue, youtubeRateLimiter } from './request-queue';
+
+// Check if RapidAPI is enabled
+const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
 
 const execAsync = promisify(exec);
 
@@ -35,8 +38,7 @@ export interface BulkDownloadOptions {
   outputDir?: string;
   maxConcurrent?: number;
   quality?: string;
-  authConfig?: YouTubeAuthConfig; // Browser authentication config
-  sessionId?: string; // User session ID for per-user cookies
+  sessionId?: string; // User session ID (kept for compatibility)
   onProgress?: (progress: BulkDownloadProgress) => void;
   onClipComplete?: (result: DownloadResult) => void;
 }
@@ -48,11 +50,9 @@ async function downloadClip(
   match: PerfectMatch,
   outputDir: string,
   quality: string = '720p',
-  authConfig?: YouTubeAuthConfig,
   sessionId?: string,
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
-  const ytDlpPath = await getYtDlpCommand();
   const ffmpegPath = await getFFmpegCommand();
   
   // Create safe filename
@@ -62,7 +62,7 @@ async function downloadClip(
   try {
     onProgress?.(`Downloading clip for tweet ${match.tweetId}...`);
     
-    // Step 1: Download the full video first (download-sections is unreliable)
+    // Step 1: Download the full video first
     const tempVideoPath = path.join(outputDir, `temp_${safeFilename}`);
     
     // Calculate duration for the clip
@@ -70,117 +70,76 @@ async function downloadClip(
     const startTimeStr = formatTime(match.startTime);
     const endTimeStr = formatTime(match.endTime);
     
-    // Build download command with authentication
-    let downloadCmd = `"${ytDlpPath}"`;
-    
-    // Add user-agent to prevent bot detection
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    downloadCmd += ` --user-agent "${userAgent}"`;
-    
-    // Add additional headers to prevent bot detection
-    downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
-    downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
-    
-    // Check for per-user cookies first
-    let hasAuth = false;
-    if (sessionId) {
-      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
-      const baseDir = isDocker ? '/app' : process.cwd();
-      const userCookiePath = path.join(baseDir, 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-      if (require('fs').existsSync(userCookiePath)) {
-        downloadCmd += ` --cookies "${userCookiePath}"`;
-        onProgress?.(`Using user-specific YouTube cookies...`);
-        hasAuth = true;
-      }
-    }
-    
-    // Fall back to browser cookie extraction if no user cookies
-    if (!hasAuth && authConfig) {
-      const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
-      downloadCmd += ` ${cookieArgs.join(' ')}`;
-      onProgress?.(`Using browser authentication (${authConfig.browser})...`);
-      hasAuth = true;
-    }
-    
-    if (!hasAuth) {
-      onProgress?.(`⚠️ No authentication configured - downloads may fail for restricted content`);
-    }
-    
-    // Optimized format selection for social media
-    // Force 720p for consistent quality and reasonable file sizes
-    downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
-    downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
-    downloadCmd += ` --merge-output-format mp4`;
-    downloadCmd += ` --no-warnings --quiet`;
-    
-    // Add retry options for reliability
-    downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
-    
-    // Add no-check-certificate to handle SSL issues
-    downloadCmd += ` --no-check-certificate`;
-    
-    onProgress?.(`Downloading video (720p optimized)...`);
-    
-    let downloadAttempts = 0;
-    const maxAttempts = 3;
-    let lastError: any = null;
-    
-    while (downloadAttempts < maxAttempts) {
-      try {
-        downloadAttempts++;
-        // Wait for rate limit slot
-        await youtubeRateLimiter.waitForSlot();
-        
-        // Queue the download job
-        await globalQueue.addDownloadJob(async () => {
-          return await execAsync(downloadCmd, { 
-            timeout: 300000, // 5 minute timeout
-            maxBuffer: 10 * 1024 * 1024 
-          });
-        });
-        break; // Success, exit loop
-      } catch (error: any) {
-        lastError = error;
-        
-        // Check if it's an authentication error
-        if (error.stderr?.includes('Sign in to confirm')) {
-          onProgress?.(`❌ Authentication required. Please log into YouTube in ${authConfig?.browser || 'your browser'}`);
+    if (USE_RAPIDAPI) {
+      onProgress?.(`🚀 Using RapidAPI for video download...`);
+      
+      // Download video using RapidAPI
+      await rapidAPIClient.downloadVideo(match.videoUrl, tempVideoPath, quality);
+      
+      onProgress?.(`✅ Video downloaded successfully via RapidAPI`);
+    } else {
+      // Original yt-dlp logic (kept as fallback)
+      const ytDlpPath = await getYtDlpCommand();
+      
+      // Build download command
+      let downloadCmd = `"${ytDlpPath}"`;
+      
+      // Add user-agent to prevent bot detection
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      downloadCmd += ` --user-agent "${userAgent}"`;
+      
+      // Add additional headers to prevent bot detection
+      downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
+      downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
+      
+      // Optimized format selection for social media
+      // Force 720p for consistent quality and reasonable file sizes
+      downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
+      downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
+      downloadCmd += ` --merge-output-format mp4`;
+      downloadCmd += ` --no-warnings --quiet`;
+      
+      // Add retry options for reliability
+      downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
+      
+      // Add no-check-certificate to handle SSL issues
+      downloadCmd += ` --no-check-certificate`;
+      
+      onProgress?.(`Downloading video (720p optimized)...`);
+      
+      let downloadAttempts = 0;
+      const maxAttempts = 3;
+      let lastError: any = null;
+      
+      while (downloadAttempts < maxAttempts) {
+        try {
+          downloadAttempts++;
+          // Wait for rate limit slot
+          await youtubeRateLimiter.waitForSlot();
           
-          // Try fallback browser if available
-          if (authConfig && downloadAttempts < maxAttempts) {
-            const fallbackBrowsers = await YouTubeAuthManagerV2.getFallbackBrowsers(authConfig.browser);
-            if (fallbackBrowsers.length > 0) {
-              authConfig.browser = fallbackBrowsers[0];
-              onProgress?.(`🔄 Trying fallback browser: ${authConfig.browser}`);
-              // Rebuild command with new browser
-              downloadCmd = `"${ytDlpPath}"`;
-              downloadCmd += ` --user-agent "${userAgent}"`;
-              downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
-              downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
-              const cookieArgs = YouTubeAuthManagerV2.getBrowserCookieArgs(authConfig);
-              downloadCmd += ` ${cookieArgs.join(' ')}`;
-              downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
-              downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
-              downloadCmd += ` --merge-output-format mp4`;
-              downloadCmd += ` --no-warnings --quiet`;
-              downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
-              downloadCmd += ` --no-check-certificate`;
-              continue; // Retry with new browser
-            }
+          // Queue the download job
+          await globalQueue.addDownloadJob(async () => {
+            return await execAsync(downloadCmd, { 
+              timeout: 300000, // 5 minute timeout
+              maxBuffer: 10 * 1024 * 1024 
+            });
+          });
+          break; // Success, exit loop
+        } catch (error: any) {
+          lastError = error;
+          
+          if (downloadAttempts >= maxAttempts) {
+            throw error;
           }
+          
+          onProgress?.(`⚠️ Download attempt ${downloadAttempts} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
         }
-        
-        if (downloadAttempts >= maxAttempts) {
-          throw error;
-        }
-        
-        onProgress?.(`⚠️ Download attempt ${downloadAttempts} failed, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
       }
-    }
-    
-    if (lastError && downloadAttempts >= maxAttempts) {
-      throw lastError;
+      
+      if (lastError && downloadAttempts >= maxAttempts) {
+        throw lastError;
+      }
     }
     
     // Step 2: Get video duration first to validate seek times
@@ -311,11 +270,7 @@ async function downloadClip(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     onProgress?.(`❌ Failed to download clip: ${errorMessage}`);
     
-    // Provide helpful error messages
-    if (errorMessage.includes('Sign in to confirm')) {
-      const solutions = YouTubeAuthManagerV2.getErrorSolution(errorMessage);
-      console.error('Solutions:', solutions.join('\n'));
-    }
+    // With RapidAPI, we don't get "Sign in to confirm" errors
     
     // Clean up any partial files
     try {
@@ -359,7 +314,6 @@ export async function downloadAllClips(
     outputDir = path.join(os.tmpdir(), 'twipclip-downloads', `${Date.now()}-${Math.random().toString(36).substring(7)}`),
     maxConcurrent = 3,
     quality = '720p',
-    authConfig,
     sessionId,
     onProgress,
     onClipComplete
@@ -369,11 +323,11 @@ export async function downloadAllClips(
   await fs.mkdir(outputDir, { recursive: true });
   console.log(`📁 Download directory: ${outputDir}`);
   
-  // Log authentication status
-  if (authConfig) {
-    console.log(`🔐 Using browser authentication: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
+  // Log RapidAPI status
+  if (USE_RAPIDAPI) {
+    console.log('🚀 Using RapidAPI for downloads - no authentication needed!');
   } else {
-    console.log('⚠️ No browser authentication configured - downloads may fail for restricted content');
+    console.log('⚠️ Using yt-dlp - may encounter bot detection issues');
   }
   
   const results: DownloadResult[] = [];
@@ -391,7 +345,7 @@ export async function downloadAllClips(
     progress.currentFile = `Tweet ${match.tweetId}`;
     onProgress?.(progress);
     
-    const result = await downloadClip(match, outputDir, quality, authConfig, sessionId, (status) => {
+    const result = await downloadClip(match, outputDir, quality, sessionId, (status) => {
       console.log(`  ${status}`);
     });
     
@@ -420,7 +374,7 @@ export async function downloadAllClips(
     successfulDownloads: results.filter(r => r.success).length,
     failedDownloads: results.filter(r => !r.success).length,
     totalSize: results.reduce((sum, r) => sum + (r.fileSize || 0), 0),
-    authenticationUsed: authConfig ? `${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}` : 'none',
+    authenticationUsed: USE_RAPIDAPI ? 'RapidAPI' : 'yt-dlp',
     results: results.map(r => ({
       tweetId: r.tweetId,
       success: r.success,

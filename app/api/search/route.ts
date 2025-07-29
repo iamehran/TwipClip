@@ -7,7 +7,7 @@ import {
   explainMatches
 } from '../../utils/ai-matching';
 import axios from 'axios';
-import { YOUTUBE_API_KEY } from '../../config';
+// YouTube API no longer needed with RapidAPI
 import { cookies } from 'next/headers'; // Add cookies import
 import { getVideoMetadata as getAuthenticatedVideoMetadata } from '../../utils/video-metadata'; // Import authenticated metadata function
 
@@ -79,39 +79,8 @@ async function getVideoMetadataFromAPI(videoUrls: string[]): Promise<Map<string,
     })
     .filter(Boolean) as { url: string; id: string }[];
   
-  // Fetch YouTube metadata if API key is available
-  if (youtubeVideos.length > 0 && YOUTUBE_API_KEY) {
-    try {
-      console.log(`📋 Fetching metadata for ${youtubeVideos.length} YouTube videos...`);
-      
-      const response = await axios.get(
-        'https://youtube.googleapis.com/youtube/v3/videos',
-        {
-          params: {
-            part: 'snippet,contentDetails',
-            id: youtubeVideos.map(v => v.id).join(','),
-            key: YOUTUBE_API_KEY
-          },
-          timeout: 10000
-        }
-      );
-      
-      response.data.items?.forEach((item: any) => {
-        const url = youtubeVideos.find(v => v.id === item.id)?.url;
-        if (url) {
-          const duration = parseDuration(item.contentDetails?.duration || 'PT0S');
-          metadata.set(url, {
-            title: item.snippet?.title || 'Untitled',
-            channelTitle: item.snippet?.channelTitle || 'Unknown Channel',
-            duration,
-            publishedAt: item.snippet?.publishedAt || new Date().toISOString()
-          });
-        }
-      });
-    } catch (error) {
-      console.error('Failed to fetch YouTube metadata:', error);
-    }
-  }
+  // With RapidAPI, metadata will be fetched during processing
+  console.log(`📋 Found ${youtubeVideos.length} YouTube videos to process`);
   
   // For videos without metadata, use defaults
   videoUrls.forEach(url => {

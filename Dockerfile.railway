@@ -22,20 +22,9 @@ RUN apt-get update && apt-get install -y \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium for container-based cookie extraction
-RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install yt-dlp
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
-
 # Verify installations
 RUN echo "Checking installations:" && \
-    yt-dlp --version && \
-    ffmpeg -version && \
-    chromium --version
+    ffmpeg -version
 
 WORKDIR /app
 

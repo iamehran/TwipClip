@@ -146,75 +146,106 @@ export async function compressAudioFile(audioPath: string, tempDir: string): Pro
 /**
  * Get accurate audio duration using FFmpeg
  */
-async function getAudioDuration(audioPath: string, ffmpegPath: string): Promise<number> {
+async function getAudioDuration(audioPath: string): Promise<number> {
+  // First, check if file exists and is readable
   try {
-    // First, check if the file exists and is readable
     const stats = await fs.stat(audioPath);
     if (stats.size === 0) {
       throw new Error('Audio file is empty');
     }
-    
-    console.log(`Getting duration for: ${audioPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
-    
-    // Try ffprobe first (more reliable)
-    const probePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
-    const probeCmd = `"${probePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
-    
+  } catch (error) {
+    throw new Error(`Audio file not accessible: ${error.message}`);
+  }
+
+  const ffmpegPath = getFFmpegPath();
+  const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+  const ffprobePath = isDocker ? '/usr/bin/ffprobe' : ffmpegPath.replace('ffmpeg', 'ffprobe');
+  
+  console.log(`Getting duration for: ${audioPath} (${((await fs.stat(audioPath)).size / 1024 / 1024).toFixed(1)}MB)`);
+  
+  // Try multiple methods to get duration
+  let duration: number | null = null;
+  
+  // Method 1: Try ffprobe first
+  try {
+    const { stdout } = await execAsync(
+      `"${ffprobePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
+    );
+    duration = parseFloat(stdout.trim());
+    if (!isNaN(duration) && duration > 0) {
+      console.log(`Duration from ffprobe: ${duration}s`);
+      return duration;
+    }
+  } catch (error) {
+    console.log('ffprobe failed, trying ffmpeg:', error);
+  }
+  
+  // Method 2: Try ffmpeg with different approach
+  try {
+    const { stdout } = await execAsync(
+      `"${ffmpegPath}" -i "${audioPath}" -f null - 2>&1 | grep "Duration"`
+    );
+    const durationMatch = stdout.match(/Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1]);
+      const minutes = parseInt(durationMatch[2]);
+      const seconds = parseFloat(durationMatch[3]);
+      duration = hours * 3600 + minutes * 60 + seconds;
+      console.log(`Duration from ffmpeg: ${duration}s`);
+      return duration;
+    }
+  } catch (error) {
+    console.log('ffmpeg duration extraction failed:', error);
+  }
+  
+  // Method 3: Try mediainfo if available
+  try {
+    const { stdout } = await execAsync(
+      `mediainfo --Output="General;%Duration%" "${audioPath}"`
+    );
+    const ms = parseInt(stdout.trim());
+    if (!isNaN(ms) && ms > 0) {
+      duration = ms / 1000;
+      console.log(`Duration from mediainfo: ${duration}s`);
+      return duration;
+    }
+  } catch (error) {
+    // mediainfo might not be installed, that's ok
+  }
+  
+  // Method 4: If file might be corrupted, try to re-encode it first
+  if (!duration) {
+    console.log('Attempting to fix potentially corrupted audio file...');
+    const fixedPath = audioPath.replace(/\.(m4a|webm|mp3)$/, '_fixed.m4a');
     try {
-      const { stdout: probeDuration } = await execAsync(probeCmd, {
-        timeout: 30000,
-        maxBuffer: 5 * 1024 * 1024
-      });
+      // Re-encode the file to fix any corruption
+      await execAsync(
+        `"${ffmpegPath}" -i "${audioPath}" -c:a aac -b:a 128k -movflags +faststart "${fixedPath}" -y`
+      );
       
-      if (probeDuration && !isNaN(parseFloat(probeDuration.trim()))) {
-        const duration = parseFloat(probeDuration.trim());
-        console.log(`Duration from ffprobe: ${duration.toFixed(1)}s`);
+      // Try to get duration from the fixed file
+      const { stdout } = await execAsync(
+        `"${ffprobePath}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${fixedPath}"`
+      );
+      duration = parseFloat(stdout.trim());
+      
+      if (!isNaN(duration) && duration > 0) {
+        // Replace the original file with the fixed one
+        await fs.unlink(audioPath);
+        await fs.rename(fixedPath, audioPath);
+        console.log(`Fixed audio file, duration: ${duration}s`);
         return duration;
       }
-    } catch (probeError) {
-      console.warn('ffprobe failed, trying ffmpeg:', probeError);
+    } catch (error) {
+      console.log('Failed to fix audio file:', error);
+      // Clean up the temporary file if it exists
+      try {
+        await fs.unlink(fixedPath);
+      } catch {}
     }
-    
-    // Fallback to ffmpeg with format detection
-    const fileExt = path.extname(audioPath).toLowerCase();
-    const inputFormat = fileExt === '.webm' ? '-f webm' : '';
-    
-    const durationCmd = `"${ffmpegPath}" ${inputFormat} -i "${audioPath}" 2>&1`;
-    const { stdout, stderr } = await execAsync(durationCmd, {
-      timeout: 30000,
-      maxBuffer: 5 * 1024 * 1024
-    });
-    
-    const output = stderr || stdout;
-    
-    // Try multiple patterns to extract duration
-    const patterns = [
-      /Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/,
-      /Duration: (\d{2}):(\d{2}):(\d{2})/,
-      /duration=(\d+\.\d+)/i
-    ];
-    
-    for (const pattern of patterns) {
-      const match = output.match(pattern);
-      if (match) {
-        if (match.length >= 4) {
-          // HH:MM:SS format
-          const hours = parseInt(match[1]);
-          const minutes = parseInt(match[2]);
-          const seconds = parseInt(match[3]);
-          const milliseconds = match[4] ? parseInt(match[4]) : 0;
-          return hours * 3600 + minutes * 60 + seconds + milliseconds / 100;
-        } else if (match[1]) {
-          // Direct seconds format
-          return parseFloat(match[1]);
-        }
-      }
-    }
-    
-    throw new Error('Could not parse duration from FFmpeg output');
-  } catch (error) {
-    throw new Error(`Failed to get audio duration: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+  
+  throw new Error(`Failed to get audio duration after all attempts`);
 }
 
 /**
@@ -229,7 +260,7 @@ export async function splitAudioIntoChunks(audioPath: string, tempDir: string): 
     const ffmpegPath = await getFFmpegPath();
     
     // Get accurate audio duration
-    const totalDuration = await getAudioDuration(audioPath, ffmpegPath);
+    const totalDuration = await getAudioDuration(audioPath);
     console.log(`📏 Total audio duration: ${totalDuration.toFixed(1)} seconds (${(totalDuration/60).toFixed(1)} minutes)`);
     
     if (totalDuration < MIN_CHUNK_DURATION) {

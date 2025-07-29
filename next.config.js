@@ -2,15 +2,16 @@
 const nextConfig = {
   /* config options here */
   env: {
-    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
-    NEXT_PUBLIC_YOUTUBE_API_KEY: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+    USE_RAPIDAPI: process.env.USE_RAPIDAPI,
+    RAPIDAPI_KEY: process.env.RAPIDAPI_KEY,
+    RAPIDAPI_HOST: process.env.RAPIDAPI_HOST,
   },
   publicRuntimeConfig: {
-    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
-    NEXT_PUBLIC_YOUTUBE_API_KEY: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY,
+    USE_RAPIDAPI: process.env.USE_RAPIDAPI,
   },
   serverRuntimeConfig: {
-    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
+    RAPIDAPI_KEY: process.env.RAPIDAPI_KEY,
+    RAPIDAPI_HOST: process.env.RAPIDAPI_HOST,
   },
   images: {
     remotePatterns: [

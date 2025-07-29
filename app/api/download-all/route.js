@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
 import { downloadAllClips, createZipFile } from '../../utils/bulk-download';
-import { cookies } from 'next/headers';
-import { YouTubeAuthManagerV2 } from '../../../src/lib/youtube-auth-v2';
 import path from 'path';
 import os from 'os';
-import { existsSync } from 'fs';
 
 export async function POST(request) {
   try {
-    const { matches, authConfig } = await request.json();
+    const { matches } = await request.json();
     
     if (!matches || !Array.isArray(matches) || matches.length === 0) {
       return NextResponse.json({ 
@@ -29,39 +26,13 @@ export async function POST(request) {
       return match;
     });
 
-    // Get session ID for per-user cookies
-    const cookieStore = await cookies();
-    const sessionId = cookieStore.get('twipclip_session')?.value;
-    
-    // Check if user has uploaded cookies
-    let hasCookies = false;
-    if (sessionId) {
-      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV || process.env.NODE_ENV === 'production';
-      const baseDir = isDocker ? '/app' : process.cwd();
-      const userCookiePath = path.join(baseDir, 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-      hasCookies = existsSync(userCookiePath);
-      console.log(`Session ID: ${sessionId.substring(0, 8)}...`);
-      console.log(`Cookie path: ${userCookiePath}`);
-      console.log(`Cookie file exists: ${hasCookies}`);
-      
-      if (hasCookies) {
-        console.log('✅ Using uploaded YouTube cookies for authentication');
-      }
-    }
-
-    // Log authentication configuration
-    if (!hasCookies && authConfig) {
-      console.log(`Browser auth config provided: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
-    } else if (!hasCookies && !authConfig) {
-      console.log('⚠️ No authentication configured - downloads may fail');
-    }
+    // With RapidAPI, no authentication needed
+    console.log('🚀 Using RapidAPI for downloads - no authentication needed!');
 
     // Download all clips with optimized settings
     const results = await downloadAllClips(fixedMatches, {
       maxConcurrent: 2, // Limit concurrent downloads to avoid overwhelming the system
       quality: '720p', // Force 720p for compatibility
-      sessionId, // Always pass session ID for cookie-based auth
-      authConfig: hasCookies ? undefined : authConfig, // Only use browser auth if no cookies
       onProgress: (progress) => {
         console.log(`Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(1)}%)`);
       },

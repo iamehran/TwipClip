@@ -6,7 +6,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
 }) : null;
 
 export interface ModelSettings {
-  model: 'claude-4-opus' | 'claude-4-sonnet';
+  model: 'claude-opus-4-20250514' | 'claude-sonnet-4-20250514';
   thinkingEnabled: boolean;
   tokenUsage: 'low' | 'medium' | 'high';
 }
@@ -46,7 +46,7 @@ interface BatchMatchResult {
  * Get token limits based on model settings
  */
 function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; maxCandidates: number } {
-  const tokenUsage = modelSettings?.tokenUsage || 'medium';
+  const tokenUsage = modelSettings?.tokenUsage || 'high';
       const model = getApiModelName(modelSettings?.model);
   
   // Base token limits
@@ -74,15 +74,11 @@ function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; max
  * Get appropriate model name for API calls
  */
 function getApiModelName(model?: string): string {
-  // Map frontend model names to actual API model names
-  switch (model) {
-    case 'claude-4-opus':
-      return 'claude-opus-4-20250514';
-    case 'claude-4-sonnet':
-      return 'claude-sonnet-4-20250514';
-    default:
-      return 'claude-sonnet-4-20250514'; // Default to Sonnet 4
+  // Use model names directly (no mapping needed)
+  if (!model) {
+    return 'claude-sonnet-4-20250514'; // Default to Sonnet 4
   }
+  return model;
 }
 
 /**

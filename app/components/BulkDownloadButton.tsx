@@ -1,12 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { YouTubeAuthConfig } from '../../src/lib/youtube-auth-v2';
-
 interface BulkDownloadButtonProps {
   matches: any[];
-  authConfig?: YouTubeAuthConfig;
-  isAuthenticated?: boolean;
 }
 
 interface DownloadStatus {
@@ -18,7 +14,7 @@ interface DownloadStatus {
   totalSizeMB: string;
 }
 
-export default function BulkDownloadButton({ matches, authConfig, isAuthenticated }: BulkDownloadButtonProps) {
+export default function BulkDownloadButton({ matches }: BulkDownloadButtonProps) {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -31,17 +27,7 @@ export default function BulkDownloadButton({ matches, authConfig, isAuthenticate
       setProgress('Preparing downloads...');
       setDownloadStatus(null);
 
-      // First, check if authentication is still valid
-      try {
-        const authCheckResponse = await fetch('/api/auth/youtube/status');
-        const authStatus = await authCheckResponse.json();
-        
-        if (!authStatus.authenticated && !authConfig) {
-          throw new Error('YouTube authentication expired. Please re-authenticate and try again.');
-        }
-      } catch (authError) {
-        console.warn('Failed to verify auth status, proceeding anyway:', authError);
-      }
+      // No authentication check needed with RapidAPI
 
       const response = await fetch('/api/download-all', {
         method: 'POST',
@@ -49,8 +35,7 @@ export default function BulkDownloadButton({ matches, authConfig, isAuthenticate
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          matches,
-          authConfig 
+          matches
         }),
       });
 
@@ -168,20 +153,7 @@ export default function BulkDownloadButton({ matches, authConfig, isAuthenticate
         </div>
       )}
 
-      {/* Authentication Warning */}
-      {!isAuthenticated && (
-        <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
-          <div className="flex items-start space-x-2">
-            <svg className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <div className="text-sm text-yellow-300">
-              <p className="font-medium">No YouTube authentication configured</p>
-              <p className="mt-1 text-yellow-400">Downloads may fail for age-restricted or private content. Please authenticate with YouTube for best results.</p>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 } 

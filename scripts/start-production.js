@@ -1,78 +1,43 @@
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+const { exec } = require('child_process');
 
-console.log('🚀 Starting TwipClip production server...');
+console.log('🚀 Starting TwipClip in production mode...\n');
 
-// Ensure necessary directories exist
-function ensureDirectories() {
-  const dirs = [
-    'temp',
-    'temp/user-cookies',
-    'public/downloads'
-  ];
-  
-  dirs.forEach(dir => {
-    const fullPath = path.join(process.cwd(), dir);
-    if (!fs.existsSync(fullPath)) {
-      try {
-        fs.mkdirSync(fullPath, { recursive: true });
-        console.log(`✅ Created directory: ${dir}`);
-      } catch (error) {
-        console.warn(`⚠️ Could not create directory ${dir}:`, error.message);
-      }
-    }
-  });
-}
+// Set production environment
+process.env.NODE_ENV = 'production';
 
-// Main startup
-async function start() {
-  console.log('📁 Ensuring directories exist...');
-  ensureDirectories();
-  
-  console.log('🌐 Starting Next.js server...');
-  
-  const port = process.env.PORT || 3000;
-  console.log(`📍 Port: ${port}`);
-  
-  // Start Next.js
-  const server = spawn('npm', ['run', 'start'], {
-    stdio: 'inherit',
-    shell: true,
-    env: {
-      ...process.env,
-      PORT: port
-    }
-  });
+// Check required environment variables
+const required = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'RAPIDAPI_KEY'];
+const missing = required.filter(key => !process.env[key]);
 
-  server.on('error', (error) => {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  });
-
-  server.on('exit', (code) => {
-    if (code !== 0) {
-      console.error(`❌ Server exited with code ${code}`);
-      process.exit(code);
-    }
-  });
-
-  // Handle graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('📴 SIGTERM received, shutting down gracefully...');
-    server.kill();
-    process.exit(0);
-  });
-
-  process.on('SIGINT', () => {
-    console.log('📴 SIGINT received, shutting down gracefully...');
-    server.kill();
-    process.exit(0);
-  });
-}
-
-// Start the application
-start().catch(error => {
-  console.error('❌ Startup failed:', error);
+if (missing.length > 0) {
+  console.error('❌ Missing required environment variables:', missing.join(', '));
   process.exit(1);
+}
+
+// Check RapidAPI is enabled
+if (process.env.USE_RAPIDAPI !== 'true') {
+  console.error('❌ USE_RAPIDAPI must be set to true');
+  process.exit(1);
+}
+
+console.log('✅ All environment variables configured');
+console.log('✅ RapidAPI enabled - no authentication needed\n');
+
+// Start the production server
+const server = exec('npm run start', (err, stdout, stderr) => {
+  if (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+});
+
+// Forward output
+server.stdout.on('data', (data) => process.stdout.write(data));
+server.stderr.on('data', (data) => process.stderr.write(data));
+
+// Handle shutdown
+process.on('SIGINT', () => {
+  console.log('\n🛑 Shutting down...');
+  server.kill('SIGINT');
+  process.exit(0);
 }); 

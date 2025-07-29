@@ -8,7 +8,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { createProcessingJob, updateProcessingStatus, jobs } from './status/route';
 import { randomUUID } from 'crypto';
-import { YouTubeAuthManagerV2 } from '../../../src/lib/youtube-auth-v2';
+// YouTube auth removed - using RapidAPI
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -22,25 +22,7 @@ async function ensureToolsAvailable() {
   return toolsAvailable;
 }
 
-async function ensureAuthFile() {
-  const cookieStore = await cookies();
-  const isAuthenticated = cookieStore.get('youtube_authenticated')?.value === 'true';
-  
-  if (isAuthenticated) {
-    const cookieDir = path.join(process.cwd(), 'temp');
-    const cookieFile = path.join(cookieDir, 'youtube_auth.txt');
-    
-    try {
-      if (!existsSync(cookieDir)) {
-        await fs.mkdir(cookieDir, { recursive: true });
-      }
-      await fs.writeFile(cookieFile, 'authenticated', 'utf-8');
-      console.log('✅ YouTube auth file created');
-    } catch (error) {
-      console.error('Failed to create auth file:', error);
-    }
-  }
-}
+// Auth file no longer needed with RapidAPI
 
 export async function POST(request) {
   try {
@@ -54,9 +36,7 @@ export async function POST(request) {
       );
     }
 
-    // Get session ID from cookies
-    const cookieStore = await cookies();
-    const sessionId = cookieStore.get('twipclip_session')?.value;
+    // Session ID no longer needed with RapidAPI
 
     // Ensure tools are available
     const ready = await performStartupCheck();
@@ -76,7 +56,7 @@ export async function POST(request) {
     console.log(`🔄 Force refresh: ${forceRefresh}`);
     console.log(`⚡ Async mode: ${async}`);
     console.log(`🤖 Model settings:`, modelSettings);
-    console.log(`🔐 Session ID:`, sessionId ? sessionId.substring(0, 8) + '...' : 'none');
+    console.log(`🚀 Using RapidAPI - no authentication needed`);
 
     // If async mode is requested but we're going to process synchronously anyway
     // Return the results in a format the client expects
@@ -118,7 +98,6 @@ export async function POST(request) {
               downloadClips: false,
               createZip: false,
               modelSettings,
-              sessionId,
               progressCallback: updateProgress
             }
           );

@@ -153,11 +153,7 @@ if (fs.existsSync(tempDir)) {
       return;
     }
     
-    // Keep main youtube_cookies.txt
-    if (file === 'youtube_cookies.txt') {
-      console.log('✅ Keeping youtube_cookies.txt');
-      return;
-    }
+                // No cookies needed with RapidAPI
     
     // Delete old media files
     if (file.match(/\.(mp4|webm|m4a|wav|mp3)$/)) {

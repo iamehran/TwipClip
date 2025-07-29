@@ -11,7 +11,7 @@ import { findContextAwareMatchesFast } from '../../app/utils/context-aware-match
 import { downloadAllClips, createZipFile, cleanupDownloads } from '../../app/utils/bulk-download';
 import path from 'path';
 import os from 'os';
-import { YouTubeAuthConfig } from './youtube-auth-v2';
+// YouTube auth removed - using RapidAPI
 
 // Configuration: Use context-aware processing for better quality
 const USE_CONTEXT_AWARE_MATCHING = process.env.USE_CONTEXT_AWARE !== 'false'; // Default true
@@ -51,7 +51,7 @@ export interface ProcessingOptions {
   sessionId?: string;
   progressCallback?: (progress: number, message: string) => void;
   modelSettings?: ModelSettings;
-  authConfig?: YouTubeAuthConfig;
+
 }
 
 export interface ModelSettings {
@@ -80,22 +80,19 @@ export async function processVideosWithPerfectMatching(
     outputDir = path.join(process.cwd(), 'temp', 'downloads'),
     quality = '720p',
     modelSettings,
-    authConfig
   } = options;
 
   console.log('🚀 Starting intelligent video processing v3...');
   console.log(`📝 Thread: ${thread.substring(0, 100)}...`);
   console.log(`🎥 Videos: ${videos.length}`);
   console.log(`🔧 Options:`, { forceRefresh, downloadClips, createZip, quality });
-  if (authConfig) {
-    console.log(`🔐 Authentication: ${authConfig.browser}${authConfig.profile ? `:${authConfig.profile}` : ''}`);
-  }
+  console.log('🚀 Using RapidAPI - no authentication needed!');
 
   const { progressCallback } = options;
   
-  console.log(`🤖 Model: ${modelSettings?.model || 'claude-4-sonnet'}`);
+      console.log(`🤖 Model: ${modelSettings?.model || 'claude-sonnet-4-20250514'}`);
   console.log(`🧠 Thinking: ${modelSettings?.thinkingEnabled ? 'Enabled' : 'Disabled'}`);
-  console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'medium'}`);
+      console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'high'}`);
 
   progressCallback?.(5, 'Parsing thread content...');
 
@@ -243,7 +240,7 @@ export async function processVideosWithPerfectMatching(
       outputDir,
       maxConcurrent: 3,
       quality,
-      authConfig,
+      
       onProgress: (progress) => {
         console.log(`  Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(0)}%)`);
       }

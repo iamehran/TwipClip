@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { downloadClips } from '../../../src/lib/video-downloader';
+import { downloadClip } from '../../utils/bulk-download';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 export async function POST(request) {
   try {
@@ -15,18 +17,23 @@ export async function POST(request) {
 
     // Create a match object for the downloader
     const match = {
-      match: true,
       videoUrl,
       startTime,
       endTime,
-      tweet: tweet || 'Manual download'
+      tweet: tweet || 'Manual download',
+      tweetId: 'manual',
+      confidence: 1.0
     };
 
+    // Create temp directory for download
+    const outputDir = path.join(os.tmpdir(), 'twipclip-single', Date.now().toString());
+    await fs.promises.mkdir(outputDir, { recursive: true });
+
     // Download just this one clip
-    const results = await downloadClips([match]);
+    const result = await downloadClip(match, outputDir);
     
-    if (results.length > 0 && results[0].success && results[0].filePath) {
-      const filePath = results[0].filePath;
+    if (result.success && result.filePath) {
+      const filePath = result.filePath;
       
       // Read the file
       const fileBuffer = await fs.promises.readFile(filePath);
@@ -52,7 +59,7 @@ export async function POST(request) {
       return NextResponse.json(
         { 
           error: 'Failed to download clip',
-          details: results[0]?.error 
+          details: result?.error 
         },
         { status: 500 }
       );
