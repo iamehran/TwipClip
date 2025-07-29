@@ -234,23 +234,17 @@ export async function checkSystemTools(): Promise<SystemTools> {
     return cachedTools;
   }
 
-  const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
-  
-  if (!USE_RAPIDAPI) {
-    console.log('\n🔧 Checking system tools...\n');
-    if (isRailway()) {
-      console.log('📍 Running on Railway\n');
-    }
-  }
+  console.log('\n🔧 Checking system tools...\n');
+  console.log('🚀 Using RapidAPI - only FFmpeg check needed\n');
 
-  const ytdlpResult = await findYtDlp();
+  // We only need FFmpeg now since we're using RapidAPI
   const ffmpegResult = await findFFmpeg();
 
   cachedTools = {
     ytdlp: {
-      available: !!ytdlpResult,
-      command: ytdlpResult?.command || 'yt-dlp',
-      version: ytdlpResult?.version
+      available: true, // Always true since we're using RapidAPI
+      command: 'rapidapi',
+      version: 'RapidAPI'
     },
     ffmpeg: {
       available: !!ffmpegResult,
@@ -259,23 +253,10 @@ export async function checkSystemTools(): Promise<SystemTools> {
     }
   };
 
-  if (!USE_RAPIDAPI) {
-    console.log('\n📋 System Tools Status:');
-    console.log(`yt-dlp: ${cachedTools.ytdlp.available ? '✅' : '❌'} ${cachedTools.ytdlp.version || 'Not found'}`);
-    console.log(`FFmpeg: ${cachedTools.ffmpeg.available ? '✅' : '❌'} ${cachedTools.ffmpeg.version || 'Not found'}`);
-    console.log('');
-
-    if (!cachedTools.ytdlp.available) {
-      console.error('❌ yt-dlp is required but not found!');
-      if (isRailway()) {
-        console.error('📝 yt-dlp should be installed via Docker.');
-        console.error('📝 Check Dockerfile includes yt-dlp installation.');
-        console.error('📝 The startup script should show yt-dlp availability.');
-      } else {
-        console.error('📝 To install: pip install yt-dlp');
-      }
-    }
-  }
+  console.log('\n📋 System Tools Status:');
+  console.log(`FFmpeg: ${cachedTools.ffmpeg.available ? '✅' : '❌'} ${cachedTools.ffmpeg.version || 'Not found'}`);
+  console.log(`Video Download: ✅ RapidAPI`);
+  console.log('');
 
   if (!cachedTools.ffmpeg.available) {
     console.error('❌ FFmpeg is required but not found!');
