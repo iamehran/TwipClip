@@ -81,10 +81,14 @@ export async function POST(request) {
         try {
           // Update progress periodically
           const updateProgress = (progress, message) => {
-            updateProcessingStatus(jobId, {
-              progress,
-              message
-            });
+            if (typeof updateProcessingStatus === 'function') {
+              updateProcessingStatus(jobId, {
+                progress,
+                message
+              });
+            } else {
+              console.error('updateProcessingStatus is not a function:', typeof updateProcessingStatus);
+            }
           };
           
           updateProgress(15, 'Extracting audio from videos...');

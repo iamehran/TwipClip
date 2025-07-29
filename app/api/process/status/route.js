@@ -136,6 +136,9 @@ export function updateProcessingStatus(jobId, update) {
 
 // Helper to create a new job
 export function createProcessingJob(jobId) {
+  // Clean up old jobs periodically
+  cleanupOldJobs();
+  
   const jobData = {
     status: 'processing',
     progress: 0,
@@ -149,4 +152,6 @@ export function createProcessingJob(jobId) {
   console.log(`✅ Job ${jobId} created in jobs Map`);
   console.log(`📊 Total jobs after creation: ${jobs.size}`);
   console.log(`🔍 Verification - job exists: ${jobs.has(jobId)}`);
+  
+  return jobData;
 } 
