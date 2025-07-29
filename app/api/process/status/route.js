@@ -1,22 +1,5 @@
 import { NextResponse } from 'next/server';
-
-// In-memory storage for job statuses
-// In production, use Redis or a database
-// Use global to persist across hot reloads in development
-if (!global.twipclipJobs) {
-  global.twipclipJobs = new Map();
-}
-export const jobs = global.twipclipJobs;
-
-// Helper function to clean up old jobs (older than 1 hour)
-function cleanupOldJobs() {
-  const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  for (const [jobId, job] of jobs.entries()) {
-    if (job.createdAt < oneHourAgo) {
-      jobs.delete(jobId);
-    }
-  }
-}
+import { jobs } from '../../../../src/lib/job-manager';
 
 // Job timeout configuration
 const JOB_TIMEOUT = 10 * 60 * 1000; // 10 minutes
@@ -50,108 +33,33 @@ export async function GET(request) {
     }
     
     return NextResponse.json({ 
-      status: 'not_found',
-      message: 'Job not found or expired' 
-    });
+      error: 'Job not found', 
+      availableJobs: Array.from(jobs.keys()),
+      totalJobs: jobs.size
+    }, { status: 404 });
   }
   
-  // Check for stuck jobs
+  // Check if job is stuck
   const now = Date.now();
+  const jobAge = now - status.startTime;
   const timeSinceUpdate = now - (status.lastUpdate || status.startTime);
-  const totalDuration = now - status.startTime;
   
-  // Detect stuck jobs (no update for 30s while processing)
-  if (status.status === 'processing' && status.progress >= 85 && timeSinceUpdate > STUCK_THRESHOLD) {
-    const stuckDuration = timeSinceUpdate;
-    console.log(`⚠️ Job ${jobId} appears stuck at ${status.progress}% for ${stuckDuration}ms`);
-    
-    // Auto-retry mechanism
-    return NextResponse.json({
+  // If job is running too long
+  if (status.status === 'processing' && jobAge > JOB_TIMEOUT) {
+    const failedStatus = {
       ...status,
-      stuck: true,
-      stuckDuration,
-      message: 'Processing appears stuck, checking completion...'
-    });
+      status: 'failed',
+      error: 'Processing timeout - job took too long',
+      lastUpdate: now
+    };
+    jobs.set(jobId, failedStatus);
+    return NextResponse.json(failedStatus);
   }
   
-  // Check for timeout
-  if (status.status === 'processing' && totalDuration > JOB_TIMEOUT) {
-    console.log(`⏱️ Job ${jobId} timed out after ${totalDuration}ms`);
-    updateProcessingStatus(jobId, {
-      status: 'failed',
-      error: 'Processing timeout exceeded',
-      progress: status.progress
-    });
-    return NextResponse.json({
-      ...status,
-      status: 'failed',
-      error: 'Processing timeout exceeded'
-    });
+  // If job hasn't been updated recently and is still processing
+  if (status.status === 'processing' && timeSinceUpdate > STUCK_THRESHOLD && status.progress < 90) {
+    console.warn(`⚠️ Job ${jobId} may be stuck - no updates for ${timeSinceUpdate}ms`);
   }
   
   return NextResponse.json(status);
-}
-
-// Track cleanup timeouts to prevent duplicates
-// Use global to persist across hot reloads in development
-if (!global.twipclipCleanupTimeouts) {
-  global.twipclipCleanupTimeouts = new Map();
-}
-const cleanupTimeouts = global.twipclipCleanupTimeouts;
-
-// Helper function to update status (exported for use in process route)
-export function updateProcessingStatus(jobId, update) {
-  const current = jobs.get(jobId) || {
-    status: 'processing',
-    progress: 0,
-    message: 'Initializing...',
-    startTime: Date.now()
-  };
-  
-  jobs.set(jobId, {
-    ...current,
-    ...update,
-    lastUpdate: Date.now()
-  });
-  
-  // Only set cleanup timeout for terminal states
-  if (update.status === 'completed' || update.status === 'failed') {
-    // Clear any existing cleanup timeout
-    if (cleanupTimeouts.has(jobId)) {
-      clearTimeout(cleanupTimeouts.get(jobId));
-    }
-    
-    const cleanupDelay = update.status === 'completed' ? 600000 : // 10 minutes for completed
-                         300000;                                  // 5 minutes for failed
-    
-    const timeoutId = setTimeout(() => {
-      console.log(`🗑️ Cleaning up job ${jobId} (was ${update.status})`);
-      jobs.delete(jobId);
-      cleanupTimeouts.delete(jobId);
-    }, cleanupDelay);
-    
-    cleanupTimeouts.set(jobId, timeoutId);
-  }
-}
-
-// Helper to create a new job
-export function createProcessingJob(jobId) {
-  // Clean up old jobs periodically
-  cleanupOldJobs();
-  
-  const jobData = {
-    status: 'processing',
-    progress: 0,
-    message: 'Starting processing...',
-    startTime: Date.now(),
-    lastUpdate: Date.now(),
-    createdAt: Date.now()
-  };
-  
-  jobs.set(jobId, jobData);
-  console.log(`✅ Job ${jobId} created in jobs Map`);
-  console.log(`📊 Total jobs after creation: ${jobs.size}`);
-  console.log(`🔍 Verification - job exists: ${jobs.has(jobId)}`);
-  
-  return jobData;
 } 

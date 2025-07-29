@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server';
 import { processVideosWithPerfectMatching } from '../../../src/lib/intelligent-processor-v3';
 import { performStartupCheck } from '../../../src/lib/startup-check';
 import { handleError, logError } from '../../../src/lib/error-handler';
-import { cookies } from 'next/headers';
 import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { createProcessingJob, updateProcessingStatus, jobs } from './status/route';
 import { randomUUID } from 'crypto';
 // YouTube auth removed - using RapidAPI
+
+// Import job management functions from a shared lib file instead of API route
+import { createProcessingJob, updateProcessingStatus, jobs } from '../../../src/lib/job-manager';
 
 // Run startup check once when module loads
 let startupCheckDone = false;
