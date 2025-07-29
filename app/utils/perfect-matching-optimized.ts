@@ -76,7 +76,7 @@ function getTokenLimits(modelSettings?: ModelSettings): { maxTokens: number; max
 function getApiModelName(model?: string): string {
   // Use model names directly (no mapping needed)
   if (!model) {
-    return 'claude-sonnet-4-20250514'; // Default to Sonnet 4
+      return 'claude-sonnet-4-20250514'; // Default to Sonnet 4
   }
   return model;
 }

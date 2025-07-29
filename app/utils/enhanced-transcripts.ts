@@ -361,119 +361,119 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
         }
       } else {
         // Original yt-dlp logic (kept for fallback, but won't be used with USE_RAPIDAPI=true)
-        console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+      console.log(`Extracting audio for ${videoInfo.platform}:${videoInfo.id}...`);
+      
+      const ytDlpCmd = await getYtDlpCommand();
+      const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+      
+      // Get video metadata first to determine best strategy
+      const metadata = await getVideoMetadata(videoInfo.url, sessionId);
+      
+      // For very large files, we'll download the full audio and then chunk it locally
+      // This is more efficient than downloading chunks separately
+      let extractCommand: string;
+      if (isDocker) {
+        // Enhanced command for Docker/Railway with cookies and user-agent
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         
-        const ytDlpCmd = await getYtDlpCommand();
-        const isDocker = process.env.RAILWAY_ENVIRONMENT || process.env.DOCKER_ENV;
+        // Check for cookie options
+        let cookieFlag = '';
         
-        // Get video metadata first to determine best strategy
-        const metadata = await getVideoMetadata(videoInfo.url, sessionId);
-        
-        // For very large files, we'll download the full audio and then chunk it locally
-        // This is more efficient than downloading chunks separately
-        let extractCommand: string;
-        if (isDocker) {
-          // Enhanced command for Docker/Railway with cookies and user-agent
-          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-          
-          // Check for cookie options
-          let cookieFlag = '';
-          
-          // Check if cookie file exists for this session
-          if (sessionId) {
-            const userCookieFile = isDocker 
-              ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
-              : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-              
-            console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
             
-            // Use synchronous check like video-metadata.ts does
-            const fsSync = require('fs');
-            if (fsSync.existsSync(userCookieFile)) {
-              cookieFlag = `--cookies "${userCookieFile}"`;
-              console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
-              
-              // Debug: Check first few lines of cookie file
-              try {
-                const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
-                const lines = cookieContent.split('\n').slice(0, 3);
-                console.log('Cookie file preview:', lines.join(' | '));
-                console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
-              } catch (e) {
-                console.log('Could not read cookie file for preview');
-              }
-            } else {
-              console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
+          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+          
+          // Use synchronous check like video-metadata.ts does
+          const fsSync = require('fs');
+          if (fsSync.existsSync(userCookieFile)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
+            console.log('✅ Using YouTube cookies for session:', sessionId.substring(0, 8) + '...');
+            
+            // Debug: Check first few lines of cookie file
+            try {
+              const cookieContent = await fs.readFile(userCookieFile, 'utf-8');
+              const lines = cookieContent.split('\n').slice(0, 3);
+              console.log('Cookie file preview:', lines.join(' | '));
+              console.log('Total cookie lines:', cookieContent.split('\n').filter(l => l.trim() && !l.startsWith('#')).length);
+            } catch (e) {
+              console.log('Could not read cookie file for preview');
             }
           } else {
-            console.log('No session ID provided - authentication may be required');
+            console.log('No YouTube cookies found for session:', sessionId?.substring(0, 8) + '...');
           }
-          
-          // Use the format selection strategy based on metadata
-          const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
-          let formatSelection = '';
-          
-          if (videoSizeMB > 1000) { // Over 1GB
-            formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
-          } else {
-            formatSelection = '-f "worstaudio/bestaudio"';
-          }
-          
-          extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
         } else {
-          // Windows/local command - also check for cookies
-          let cookieFlag = '';
-          if (sessionId) {
-            const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-            console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
-            if (require('fs').existsSync(userCookieFile)) {
-              cookieFlag = `--cookies "${userCookieFile}"`;
-              console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
-            } else {
-              console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
-            }
-          }
-          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-          extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
+          console.log('No session ID provided - authentication may be required');
         }
         
-        console.log(`Running: ${extractCommand}`);
+        // Use the format selection strategy based on metadata
+        const videoSizeMB = metadata?.filesize ? metadata.filesize / (1024 * 1024) : 0;
+        let formatSelection = '';
         
-        try {
-          await execAsync(extractCommand, {
-            timeout: 600000, // 10 minutes (increased from 5)
-            maxBuffer: 50 * 1024 * 1024 // 50MB buffer
-          });
-        } catch (error) {
-          console.error('Audio extraction failed:', error);
-          
-          // Try without audio extraction flag
-          const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-          
-          // Same cookie logic as above
-          let cookieFlag = '';
-          
-          // Check if cookie file exists for this session
-          if (sessionId) {
-            const userCookieFile = isDocker 
-              ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
-              : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
-              
-            if (require('fs').existsSync(userCookieFile)) {
-              cookieFlag = `--cookies ${userCookieFile}`;
-            }
+        if (videoSizeMB > 1000) { // Over 1GB
+          formatSelection = '-f "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"';
+        } else {
+          formatSelection = '-f "worstaudio/bestaudio"';
+        }
+        
+        extractCommand = `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" ${formatSelection} --extract-audio --audio-format m4a --audio-quality 5 --no-playlist --no-check-certificate --extractor-retries 3 --fragment-retries 3 -o ${audioPath} ${videoInfo.url}`.trim();
+      } else {
+        // Windows/local command - also check for cookies
+        let cookieFlag = '';
+        if (sessionId) {
+          const userCookieFile = path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+          console.log(`🔍 Checking for cookie file at: ${userCookieFile}`);
+          if (require('fs').existsSync(userCookieFile)) {
+            cookieFlag = `--cookies "${userCookieFile}"`;
+            console.log('✅ Using YouTube cookies for session (Windows):', sessionId.substring(0, 8) + '...');
+          } else {
+            console.log('❌ No YouTube cookies found for session (Windows):', sessionId?.substring(0, 8) + '...');
           }
-          
-          // Fallback: Try format 140 directly without extraction
-          const fallbackCommand = isDocker 
-            ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
-            : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
-          
-          console.log('Trying fallback command:', fallbackCommand);
-          await execAsync(fallbackCommand, {
-            timeout: 600000, // 10 minutes (increased from 5)
-            maxBuffer: 50 * 1024 * 1024 // 50MB buffer
-          });
+        }
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        extractCommand = `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "worstaudio/bestaudio" --extract-audio --audio-format m4a --audio-quality 5 -o "${audioPath}" "${videoInfo.url}"`.trim();
+      }
+      
+      console.log(`Running: ${extractCommand}`);
+      
+      try {
+        await execAsync(extractCommand, {
+          timeout: 600000, // 10 minutes (increased from 5)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+        });
+      } catch (error) {
+        console.error('Audio extraction failed:', error);
+        
+        // Try without audio extraction flag
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        
+        // Same cookie logic as above
+        let cookieFlag = '';
+        
+        // Check if cookie file exists for this session
+        if (sessionId) {
+          const userCookieFile = isDocker 
+            ? `/app/temp/user-cookies/${sessionId}/youtube_cookies.txt`
+            : path.join(process.cwd(), 'temp', 'user-cookies', sessionId, 'youtube_cookies.txt');
+            
+          if (require('fs').existsSync(userCookieFile)) {
+            cookieFlag = `--cookies ${userCookieFile}`;
+          }
+        }
+        
+        // Fallback: Try format 140 directly without extraction
+        const fallbackCommand = isDocker 
+          ? `${ytDlpCmd} ${cookieFlag} --user-agent "${userAgent}" -f "140" --no-check-certificate --socket-timeout 30 --retries 10 -o ${audioPath} ${videoInfo.url}`.trim()
+          : `"${ytDlpCmd}" ${cookieFlag} --user-agent "${userAgent}" -f "140/bestaudio" -o "${audioPath}" "${videoInfo.url}"`.trim();
+        
+        console.log('Trying fallback command:', fallbackCommand);
+        await execAsync(fallbackCommand, {
+          timeout: 600000, // 10 minutes (increased from 5)
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+        });
         }
       }
       
@@ -1232,7 +1232,7 @@ function enhancePunctuation(segments: TranscriptSegment[]): TranscriptSegment[] 
  */
 async function getVideoInfo(videoId: string) {
   // This function is disabled with RapidAPI
-  return null;
+    return null;
 }
 
 /**

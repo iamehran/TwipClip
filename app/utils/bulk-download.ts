@@ -82,63 +82,63 @@ export async function downloadClip(
       const ytDlpPath = await getYtDlpCommand();
       
       // Build download command
-      let downloadCmd = `"${ytDlpPath}"`;
-      
-      // Add user-agent to prevent bot detection
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      downloadCmd += ` --user-agent "${userAgent}"`;
-      
-      // Add additional headers to prevent bot detection
-      downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
-      downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
-      
-      // Optimized format selection for social media
-      // Force 720p for consistent quality and reasonable file sizes
-      downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
-      downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
-      downloadCmd += ` --merge-output-format mp4`;
-      downloadCmd += ` --no-warnings --quiet`;
-      
-      // Add retry options for reliability
-      downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
-      
-      // Add no-check-certificate to handle SSL issues
-      downloadCmd += ` --no-check-certificate`;
-      
-      onProgress?.(`Downloading video (720p optimized)...`);
-      
-      let downloadAttempts = 0;
-      const maxAttempts = 3;
-      let lastError: any = null;
-      
-      while (downloadAttempts < maxAttempts) {
-        try {
-          downloadAttempts++;
-          // Wait for rate limit slot
-          await youtubeRateLimiter.waitForSlot();
-          
-          // Queue the download job
-          await globalQueue.addDownloadJob(async () => {
-            return await execAsync(downloadCmd, { 
-              timeout: 300000, // 5 minute timeout
-              maxBuffer: 10 * 1024 * 1024 
-            });
+    let downloadCmd = `"${ytDlpPath}"`;
+    
+    // Add user-agent to prevent bot detection
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    downloadCmd += ` --user-agent "${userAgent}"`;
+    
+    // Add additional headers to prevent bot detection
+    downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
+    downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
+    
+    // Optimized format selection for social media
+    // Force 720p for consistent quality and reasonable file sizes
+    downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
+    downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
+    downloadCmd += ` --merge-output-format mp4`;
+    downloadCmd += ` --no-warnings --quiet`;
+    
+    // Add retry options for reliability
+    downloadCmd += ` --retries 10 --fragment-retries 10 --retry-sleep 3`;
+    
+    // Add no-check-certificate to handle SSL issues
+    downloadCmd += ` --no-check-certificate`;
+    
+    onProgress?.(`Downloading video (720p optimized)...`);
+    
+    let downloadAttempts = 0;
+    const maxAttempts = 3;
+    let lastError: any = null;
+    
+    while (downloadAttempts < maxAttempts) {
+      try {
+        downloadAttempts++;
+        // Wait for rate limit slot
+        await youtubeRateLimiter.waitForSlot();
+        
+        // Queue the download job
+        await globalQueue.addDownloadJob(async () => {
+          return await execAsync(downloadCmd, { 
+            timeout: 300000, // 5 minute timeout
+            maxBuffer: 10 * 1024 * 1024 
           });
-          break; // Success, exit loop
-        } catch (error: any) {
-          lastError = error;
-          
-          if (downloadAttempts >= maxAttempts) {
-            throw error;
-          }
-          
-          onProgress?.(`⚠️ Download attempt ${downloadAttempts} failed, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+        });
+        break; // Success, exit loop
+      } catch (error: any) {
+        lastError = error;
+        
+        if (downloadAttempts >= maxAttempts) {
+          throw error;
         }
+        
+        onProgress?.(`⚠️ Download attempt ${downloadAttempts} failed, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
       }
-      
-      if (lastError && downloadAttempts >= maxAttempts) {
-        throw lastError;
+    }
+    
+    if (lastError && downloadAttempts >= maxAttempts) {
+      throw lastError;
       }
     }
     
