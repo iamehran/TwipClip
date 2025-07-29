@@ -8,8 +8,84 @@ import { existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 // YouTube auth removed - using RapidAPI
 
-// Import job management functions from a shared lib file instead of API route
-import { createProcessingJob, updateProcessingStatus, jobs } from '../../../src/lib/job-manager';
+// Inline job management to avoid context issues in production
+// Use global to persist across hot reloads
+if (typeof global !== 'undefined' && !global.twipclipJobs) {
+  global.twipclipJobs = new Map();
+  global.twipclipCleanupTimeouts = new Map();
+}
+
+const getJobsMap = () => {
+  if (typeof global !== 'undefined' && global.twipclipJobs) {
+    return global.twipclipJobs;
+  }
+  return new Map();
+};
+
+const getTimeoutsMap = () => {
+  if (typeof global !== 'undefined' && global.twipclipCleanupTimeouts) {
+    return global.twipclipCleanupTimeouts;
+  }
+  return new Map();
+};
+
+// Inline implementations to avoid import issues
+const createProcessingJob = (jobId) => {
+  try {
+    const jobs = getJobsMap();
+    const jobData = {
+      status: 'processing',
+      progress: 0,
+      message: 'Starting processing...',
+      startTime: Date.now(),
+      lastUpdate: Date.now(),
+      createdAt: Date.now()
+    };
+    
+    jobs.set(jobId, jobData);
+    console.log(`✅ Job ${jobId} created inline`);
+    return jobData;
+  } catch (err) {
+    console.error('Error creating job:', err);
+    return null;
+  }
+};
+
+const updateProcessingStatus = (jobId, update) => {
+  try {
+    const jobs = getJobsMap();
+    const cleanupTimeouts = getTimeoutsMap();
+    
+    const current = jobs.get(jobId) || {
+      status: 'processing',
+      progress: 0,
+      message: 'Initializing...',
+      startTime: Date.now()
+    };
+    
+    jobs.set(jobId, {
+      ...current,
+      ...update,
+      lastUpdate: Date.now()
+    });
+    
+    // Handle cleanup for terminal states
+    if (update.status === 'completed' || update.status === 'failed') {
+      if (cleanupTimeouts.has(jobId)) {
+        clearTimeout(cleanupTimeouts.get(jobId));
+      }
+      
+      const timeout = setTimeout(() => {
+        jobs.delete(jobId);
+        cleanupTimeouts.delete(jobId);
+      }, 60 * 60 * 1000);
+      
+      cleanupTimeouts.set(jobId, timeout);
+    }
+  } catch (err) {
+    console.error('Error updating job status:', err);
+  }
+};
 
 // Run startup check once when module loads
 let startupCheckDone = false;
@@ -74,135 +150,99 @@ export async function POST(request) {
       });
       
       // Log job creation
-      console.log('📋 Job created and stored:', jobs.get(jobId));
-      console.log('🗺️ Jobs Map instance ID:', jobs);
+      console.log('📋 Job created and stored:', getJobsMap().get(jobId));
+      console.log('🗺️ Jobs Map instance ID:', getJobsMap());
       
       // Start processing in the background
-      // Create a bound function to maintain context
-      const startBackgroundProcessing = async () => {
-        try {
-          // Small delay to ensure response is sent first
-          await new Promise(resolve => {
-            const timer = setTimeout(() => resolve(), 10);
-            // Ensure timer is cleared if needed
-            if (timer && typeof timer === 'number') {
-              // Timer started successfully
-            }
-          });
-          
-          // Create a bound update function to ensure it's always available
-          const boundUpdateStatus = (jobId, update) => {
-            try {
-              // Check if function exists before calling
-              if (typeof updateProcessingStatus === 'function') {
-                updateProcessingStatus(jobId, update);
-              } else {
-                console.error('updateProcessingStatus is not available');
-              }
-            } catch (err) {
-              console.error('Error in boundUpdateStatus:', err);
-            }
-          };
-          
-          // Update progress periodically with bound function
-          const updateProgress = (progress, message) => {
-            boundUpdateStatus(jobId, {
-              progress,
-              message
-            });
-          };
-          
-          updateProgress(15, 'Extracting audio from videos...');
-          
-          // Process with custom progress callback
-          const processResult = await processVideosWithPerfectMatching(
-            thread, 
-            videos,
-            {
-              forceRefresh,
-              downloadClips: false,
-              createZip: false,
-              modelSettings,
-              progressCallback: updateProgress
-            }
-          );
-          
-          // Destructure results after await to ensure they're available
-          const { results, matches, statistics } = processResult || { results: [], matches: [], statistics: {} };
-
-          console.log('✅ Processing complete');
-          console.log(`📊 Statistics:`, statistics);
-
-          // Format the response to match what the client expects
-          const formattedMatches = (matches || []).map(match => ({
-            match: true,
-            tweet: match.tweetText,
-            videoUrl: match.videoUrl,
-            startTime: match.startTime,
-            endTime: match.endTime,
-            text: match.transcriptText,
-            matchReason: match.reasoning,
-            confidence: match.confidence,
-            downloadPath: match.downloadPath || '',
-            downloadSuccess: match.downloadSuccess || false
-          }));
-
-          // Update job with results using bound function
-          const finalStatus = {
-            status: 'completed',
-            progress: 100,
-            message: 'Processing complete',
-            results: {
-              success: true,
-              matches: formattedMatches,
-              summary: {
-                videosProcessed: videos.length,
-                videosSuccessful: results.filter(r => r && r.success).length,
-                clipsFound: matches.length,
-                clipsDownloaded: 0,
-                avgConfidence: statistics.averageConfidence || 0,
-                aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
-                         modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
-                         'Claude 3.7 Sonnet',
-                processingTimeMs: statistics.processingTimeMs || 0,
-                transcriptionQuality: 'High',
-                transcriptWords: statistics.totalTranscriptWords || 0
-              }
-            }
-          };
-
-          boundUpdateStatus(jobId, finalStatus);
-          
-          // Log job completion
-          console.log(`✅ Job ${jobId} completed and stored with ${formattedMatches.length} matches`);
-          console.log('📋 Job final status stored:', finalStatus.status);
-
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`Error processing job ${jobId}:`, error);
-          
-          // Try to update job status with error using a direct check
+      // Use a simple setTimeout to avoid complex async contexts
+      setTimeout(() => {
+        // Process asynchronously
+        (async () => {
           try {
-            if (typeof updateProcessingStatus === 'function') {
-              updateProcessingStatus(jobId, {
-                status: 'failed',
-                progress: 0,
-                message: 'Processing failed',
-                error: errorMessage
-              });
-            }
-          } catch (updateErr) {
-            console.error('Failed to update error status:', updateErr);
+            console.log(`🚀 Starting async processing for job ${jobId}`);
+            
+            // Simple progress update function
+            const updateProgress = (progress, message) => {
+              console.log(`📊 Progress: ${progress}% - ${message}`);
+              updateProcessingStatus(jobId, { progress, message });
+            };
+            
+            updateProgress(15, 'Extracting audio from videos...');
+            
+            // Process videos
+            const processResult = await processVideosWithPerfectMatching(
+              thread, 
+              videos,
+              {
+                forceRefresh,
+                downloadClips: false,
+                createZip: false,
+                modelSettings,
+                progressCallback: updateProgress
+              }
+            );
+            
+            const { results, matches, statistics } = processResult || { 
+              results: [], 
+              matches: [], 
+              statistics: {} 
+            };
+
+            console.log('✅ Processing complete');
+            console.log(`📊 Statistics:`, statistics);
+
+            // Format matches
+            const formattedMatches = (matches || []).map(match => ({
+              match: true,
+              tweet: match.tweetText,
+              videoUrl: match.videoUrl,
+              startTime: match.startTime,
+              endTime: match.endTime,
+              text: match.transcriptText,
+              matchReason: match.reasoning,
+              confidence: match.confidence,
+              downloadPath: match.downloadPath || '',
+              downloadSuccess: match.downloadSuccess || false
+            }));
+
+            // Create final status
+            const finalStatus = {
+              status: 'completed',
+              progress: 100,
+              message: 'Processing complete',
+              results: {
+                success: true,
+                matches: formattedMatches,
+                summary: {
+                  videosProcessed: videos.length,
+                  videosSuccessful: results.filter(r => r && r.success).length,
+                  clipsFound: matches.length,
+                  clipsDownloaded: 0,
+                  avgConfidence: statistics.averageConfidence || 0,
+                  aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
+                           modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
+                           'Claude 3.7 Sonnet',
+                  processingTimeMs: statistics.processingTimeMs || 0,
+                  transcriptionQuality: 'High',
+                  transcriptWords: statistics.totalTranscriptWords || 0
+                }
+              }
+            };
+
+            updateProcessingStatus(jobId, finalStatus);
+            console.log(`✅ Job ${jobId} completed successfully`);
+
+          } catch (error) {
+            console.error(`❌ Error in job ${jobId}:`, error);
+            updateProcessingStatus(jobId, {
+              status: 'failed',
+              progress: 0,
+              message: 'Processing failed',
+              error: error.message || 'Unknown error'
+            });
           }
-        }
-      };
-      
-      // Execute the background processing with promise catch
-      Promise.resolve()
-        .then(() => startBackgroundProcessing())
-        .catch(err => {
-          console.error('Background processing failed:', err);
-        });
+        })();
+      }, 100); // Small delay to ensure response is sent first
       
       // Return job ID for polling
       return NextResponse.json({

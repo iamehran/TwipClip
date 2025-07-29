@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
-import { jobs } from '../../../../src/lib/job-manager.js';
+
+// Inline access to jobs to avoid import issues
+const getJobsMap = () => {
+  if (typeof global !== 'undefined' && global.twipclipJobs) {
+    return global.twipclipJobs;
+  }
+  return new Map();
+};
 
 // Job timeout configuration
-const JOB_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const STUCK_THRESHOLD = 30 * 1000; // 30 seconds without progress update
 
 export async function GET(request) {
@@ -13,6 +20,7 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Job ID required' }, { status: 400 });
   }
   
+  const jobs = getJobsMap();
   const status = jobs.get(jobId);
   
   console.log(`📊 Status check for job ${jobId}:`, status ? `Found (${status.status})` : 'Not found');
@@ -45,7 +53,7 @@ export async function GET(request) {
   const timeSinceUpdate = now - (status.lastUpdate || status.startTime);
   
   // If job is running too long
-  if (status.status === 'processing' && jobAge > JOB_TIMEOUT) {
+  if (status.status === 'processing' && jobAge > JOB_TIMEOUT_MS) {
     const failedStatus = {
       ...status,
       status: 'failed',

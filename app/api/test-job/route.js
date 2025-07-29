@@ -1,9 +1,58 @@
 import { NextResponse } from 'next/server';
-import { createProcessingJob, updateProcessingStatus, jobs } from '../../../src/lib/job-manager.js';
+
+// Inline job management implementations
+const getJobsMap = () => {
+  if (typeof global !== 'undefined' && global.twipclipJobs) {
+    return global.twipclipJobs;
+  }
+  return new Map();
+};
+
+const createProcessingJob = (jobId) => {
+  try {
+    const jobs = getJobsMap();
+    const jobData = {
+      status: 'processing',
+      progress: 0,
+      message: 'Starting processing...',
+      startTime: Date.now(),
+      lastUpdate: Date.now(),
+      createdAt: Date.now()
+    };
+    
+    jobs.set(jobId, jobData);
+    console.log(`✅ Job ${jobId} created in test`);
+    return jobData;
+  } catch (err) {
+    console.error('Error creating job:', err);
+    return null;
+  }
+};
+
+const updateProcessingStatus = (jobId, update) => {
+  try {
+    const jobs = getJobsMap();
+    const current = jobs.get(jobId) || {
+      status: 'processing',
+      progress: 0,
+      message: 'Initializing...',
+      startTime: Date.now()
+    };
+    
+    jobs.set(jobId, {
+      ...current,
+      ...update,
+      lastUpdate: Date.now()
+    });
+  } catch (err) {
+    console.error('Error updating job status:', err);
+  }
+};
 
 export async function GET() {
   try {
     const testJobId = 'test-' + Date.now();
+    const jobs = getJobsMap();
     
     // Test creating a job
     console.log('Testing job creation...');
