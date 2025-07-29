@@ -109,7 +109,7 @@ export class RapidAPIYouTubeClient {
   }
 
   /**
-   * Get available quality options for a video (with caching)
+   * Get available video qualities
    */
   async getAvailableQualities(videoUrl: string): Promise<VideoQuality[]> {
     if (!this.apiKey) {
@@ -123,18 +123,18 @@ export class RapidAPIYouTubeClient {
 
     // Check cache first
     if (this.qualityCache.has(videoId)) {
-      console.log(`📦 Using cached qualities for video: ${videoId}`);
+      console.log(`✅ Using cached qualities for video: ${videoId}`);
       return this.qualityCache.get(videoId)!;
     }
 
     await this.rateLimiter.waitIfNeeded();
     
-    console.log(`🔍 Getting available qualities for video: ${videoId}`);
-
     try {
+      console.log(`🔍 Getting available qualities for video: ${videoId}`);
+      
       const response = await this.makeRequestWithRetry({
         method: 'GET',
-        url: `https://${this.apiHost}/get_available_quality/${videoId}`,
+        url: `https://${this.apiHost}/get_available_quality/${videoId}`, // Fixed endpoint
         headers: {
           'X-RapidAPI-Key': this.apiKey,
           'X-RapidAPI-Host': this.apiHost
@@ -142,15 +142,59 @@ export class RapidAPIYouTubeClient {
         timeout: 30000
       });
 
-      console.log(`✅ Found ${response.data.length} quality options`);
+      const qualities: VideoQuality[] = response.data.formats
+        ?.filter((f: any) => f.quality || f.qualityLabel)
+        ?.map((f: any) => ({
+          id: f.itag || f.format_id,
+          quality: f.qualityLabel || f.quality || f.format_note || 'Unknown',
+          type: f.mimeType?.includes('audio') || f.acodec !== 'none' ? 'audio' : 'video',
+          bitrate: f.abr || f.tbr || f.bitrate || 0,
+          size: f.filesize || f.filesize_approx || 'N/A',
+          mime: f.mimeType || f.ext || 'Unknown'
+        })) || [];
+
+      console.log(`✅ Found ${qualities.length} quality options`);
       
       // Cache the result
-      this.qualityCache.set(videoId, response.data);
+      this.qualityCache.set(videoId, qualities);
       
-      return response.data;
+      return qualities;
     } catch (error: any) {
       console.error('Failed to get qualities:', error.response?.data || error.message);
       throw new Error(`Failed to get video qualities: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get video info
+   */
+  async getVideoInfo(videoUrl: string): Promise<any> {
+    if (!this.apiKey) {
+      throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
+
+    await this.rateLimiter.waitIfNeeded();
+    
+    const videoId = this.extractVideoId(videoUrl);
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL');
+    }
+
+    try {
+      const response = await this.makeRequestWithRetry({
+        method: 'GET',
+        url: `https://${this.apiHost}/get-video-info/${videoId}`, // Fixed endpoint
+        headers: {
+          'X-RapidAPI-Key': this.apiKey,
+          'X-RapidAPI-Host': this.apiHost
+        },
+        timeout: 30000
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to get video info:', error.response?.data || error.message);
+      throw new Error(`Failed to get video info: ${error.message}`);
     }
   }
 
@@ -191,14 +235,14 @@ export class RapidAPIYouTubeClient {
 
       console.log(`📊 Selected audio quality: ${selectedQuality.mime} (bitrate: ${selectedQuality.bitrate}, id: ${selectedQuality.id})`);
       
-      // Now get the download URL - need to check correct endpoint format
+      // Now get the download URL
       await this.rateLimiter.waitIfNeeded();
       
       const response = await this.makeRequestWithRetry({
         method: 'GET',
-        url: `https://${this.apiHost}/download/${videoId}`, // Changed endpoint
+        url: `https://${this.apiHost}/download_audio/${videoId}`, // Fixed endpoint
         params: {
-          quality: selectedQuality.id  // Using 'quality' instead of 'itag'
+          quality: selectedQuality.id
         },
         headers: {
           'X-RapidAPI-Key': this.apiKey,
@@ -232,7 +276,7 @@ export class RapidAPIYouTubeClient {
   /**
    * Get video download URL
    */
-  async getVideoDownloadUrl(videoUrl: string, preferredQuality?: number): Promise<DownloadResponse> {
+  async getVideoDownloadUrl(videoUrl: string, quality: string = '720p'): Promise<DownloadResponse> {
     if (!this.apiKey) {
       throw new Error('RAPIDAPI_KEY environment variable is not set');
     }
@@ -244,28 +288,40 @@ export class RapidAPIYouTubeClient {
       throw new Error('Invalid YouTube URL');
     }
 
-    // Get available qualities first
-    const qualities = await this.getAvailableQualities(videoUrl);
-    const videoQualities = qualities.filter(q => q.type === 'video');
-    
-    if (videoQualities.length === 0) {
-      throw new Error('No video qualities available');
-    }
-
-    // Select quality based on preference or default to 720p
-    const targetQuality = preferredQuality || 720;
-    const selectedQuality = videoQualities.find(q => 
-      q.quality && q.quality.includes(targetQuality.toString())
-    ) || videoQualities[0];
-
-    console.log(`📹 Selected video quality: ${selectedQuality.quality || 'default'}`);
-
     try {
+      const qualities = await this.getAvailableQualities(videoUrl);
+      const videoQualities = qualities.filter(q => q.type === 'video');
+
+      // Find the closest quality match
+      let selectedQuality = videoQualities.find(q => q.quality && q.quality.includes(quality));
+      if (!selectedQuality && videoQualities.length > 0) {
+        // Sort by quality and pick the best available under the requested quality
+        const qualityNum = parseInt(quality);
+        selectedQuality = videoQualities
+          .filter(q => {
+            const qNum = parseInt(q.quality || '0');
+            return !isNaN(qNum) && qNum <= qualityNum;
+          })
+          .sort((a, b) => parseInt(b.quality || '0') - parseInt(a.quality || '0'))[0] || videoQualities[0];
+      }
+
+      if (!selectedQuality) {
+        throw new Error('No video qualities available');
+      }
+
+      console.log(`📹 Requesting video download for ${videoId} with quality: ${selectedQuality.quality} (ID: ${selectedQuality.id})`);
+      
+      await this.rateLimiter.waitIfNeeded();
+      
+      // Check if it's a YouTube Short and use appropriate endpoint
+      const isShort = videoUrl.includes('/shorts/');
+      const endpoint = isShort ? 'download_short' : 'download_video';
+      
       const response = await this.makeRequestWithRetry({
         method: 'GET',
-        url: `https://${this.apiHost}/get_download_url/${videoId}`,
+        url: `https://${this.apiHost}/${endpoint}/${videoId}`, // Fixed endpoint
         params: {
-          itag: selectedQuality.id
+          quality: selectedQuality.id
         },
         headers: {
           'X-RapidAPI-Key': this.apiKey,
@@ -274,13 +330,19 @@ export class RapidAPIYouTubeClient {
         timeout: 30000
       });
 
+      const downloadUrl = response.data?.download_url || response.data?.url || response.data?.file;
+      if (!downloadUrl) {
+        console.error('Unexpected response structure:', response.data);
+        throw new Error('Invalid response from download API');
+      }
+
       return {
         id: selectedQuality.id,
         quality: selectedQuality.quality,
         bitrate: selectedQuality.bitrate,
         size: selectedQuality.size,
         mime: selectedQuality.mime,
-        file: response.data.download_url,
+        file: downloadUrl,
         comment: ''
       };
     } catch (error: any) {
@@ -292,7 +354,7 @@ export class RapidAPIYouTubeClient {
   /**
    * Wait for file to be ready and download it
    */
-  async waitAndDownloadFile(downloadUrl: string, outputPath: string, maxAttempts: number = 20): Promise<void> {
+  async waitAndDownloadFile(downloadUrl: string, outputPath: string, type: string = 'video', qualityId: string = ''): Promise<void> {
     console.log(`⏳ Waiting for file to be ready at: ${downloadUrl}`);
     
     // Ensure directory exists
@@ -300,7 +362,7 @@ export class RapidAPIYouTubeClient {
     
     let attempts = 0;
     
-    while (attempts < maxAttempts) {
+    while (attempts < 20) { // Increased maxAttempts to 20
       attempts++;
       
       try {
@@ -331,7 +393,7 @@ export class RapidAPIYouTubeClient {
       } catch (error: any) {
         // If we get a 404, the file isn't ready yet
         if (error.response?.status === 404) {
-          console.log(`⏳ File not ready yet (attempt ${attempts}/${maxAttempts}), waiting 5 seconds...`);
+          console.log(`⏳ File not ready yet (attempt ${attempts}/${20}), waiting 5 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
           continue;
         }
@@ -342,34 +404,29 @@ export class RapidAPIYouTubeClient {
       }
     }
     
-    throw new Error(`File was not ready after ${maxAttempts} attempts`);
+    throw new Error(`File was not ready after ${attempts} attempts`);
   }
 
   /**
    * Download audio from YouTube video
    */
   async downloadAudio(videoUrl: string, outputPath: string): Promise<void> {
+    console.log(`🎵 Downloading audio from: ${videoUrl}`);
+    
     const downloadInfo = await this.getAudioDownloadUrl(videoUrl);
-    await this.waitAndDownloadFile(downloadInfo.file, outputPath);
+    
+    // Extract quality ID as string
+    const qualityId = downloadInfo.id.toString();
+    
+    await this.waitAndDownloadFile(downloadInfo.file, outputPath, 'audio', qualityId);
   }
 
   /**
    * Download video from YouTube
    */
   async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
-    // If quality preference is specified, find matching quality ID
-    let qualityId: number | undefined;
-    
-    if (quality) {
-      const qualities = await this.getAvailableQualities(videoUrl);
-      const match = qualities.find(q => q.quality === quality && q.type === 'video');
-      if (match) {
-        qualityId = match.id;
-      }
-    }
-    
-    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, qualityId);
-    await this.waitAndDownloadFile(downloadInfo.file, outputPath);
+    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, quality || '720p');
+    await this.waitAndDownloadFile(downloadInfo.file, outputPath, 'video', downloadInfo.id.toString());
   }
 }
 
@@ -377,6 +434,11 @@ export class RapidAPIYouTubeClient {
 let _rapidAPIClient: RapidAPIYouTubeClient | null = null;
 
 export const rapidAPIClient = {
+  _rapidAPIClient: _rapidAPIClient,
+  getVideoInfo: async (videoUrl: string) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.getVideoInfo(videoUrl);
+  },
   getAvailableQualities: async (videoUrl: string) => {
     if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
     return _rapidAPIClient.getAvailableQualities(videoUrl);
@@ -385,9 +447,9 @@ export const rapidAPIClient = {
     if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
     return _rapidAPIClient.getAudioDownloadUrl(videoUrl, preferredQuality);
   },
-  getVideoDownloadUrl: async (videoUrl: string, preferredQuality?: number) => {
+  getVideoDownloadUrl: async (videoUrl: string, quality?: string) => {
     if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
-    return _rapidAPIClient.getVideoDownloadUrl(videoUrl, preferredQuality);
+    return _rapidAPIClient.getVideoDownloadUrl(videoUrl, quality);
   },
   downloadAudio: async (videoUrl: string, outputPath: string) => {
     if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();

@@ -177,40 +177,17 @@ async function getVideoMetadataFromRapidAPI(videoId: string): Promise<VideoMetad
     // Import the rate-limited client 
     const { rapidAPIClient } = require('../../src/lib/rapidapi-youtube');
     
-    // Create a method for getting video info that respects rate limits
-    const getVideoInfo = async (videoId: string) => {
-      // Wait for rate limiter
-      if (rapidAPIClient._rapidAPIClient) {
-        await rapidAPIClient._rapidAPIClient.rateLimiter.waitIfNeeded();
-      }
-      
-      const response = await axios.get(
-        `https://youtube-video-fast-downloader-24-7.p.rapidapi.com/get_video_details/${videoId}`,
-        {
-          headers: {
-            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY || '',
-            'X-RapidAPI-Host': 'youtube-video-fast-downloader-24-7.p.rapidapi.com'
-          }
-        }
-      );
-      
-      return response;
-    };
+    // Use the client's getVideoInfo method which handles rate limiting
+    const data = await rapidAPIClient.getVideoInfo(`https://youtube.com/watch?v=${videoId}`);
     
-    const response = await getVideoInfo(videoId);
-    
-    if (response.data) {
+    if (data) {
       const metadata: VideoMetadata = {
-        duration: response.data.duration || 0,
-        title: response.data.title || '',
-        uploader: response.data.author || response.data.channel || '', // Use 'uploader' not 'author'
-        description: response.data.description || '',
-        viewCount: response.data.view_count || response.data.views || 0,
-        isLive: response.data.is_live || false,
-        uploadDate: response.data.upload_date || '',
-        thumbnail: response.data.thumbnail || '',
-        isPrivate: false,
-        hasSubtitles: true
+        duration: parseInt(data.lengthSeconds) || data.duration || 0,
+        title: data.title || '',
+        uploader: data.author || data.ownerChannelName || '', 
+        description: data.description || '',
+        isLive: data.isLiveContent || false,
+        thumbnail: data.thumbnail?.url || data.thumbnail || ''
       };
       
       console.log('📊 Video metadata from RapidAPI:');

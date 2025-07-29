@@ -31,7 +31,12 @@ function isRailway(): boolean {
 /**
  * Try multiple commands to find working yt-dlp
  */
-async function findYtDlp(): Promise<{ command: string; version: string } | null> {
+async function findYtDlp(): Promise<{command: string, version: string} | null> {
+  // Skip yt-dlp check if using RapidAPI
+  if (process.env.USE_RAPIDAPI === 'true') {
+    return null;
+  }
+  
   // First, check if specific paths exist
   const directPaths = [
     '/opt/venv/bin/yt-dlp',
@@ -229,9 +234,13 @@ export async function checkSystemTools(): Promise<SystemTools> {
     return cachedTools;
   }
 
-  console.log('\n🔧 Checking system tools...\n');
-  if (isRailway()) {
-    console.log('📍 Running on Railway\n');
+  const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
+  
+  if (!USE_RAPIDAPI) {
+    console.log('\n🔧 Checking system tools...\n');
+    if (isRailway()) {
+      console.log('📍 Running on Railway\n');
+    }
   }
 
   const ytdlpResult = await findYtDlp();
@@ -250,19 +259,21 @@ export async function checkSystemTools(): Promise<SystemTools> {
     }
   };
 
-  console.log('\n📋 System Tools Status:');
-  console.log(`yt-dlp: ${cachedTools.ytdlp.available ? '✅' : '❌'} ${cachedTools.ytdlp.version || 'Not found'}`);
-  console.log(`FFmpeg: ${cachedTools.ffmpeg.available ? '✅' : '❌'} ${cachedTools.ffmpeg.version || 'Not found'}`);
-  console.log('');
+  if (!USE_RAPIDAPI) {
+    console.log('\n📋 System Tools Status:');
+    console.log(`yt-dlp: ${cachedTools.ytdlp.available ? '✅' : '❌'} ${cachedTools.ytdlp.version || 'Not found'}`);
+    console.log(`FFmpeg: ${cachedTools.ffmpeg.available ? '✅' : '❌'} ${cachedTools.ffmpeg.version || 'Not found'}`);
+    console.log('');
 
-  if (!cachedTools.ytdlp.available) {
-    console.error('❌ yt-dlp is required but not found!');
-    if (isRailway()) {
-      console.error('📝 yt-dlp should be installed via Docker.');
-      console.error('📝 Check Dockerfile includes yt-dlp installation.');
-      console.error('📝 The startup script should show yt-dlp availability.');
-    } else {
-      console.error('📝 To install: pip install yt-dlp');
+    if (!cachedTools.ytdlp.available) {
+      console.error('❌ yt-dlp is required but not found!');
+      if (isRailway()) {
+        console.error('📝 yt-dlp should be installed via Docker.');
+        console.error('📝 Check Dockerfile includes yt-dlp installation.');
+        console.error('📝 The startup script should show yt-dlp availability.');
+      } else {
+        console.error('📝 To install: pip install yt-dlp');
+      }
     }
   }
 
