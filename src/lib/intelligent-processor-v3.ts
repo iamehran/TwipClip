@@ -112,55 +112,106 @@ export async function processVideosWithPerfectMatching(
   const results: VideoProcessingResult[] = [];
   const videoTranscripts: any[] = [];
 
-  // Step 1: Get transcripts for all videos in parallel
+  // Step 1: Get transcripts for all videos
   console.log('\n📹 Getting video transcripts...');
   progressCallback?.(10, 'Extracting video transcripts...');
   
-  // Process videos in batches to avoid overwhelming the system
-  const processInBatches = async <T>(items: T[], batchSize: number, processor: (item: T, index: number) => Promise<any>) => {
-    const results = [];
-    for (let i = 0; i < items.length; i += batchSize) {
-      const batch = items.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map((item, idx) => processor(item, i + idx))
-      );
-      results.push(...batchResults);
-    }
-    return results;
-  };
+  // Check if we're using RapidAPI
+  const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
   
-  const transcriptResults = await processInBatches(videos, MAX_CONCURRENT_TRANSCRIPTS, async (videoUrl, index) => {
-    try {
-      console.log(`  Processing: ${videoUrl}`);
-      const progress = 10 + (index * 30 / videos.length);
-      progressCallback?.(progress, `Processing video ${index + 1}/${videos.length}...`);
+  let transcriptResults: any[] = [];
+  
+  if (USE_RAPIDAPI) {
+    // Sequential processing for RapidAPI to respect rate limits
+    console.log('📌 Using sequential processing for RapidAPI...');
+    
+    for (let i = 0; i < videos.length; i++) {
+      const videoUrl = videos[i];
+      const progress = 10 + (i * 30 / videos.length);
       
-      const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
-      
-      if (!transcript || transcript.segments.length === 0) {
-        console.log(`  ⚠️ No transcript found for ${videoUrl}`);
+      try {
+        console.log(`  Processing: ${videoUrl}`);
+        progressCallback?.(progress, `Processing video ${i + 1}/${videos.length}...`);
+        
+        const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
+        
+        if (!transcript || transcript.segments.length === 0) {
+          console.log(`  ⚠️ No transcript found for ${videoUrl}`);
+          transcriptResults.push(null);
+        } else {
+          console.log(`  ✅ Got ${transcript.segments.length} segments from ${videoUrl}`);
+          
+          // Update progress after each video is transcribed
+          const completedProgress = 10 + ((i + 1) * 30 / videos.length);
+          progressCallback?.(completedProgress, `Transcribed video ${i + 1}/${videos.length}`);
+          
+          transcriptResults.push({
+            videoUrl,
+            segments: transcript.segments,
+            duration: transcript.segments.reduce((sum, seg) => 
+              Math.max(sum, seg.offset + seg.duration), 0
+            )
+          });
+        }
+        
+        // Add delay between videos for RapidAPI (except for the last one)
+        if (i < videos.length - 1) {
+          const delay = 5000; // 5 seconds between videos
+          console.log(`  ⏱️ Waiting ${delay/1000}s before next video...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        console.error(`  ❌ Error processing ${videoUrl}:`, error);
+        transcriptResults.push(null);
+      }
+    }
+  } else {
+    // Original concurrent processing for non-RapidAPI
+    const processInBatches = async <T>(items: T[], batchSize: number, processor: (item: T, index: number) => Promise<any>) => {
+      const results = [];
+      for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map((item, idx) => processor(item, i + idx))
+        );
+        results.push(...batchResults);
+      }
+      return results;
+    };
+    
+    transcriptResults = await processInBatches(videos, MAX_CONCURRENT_TRANSCRIPTS, async (videoUrl, index) => {
+      try {
+        console.log(`  Processing: ${videoUrl}`);
+        const progress = 10 + (index * 30 / videos.length);
+        progressCallback?.(progress, `Processing video ${index + 1}/${videos.length}...`);
+        
+        const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
+        
+        if (!transcript || transcript.segments.length === 0) {
+          console.log(`  ⚠️ No transcript found for ${videoUrl}`);
+          return null;
+        }
+        
+        console.log(`  ✅ Got ${transcript.segments.length} segments from ${videoUrl}`);
+        
+        // Update progress after each video is transcribed
+        const completedProgress = 10 + ((index + 1) * 30 / videos.length);
+        progressCallback?.(completedProgress, `Transcribed video ${index + 1}/${videos.length}`);
+        
+        return {
+          videoUrl,
+          segments: transcript.segments,
+          duration: transcript.segments.reduce((sum, seg) => 
+            Math.max(sum, seg.offset + seg.duration), 0
+          )
+        };
+        
+      } catch (error) {
+        console.error(`  ❌ Error processing ${videoUrl}:`, error);
         return null;
       }
-      
-      console.log(`  ✅ Got ${transcript.segments.length} segments from ${videoUrl}`);
-      
-      // Update progress after each video is transcribed
-      const completedProgress = 10 + ((index + 1) * 30 / videos.length);
-      progressCallback?.(completedProgress, `Transcribed video ${index + 1}/${videos.length}`);
-      
-      return {
-        videoUrl,
-        segments: transcript.segments,
-        duration: transcript.segments.reduce((sum, seg) => 
-          Math.max(sum, seg.offset + seg.duration), 0
-        )
-      };
-      
-    } catch (error) {
-      console.error(`  ❌ Error processing ${videoUrl}:`, error);
-      return null;
-    }
-  });
+    });
+  }
   
   // Filter out failed transcripts
   for (const transcript of transcriptResults) {

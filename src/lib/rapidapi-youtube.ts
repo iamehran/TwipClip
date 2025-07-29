@@ -169,18 +169,36 @@ export class RapidAPIYouTubeClient {
       throw new Error('Invalid YouTube URL');
     }
 
-    // For audio, we can directly use quality ID 140 (m4a/128k) which is standard
-    // This saves us one API call per video
-    const audioQualityId = preferredQuality || 140; // 140 is standard m4a audio
+    // ALWAYS check qualities first for audio - don't assume quality 140 exists
+    console.log(`🎵 Getting audio for video: ${videoId}`);
     
-    console.log(`🎵 Direct audio download for video: ${videoId} with quality ID: ${audioQualityId}`);
-
     try {
+      const qualities = await this.getAvailableQualities(videoUrl);
+      const audioQualities = qualities.filter(q => q.type === 'audio');
+      
+      if (audioQualities.length === 0) {
+        throw new Error('No audio qualities available for this video');
+      }
+
+      // Select best audio quality (prefer m4a over opus)
+      const selectedQuality = audioQualities.sort((a, b) => {
+        // Prefer m4a/mp4 formats
+        if (a.mime.includes('mp4') && !b.mime.includes('mp4')) return -1;
+        if (!a.mime.includes('mp4') && b.mime.includes('mp4')) return 1;
+        // Then sort by bitrate
+        return b.bitrate - a.bitrate;
+      })[0];
+
+      console.log(`📊 Selected audio quality: ${selectedQuality.mime} (bitrate: ${selectedQuality.bitrate}, id: ${selectedQuality.id})`);
+      
+      // Now get the download URL - need to check correct endpoint format
+      await this.rateLimiter.waitIfNeeded();
+      
       const response = await this.makeRequestWithRetry({
         method: 'GET',
-        url: `https://${this.apiHost}/get_download_url/${videoId}`,
+        url: `https://${this.apiHost}/download/${videoId}`, // Changed endpoint
         params: {
-          itag: audioQualityId
+          quality: selectedQuality.id  // Using 'quality' instead of 'itag'
         },
         headers: {
           'X-RapidAPI-Key': this.apiKey,
@@ -189,54 +207,23 @@ export class RapidAPIYouTubeClient {
         timeout: 30000
       });
 
+      // Check response structure
+      const downloadUrl = response.data?.download_url || response.data?.url || response.data?.file;
+      if (!downloadUrl) {
+        console.error('Unexpected response structure:', response.data);
+        throw new Error('Invalid response from download API');
+      }
+
       return {
-        id: audioQualityId,
-        quality: 'audio',
-        bitrate: 128000,
-        size: 'N/A',
-        mime: 'audio/mp4',
-        file: response.data.download_url,
-        comment: 'Standard audio quality'
+        id: selectedQuality.id,
+        quality: selectedQuality.quality,
+        bitrate: selectedQuality.bitrate,
+        size: selectedQuality.size,
+        mime: selectedQuality.mime,
+        file: downloadUrl,
+        comment: ''
       };
     } catch (error: any) {
-      // If standard quality fails, fall back to checking available qualities
-      if (error.response?.status === 404) {
-        console.log('⚠️ Standard audio quality not available, checking other options...');
-        
-        const qualities = await this.getAvailableQualities(videoUrl);
-        const audioQualities = qualities.filter(q => q.type === 'audio');
-        
-        if (audioQualities.length === 0) {
-          throw new Error('No audio qualities available for this video');
-        }
-
-        const selectedQuality = audioQualities[0];
-        await this.rateLimiter.waitIfNeeded();
-        
-        const fallbackResponse = await this.makeRequestWithRetry({
-          method: 'GET',
-          url: `https://${this.apiHost}/get_download_url/${videoId}`,
-          params: {
-            itag: selectedQuality.id
-          },
-          headers: {
-            'X-RapidAPI-Key': this.apiKey,
-            'X-RapidAPI-Host': this.apiHost
-          },
-          timeout: 30000
-        });
-
-        return {
-          id: selectedQuality.id,
-          quality: selectedQuality.quality,
-          bitrate: selectedQuality.bitrate,
-          size: selectedQuality.size,
-          mime: selectedQuality.mime,
-          file: fallbackResponse.data.download_url,
-          comment: ''
-        };
-      }
-      
       console.error('Failed to get audio download URL:', error.response?.data || error.message);
       throw new Error(`Failed to get audio download URL: ${error.message}`);
     }

@@ -1,4 +1,5 @@
 import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
+import axios from 'axios';
 
 // Check if RapidAPI is enabled
 const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
@@ -35,40 +36,7 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
       }
       const videoId = videoIdMatch[1];
       
-      console.log('🚀 Using RapidAPI for video metadata...');
-      
-      // Use RapidAPI's get-video-info endpoint
-      const axios = require('axios');
-      const response = await axios.get(
-        `https://${process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com'}/get-video-info/${videoId}`,
-        {
-          headers: {
-            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
-            'X-RapidAPI-Host': process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com'
-          },
-          timeout: 30000
-        }
-      );
-      
-      const data = response.data;
-      
-      const result: VideoMetadata = {
-        duration: parseInt(data.lengthSeconds) || 0,
-        title: data.title,
-        uploader: data.author || data.ownerChannelName,
-        description: data.description,
-        thumbnail: data.thumbnail?.[0]?.url,
-        isLive: data.isLiveContent || false,
-        isPrivate: false, // RapidAPI doesn't provide this
-        hasSubtitles: true // Assume subtitles are available
-      };
-      
-      console.log(`📊 Video metadata from RapidAPI:`);
-      console.log(`  Duration: ${formatDuration(result.duration)}`);
-      console.log(`  Title: ${result.title}`);
-      console.log(`  Live: ${result.isLive ? 'Yes' : 'No'}`);
-      
-      return result;
+      return await getVideoMetadataFromRapidAPI(videoId);
     }
     
     // Original yt-dlp logic (as fallback)
@@ -198,6 +166,65 @@ export async function getVideoMetadata(videoUrl: string, sessionId?: string): Pr
     
   } catch (error) {
     console.error('Failed to get video metadata:', error);
+    return null;
+  }
+}
+
+async function getVideoMetadataFromRapidAPI(videoId: string): Promise<VideoMetadata | null> {
+  console.log('🚀 Using RapidAPI for video metadata...');
+  
+  try {
+    // Import the rate-limited client 
+    const { rapidAPIClient } = require('../../src/lib/rapidapi-youtube');
+    
+    // Create a method for getting video info that respects rate limits
+    const getVideoInfo = async (videoId: string) => {
+      // Wait for rate limiter
+      if (rapidAPIClient._rapidAPIClient) {
+        await rapidAPIClient._rapidAPIClient.rateLimiter.waitIfNeeded();
+      }
+      
+      const response = await axios.get(
+        `https://youtube-video-fast-downloader-24-7.p.rapidapi.com/get_video_details/${videoId}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY || '',
+            'X-RapidAPI-Host': 'youtube-video-fast-downloader-24-7.p.rapidapi.com'
+          }
+        }
+      );
+      
+      return response;
+    };
+    
+    const response = await getVideoInfo(videoId);
+    
+    if (response.data) {
+      const metadata: VideoMetadata = {
+        duration: response.data.duration || 0,
+        title: response.data.title || '',
+        uploader: response.data.author || response.data.channel || '', // Use 'uploader' not 'author'
+        description: response.data.description || '',
+        viewCount: response.data.view_count || response.data.views || 0,
+        isLive: response.data.is_live || false,
+        uploadDate: response.data.upload_date || '',
+        thumbnail: response.data.thumbnail || '',
+        isPrivate: false,
+        hasSubtitles: true
+      };
+      
+      console.log('📊 Video metadata from RapidAPI:');
+      console.log(`  Duration: ${formatDuration(metadata.duration)}`);
+      console.log(`  Title: ${metadata.title}`);
+      console.log(`  Live: ${metadata.isLive ? 'Yes' : 'No'}`);
+      
+      return metadata;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('Failed to get video metadata:', error);
+    // Don't throw, just return null to allow fallback
     return null;
   }
 }
