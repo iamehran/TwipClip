@@ -94,7 +94,9 @@ export async function processVideosWithPerfectMatching(
   console.log(`🧠 Thinking: ${modelSettings?.thinkingEnabled ? 'Enabled' : 'Disabled'}`);
       console.log(`📊 Token Usage: ${modelSettings?.tokenUsage || 'high'}`);
 
-  progressCallback?.(5, 'Parsing thread content...');
+  if (progressCallback) {
+    progressCallback(5, 'Parsing thread content...');
+  }
 
   // Parse tweets from thread
   const tweetsText = thread.split('---').map(t => t.trim()).filter(t => t.length > 0);
@@ -114,7 +116,9 @@ export async function processVideosWithPerfectMatching(
 
   // Step 1: Get transcripts for all videos
   console.log('\n📹 Getting video transcripts...');
-  progressCallback?.(10, 'Extracting video transcripts...');
+  if (progressCallback) {
+    progressCallback(10, 'Extracting video transcripts...');
+  }
   
   // Check if we're using RapidAPI
   const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
@@ -131,7 +135,9 @@ export async function processVideosWithPerfectMatching(
       
       try {
         console.log(`  Processing: ${videoUrl}`);
-        progressCallback?.(progress, `Processing video ${i + 1}/${videos.length}...`);
+        if (progressCallback) {
+          progressCallback(progress, `Processing video ${i + 1}/${videos.length}...`);
+        }
         
         const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
         
@@ -143,7 +149,9 @@ export async function processVideosWithPerfectMatching(
           
           // Update progress after each video is transcribed
           const completedProgress = 10 + ((i + 1) * 30 / videos.length);
-          progressCallback?.(completedProgress, `Transcribed video ${i + 1}/${videos.length}`);
+          if (progressCallback) {
+            progressCallback(completedProgress, `Transcribed video ${i + 1}/${videos.length}`);
+          }
           
           transcriptResults.push({
             videoUrl,
@@ -183,7 +191,9 @@ export async function processVideosWithPerfectMatching(
       try {
         console.log(`  Processing: ${videoUrl}`);
         const progress = 10 + (index * 30 / videos.length);
-        progressCallback?.(progress, `Processing video ${index + 1}/${videos.length}...`);
+        if (progressCallback) {
+          progressCallback(progress, `Processing video ${index + 1}/${videos.length}...`);
+        }
         
         const transcript = await getEnhancedTranscript(videoUrl, options.sessionId);
         
@@ -196,7 +206,9 @@ export async function processVideosWithPerfectMatching(
         
         // Update progress after each video is transcribed
         const completedProgress = 10 + ((index + 1) * 30 / videos.length);
-        progressCallback?.(completedProgress, `Transcribed video ${index + 1}/${videos.length}`);
+        if (progressCallback) {
+          progressCallback(completedProgress, `Transcribed video ${index + 1}/${videos.length}`);
+        }
         
         return {
           videoUrl,
@@ -225,11 +237,15 @@ export async function processVideosWithPerfectMatching(
   }
   
   console.log(`\n✅ Successfully transcribed ${videoTranscripts.length}/${videos.length} videos`);
-  progressCallback?.(50, 'Analyzing transcripts with AI...');
+  if (progressCallback) {
+    progressCallback(50, 'Analyzing transcripts with AI...');
+  }
   
   // Step 2: Find perfect matches - ONE per tweet
   console.log('\n🎯 Finding perfect matches...');
-  progressCallback?.(60, 'Finding perfect matches for each tweet...');
+  if (progressCallback) {
+    progressCallback(60, 'Finding perfect matches for each tweet...');
+  }
   
   let matches: PerfectMatch[] = [];
   
@@ -260,7 +276,9 @@ export async function processVideosWithPerfectMatching(
     matches = await findPerfectMatches(tweets, videoTranscripts, modelSettings);
   }
   
-  progressCallback?.(80, 'Formatting results...');
+  if (progressCallback) {
+    progressCallback(80, 'Formatting results...');
+  }
   
   // Step 3: Convert matches to results format
   for (const videoUrl of videos) {
@@ -332,7 +350,9 @@ export async function processVideosWithPerfectMatching(
   console.log(`    - Acceptable: ${statistics.byQuality.acceptable}`);
   console.log(`  Average confidence: ${(statistics.averageConfidence * 100).toFixed(0)}%`);
   
-  progressCallback?.(100, 'Processing complete!');
+  if (progressCallback) {
+    progressCallback(100, 'Processing complete!');
+  }
   
   return {
     results,
