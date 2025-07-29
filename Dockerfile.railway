@@ -43,19 +43,15 @@ RUN chmod +x start.sh
 # Build the application
 RUN npm run build
 
-# Remove dev dependencies after build
-RUN npm prune --production
+# DON'T remove dev dependencies - Next.js needs some at runtime
+# RUN npm prune --production
 
-# Create necessary directories including user-specific cookie directories
+# Create necessary directories
 RUN mkdir -p /app/temp /app/public/downloads /app/temp/user-cookies && \
     chmod -R 777 /app/temp /app/public/downloads /app/temp/user-cookies
 
-# Set up a non-root user for Chromium
-RUN useradd -m -s /bin/bash appuser && \
-    chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
+# DON'T switch users - it causes permission issues with .next directory
+# Railway handles security at the platform level
 
 # Environment variables
 ENV NODE_ENV=production
