@@ -1302,3 +1302,36 @@ export function clearTranscriptCache(): void {
   videoInfoCache.clear();
   console.log('✅ Transcript cache cleared!');
 }
+
+// Process videos with rate limiting for RapidAPI
+export async function processVideosWithRateLimit(
+  videoUrls: string[],
+  processFunc: (url: string) => Promise<any>
+): Promise<any[]> {
+  const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
+  
+  if (USE_RAPIDAPI) {
+    // Process sequentially with delays for RapidAPI
+    const results = [];
+    for (let i = 0; i < videoUrls.length; i++) {
+      try {
+        const result = await processFunc(videoUrls[i]);
+        results.push(result);
+        
+        // Add delay between videos (except for the last one)
+        if (i < videoUrls.length - 1) {
+          const delay = 4000; // 4 seconds between videos
+          console.log(`⏱️ Waiting ${delay/1000}s before next video...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        console.error(`Failed to process video ${videoUrls[i]}:`, error);
+        results.push(null);
+      }
+    }
+    return results;
+  } else {
+    // Original concurrent processing for non-RapidAPI
+    return Promise.all(videoUrls.map(processFunc));
+  }
+}

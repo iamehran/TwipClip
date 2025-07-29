@@ -11,7 +11,7 @@ class RateLimiter {
   private readonly maxRequests: number;
   private readonly timeWindow: number;
 
-  constructor(maxRequests: number = 10, timeWindowMs: number = 60000) {
+  constructor(maxRequests: number = 13, timeWindowMs: number = 60000) {
     this.maxRequests = maxRequests;
     this.timeWindow = timeWindowMs;
   }
@@ -25,7 +25,7 @@ class RateLimiter {
       // Calculate wait time
       const oldestRequest = this.requests[0];
       const waitTime = (oldestRequest + this.timeWindow) - now + 1000; // Add 1 second buffer
-      console.log(`⏳ Rate limit reached. Waiting ${Math.ceil(waitTime / 1000)}s...`);
+      console.log(`⏳ Rate limit reached (${this.requests.length}/${this.maxRequests}). Waiting ${Math.ceil(waitTime / 1000)}s...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
       // Retry
       return this.waitIfNeeded();
@@ -63,12 +63,13 @@ export class RapidAPIYouTubeClient {
   private apiKey: string;
   private apiHost: string;
   private rateLimiter: RateLimiter;
-  
-    constructor() {
+  private qualityCache: Map<string, VideoQuality[]> = new Map();
+
+  constructor() {
     this.apiKey = process.env.RAPIDAPI_KEY || '';
     this.apiHost = process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com';
-    // Limit to 8 requests per minute to avoid 429 errors
-    this.rateLimiter = new RateLimiter(8, 60000);
+    // Updated to 15 requests per minute for Pro plan
+    this.rateLimiter = new RateLimiter(13, 60000);
   }
 
   /**
@@ -108,20 +109,26 @@ export class RapidAPIYouTubeClient {
   }
 
   /**
-   * Get available quality options for a video
+   * Get available quality options for a video (with caching)
    */
   async getAvailableQualities(videoUrl: string): Promise<VideoQuality[]> {
     if (!this.apiKey) {
       throw new Error('RAPIDAPI_KEY environment variable is not set');
     }
 
-    await this.rateLimiter.waitIfNeeded();
-    
     const videoId = this.extractVideoId(videoUrl);
     if (!videoId) {
       throw new Error('Invalid YouTube URL');
     }
 
+    // Check cache first
+    if (this.qualityCache.has(videoId)) {
+      console.log(`📦 Using cached qualities for video: ${videoId}`);
+      return this.qualityCache.get(videoId)!;
+    }
+
+    await this.rateLimiter.waitIfNeeded();
+    
     console.log(`🔍 Getting available qualities for video: ${videoId}`);
 
     try {
@@ -136,6 +143,10 @@ export class RapidAPIYouTubeClient {
       });
 
       console.log(`✅ Found ${response.data.length} quality options`);
+      
+      // Cache the result
+      this.qualityCache.set(videoId, response.data);
+      
       return response.data;
     } catch (error: any) {
       console.error('Failed to get qualities:', error.response?.data || error.message);
@@ -144,7 +155,7 @@ export class RapidAPIYouTubeClient {
   }
 
   /**
-   * Get audio download URL
+   * Get audio download URL - optimized to skip quality check
    */
   async getAudioDownloadUrl(videoUrl: string, preferredQuality?: number): Promise<DownloadResponse> {
     if (!this.apiKey) {
@@ -158,30 +169,18 @@ export class RapidAPIYouTubeClient {
       throw new Error('Invalid YouTube URL');
     }
 
-    // Get available qualities first
-    const qualities = await this.getAvailableQualities(videoUrl);
-    const audioQualities = qualities.filter(q => q.type === 'audio');
+    // For audio, we can directly use quality ID 140 (m4a/128k) which is standard
+    // This saves us one API call per video
+    const audioQualityId = preferredQuality || 140; // 140 is standard m4a audio
     
-    if (audioQualities.length === 0) {
-      throw new Error('No audio qualities available for this video');
-    }
-
-    // Select best audio quality
-    const selectedQuality = preferredQuality 
-      ? audioQualities.find(q => q.id === preferredQuality) || audioQualities[0]
-      : audioQualities.reduce((best, current) => 
-          (current.bitrate > best.bitrate) ? current : best
-        );
-
-    console.log(`📊 Selected audio quality: ${selectedQuality.mime} (bitrate: ${selectedQuality.bitrate})`);
-    console.log(`🎵 Requesting audio download for video: ${videoId} with quality ID: ${selectedQuality.id}`);
+    console.log(`🎵 Direct audio download for video: ${videoId} with quality ID: ${audioQualityId}`);
 
     try {
       const response = await this.makeRequestWithRetry({
         method: 'GET',
         url: `https://${this.apiHost}/get_download_url/${videoId}`,
         params: {
-          itag: selectedQuality.id
+          itag: audioQualityId
         },
         headers: {
           'X-RapidAPI-Key': this.apiKey,
@@ -191,15 +190,53 @@ export class RapidAPIYouTubeClient {
       });
 
       return {
-        id: selectedQuality.id,
-        quality: selectedQuality.quality,
-        bitrate: selectedQuality.bitrate,
-        size: selectedQuality.size,
-        mime: selectedQuality.mime,
+        id: audioQualityId,
+        quality: 'audio',
+        bitrate: 128000,
+        size: 'N/A',
+        mime: 'audio/mp4',
         file: response.data.download_url,
-        comment: ''
+        comment: 'Standard audio quality'
       };
     } catch (error: any) {
+      // If standard quality fails, fall back to checking available qualities
+      if (error.response?.status === 404) {
+        console.log('⚠️ Standard audio quality not available, checking other options...');
+        
+        const qualities = await this.getAvailableQualities(videoUrl);
+        const audioQualities = qualities.filter(q => q.type === 'audio');
+        
+        if (audioQualities.length === 0) {
+          throw new Error('No audio qualities available for this video');
+        }
+
+        const selectedQuality = audioQualities[0];
+        await this.rateLimiter.waitIfNeeded();
+        
+        const fallbackResponse = await this.makeRequestWithRetry({
+          method: 'GET',
+          url: `https://${this.apiHost}/get_download_url/${videoId}`,
+          params: {
+            itag: selectedQuality.id
+          },
+          headers: {
+            'X-RapidAPI-Key': this.apiKey,
+            'X-RapidAPI-Host': this.apiHost
+          },
+          timeout: 30000
+        });
+
+        return {
+          id: selectedQuality.id,
+          quality: selectedQuality.quality,
+          bitrate: selectedQuality.bitrate,
+          size: selectedQuality.size,
+          mime: selectedQuality.mime,
+          file: fallbackResponse.data.download_url,
+          comment: ''
+        };
+      }
+      
       console.error('Failed to get audio download URL:', error.response?.data || error.message);
       throw new Error(`Failed to get audio download URL: ${error.message}`);
     }
