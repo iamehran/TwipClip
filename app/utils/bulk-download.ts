@@ -46,7 +46,7 @@ export interface BulkDownloadOptions {
 /**
  * Download a single video clip with browser-based authentication
  */
-async function downloadClip(
+export async function downloadClip(
   match: PerfectMatch,
   outputDir: string,
   quality: string = '720p',

@@ -23,13 +23,9 @@ export class RapidAPIYouTubeClient {
   private apiKey: string;
   private apiHost: string;
   
-  constructor() {
+    constructor() {
     this.apiKey = process.env.RAPIDAPI_KEY || '';
     this.apiHost = process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com';
-    
-    if (!this.apiKey) {
-      throw new Error('RAPIDAPI_KEY environment variable is not set');
-    }
   }
 
   /**
@@ -53,6 +49,10 @@ export class RapidAPIYouTubeClient {
    * Get available quality options for a video
    */
   async getAvailableQualities(videoUrl: string): Promise<VideoQuality[]> {
+    if (!this.apiKey) {
+      throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
+    
     const videoId = this.extractVideoId(videoUrl);
     if (!videoId) {
       throw new Error('Invalid YouTube URL');
@@ -84,6 +84,10 @@ export class RapidAPIYouTubeClient {
    * Get audio download URL
    */
   async getAudioDownloadUrl(videoUrl: string, preferredQuality?: number): Promise<DownloadResponse> {
+    if (!this.apiKey) {
+      throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
+    
     const videoId = this.extractVideoId(videoUrl);
     if (!videoId) {
       throw new Error('Invalid YouTube URL');
@@ -140,6 +144,10 @@ export class RapidAPIYouTubeClient {
    * Get video download URL
    */
   async getVideoDownloadUrl(videoUrl: string, preferredQuality?: number): Promise<DownloadResponse> {
+    if (!this.apiKey) {
+      throw new Error('RAPIDAPI_KEY environment variable is not set');
+    }
+    
     const videoId = this.extractVideoId(videoUrl);
     if (!videoId) {
       throw new Error('Invalid YouTube URL');
@@ -283,5 +291,28 @@ export class RapidAPIYouTubeClient {
   }
 }
 
-// Export singleton instance
-export const rapidAPIClient = new RapidAPIYouTubeClient(); 
+// Export singleton instance with lazy initialization
+let _rapidAPIClient: RapidAPIYouTubeClient | null = null;
+
+export const rapidAPIClient = {
+  getAvailableQualities: async (videoUrl: string) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.getAvailableQualities(videoUrl);
+  },
+  getAudioDownloadUrl: async (videoUrl: string, preferredQuality?: number) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.getAudioDownloadUrl(videoUrl, preferredQuality);
+  },
+  getVideoDownloadUrl: async (videoUrl: string, preferredQuality?: number) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.getVideoDownloadUrl(videoUrl, preferredQuality);
+  },
+  downloadAudio: async (videoUrl: string, outputPath: string) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.downloadAudio(videoUrl, outputPath);
+  },
+  downloadVideo: async (videoUrl: string, outputPath: string, quality?: string) => {
+    if (!_rapidAPIClient) _rapidAPIClient = new RapidAPIYouTubeClient();
+    return _rapidAPIClient.downloadVideo(videoUrl, outputPath, quality);
+  }
+}; 
