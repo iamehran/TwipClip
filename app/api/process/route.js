@@ -78,28 +78,44 @@ export async function POST(request) {
       console.log('🗺️ Jobs Map instance ID:', jobs);
       
       // Start processing in the background
-      // Use Promise instead of setTimeout to maintain async context
-      (async () => {
+      // Create a bound function to maintain context
+      const startBackgroundProcessing = async () => {
         try {
           // Small delay to ensure response is sent first
-          await new Promise(resolve => setTimeout(resolve, 10));
-          
-          // Update progress periodically
-          const updateProgress = (progress, message) => {
-            try {
-              updateProcessingStatus(jobId, {
-                progress,
-                message
-              });
-            } catch (err) {
-              console.error('Error updating progress:', err);
+          await new Promise(resolve => {
+            const timer = setTimeout(() => resolve(), 10);
+            // Ensure timer is cleared if needed
+            if (timer && typeof timer === 'number') {
+              // Timer started successfully
             }
+          });
+          
+          // Create a bound update function to ensure it's always available
+          const boundUpdateStatus = (jobId, update) => {
+            try {
+              // Check if function exists before calling
+              if (typeof updateProcessingStatus === 'function') {
+                updateProcessingStatus(jobId, update);
+              } else {
+                console.error('updateProcessingStatus is not available');
+              }
+            } catch (err) {
+              console.error('Error in boundUpdateStatus:', err);
+            }
+          };
+          
+          // Update progress periodically with bound function
+          const updateProgress = (progress, message) => {
+            boundUpdateStatus(jobId, {
+              progress,
+              message
+            });
           };
           
           updateProgress(15, 'Extracting audio from videos...');
           
           // Process with custom progress callback
-          const { results, matches, statistics } = await processVideosWithPerfectMatching(
+          const processResult = await processVideosWithPerfectMatching(
             thread, 
             videos,
             {
@@ -110,12 +126,15 @@ export async function POST(request) {
               progressCallback: updateProgress
             }
           );
+          
+          // Destructure results after await to ensure they're available
+          const { results, matches, statistics } = processResult || { results: [], matches: [], statistics: {} };
 
           console.log('✅ Processing complete');
           console.log(`📊 Statistics:`, statistics);
 
           // Format the response to match what the client expects
-          const formattedMatches = matches.map(match => ({
+          const formattedMatches = (matches || []).map(match => ({
             match: true,
             tweet: match.tweetText,
             videoUrl: match.videoUrl,
@@ -128,7 +147,7 @@ export async function POST(request) {
             downloadSuccess: match.downloadSuccess || false
           }));
 
-          // Update job with results
+          // Update job with results using bound function
           const finalStatus = {
             status: 'completed',
             progress: 100,
@@ -138,10 +157,10 @@ export async function POST(request) {
               matches: formattedMatches,
               summary: {
                 videosProcessed: videos.length,
-                videosSuccessful: results.filter(r => r.success).length,
+                videosSuccessful: results.filter(r => r && r.success).length,
                 clipsFound: matches.length,
                 clipsDownloaded: 0,
-                avgConfidence: statistics.averageConfidence,
+                avgConfidence: statistics.averageConfidence || 0,
                 aiModel: modelSettings?.model === 'claude-opus-4-20250514' ? 'Claude Opus 4' : 
                          modelSettings?.model === 'claude-sonnet-4-20250514' ? 'Claude Sonnet 4' : 
                          'Claude 3.7 Sonnet',
@@ -152,27 +171,38 @@ export async function POST(request) {
             }
           };
 
-          updateProcessingStatus(jobId, finalStatus);
+          boundUpdateStatus(jobId, finalStatus);
           
           // Log job completion
-          console.log(`✅ Job ${jobId} completed and stored with ${matches.length} matches`);
+          console.log(`✅ Job ${jobId} completed and stored with ${formattedMatches.length} matches`);
           console.log('📋 Job final status stored:', finalStatus.status);
 
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`Error processing job ${jobId}:`, error);
           
-          // Update job status with error
-          updateProcessingStatus(jobId, {
-            status: 'failed',
-            progress: 0,
-            message: 'Processing failed',
-            error: errorMessage
-          });
+          // Try to update job status with error using a direct check
+          try {
+            if (typeof updateProcessingStatus === 'function') {
+              updateProcessingStatus(jobId, {
+                status: 'failed',
+                progress: 0,
+                message: 'Processing failed',
+                error: errorMessage
+              });
+            }
+          } catch (updateErr) {
+            console.error('Failed to update error status:', updateErr);
+          }
         }
-      })().catch(err => {
-        console.error('Async processing error:', err);
-      });
+      };
+      
+      // Execute the background processing with promise catch
+      Promise.resolve()
+        .then(() => startBackgroundProcessing())
+        .catch(err => {
+          console.error('Background processing failed:', err);
+        });
       
       // Return job ID for polling
       return NextResponse.json({
