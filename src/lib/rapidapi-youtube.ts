@@ -5,11 +5,13 @@ import { promisify } from 'util';
 
 const writeFile = promisify(fs.writeFile);
 
-// Simple rate limiter
+// Optimized rate limiter with intelligent spacing
 class RateLimiter {
   private requests: number[] = [];
   private readonly maxRequests: number;
   private readonly timeWindow: number;
+  private lastRequestTime: number = 0;
+  private readonly minDelay: number = 2000; // 2s minimum between requests
 
   constructor(maxRequests: number = 13, timeWindowMs: number = 60000) {
     this.maxRequests = maxRequests;
@@ -18,25 +20,42 @@ class RateLimiter {
 
   async waitIfNeeded(): Promise<void> {
     const now = Date.now();
+    
+    // Enforce minimum delay to spread requests evenly
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (this.lastRequestTime > 0 && timeSinceLastRequest < this.minDelay) {
+      const delayNeeded = this.minDelay - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, delayNeeded));
+    }
+    
     // Remove old requests outside the time window
-    this.requests = this.requests.filter(time => now - time < this.timeWindow);
+    this.requests = this.requests.filter(time => Date.now() - time < this.timeWindow);
     
     if (this.requests.length >= this.maxRequests) {
       // Calculate wait time
       const oldestRequest = this.requests[0];
-      const waitTime = (oldestRequest + this.timeWindow) - now + 1000; // Add 1 second buffer
+      const waitTime = (oldestRequest + this.timeWindow) - Date.now() + 2000; // Add 2 second buffer
       console.log(`⏳ Rate limit reached (${this.requests.length}/${this.maxRequests}). Waiting ${Math.ceil(waitTime / 1000)}s...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
-      // Retry
-      return this.waitIfNeeded();
+      // Clear old requests and continue
+      this.requests = this.requests.filter(time => Date.now() - time < this.timeWindow);
     }
     
-    this.requests.push(now);
+    // Record this request
+    this.lastRequestTime = Date.now();
+    this.requests.push(this.lastRequestTime);
+  }
+  
+  // Get remaining requests in current window
+  getRemainingRequests(): number {
+    const now = Date.now();
+    this.requests = this.requests.filter(time => now - time < this.timeWindow);
+    return Math.max(0, this.maxRequests - this.requests.length);
   }
 }
 
 export interface VideoQuality {
-  id: number;
+  id: number | string;
   quality?: string;
   bitrate: number;
   size: string;
@@ -45,7 +64,7 @@ export interface VideoQuality {
 }
 
 export interface DownloadResponse {
-  id: number;
+  id: number | string;
   quality?: string;
   bitrate: number;
   size: string;
@@ -64,6 +83,7 @@ export class RapidAPIYouTubeClient {
   private apiHost: string;
   private rateLimiter: RateLimiter;
   private qualityCache: Map<string, VideoQuality[]> = new Map();
+  private videoInfoCache: Map<string, any> = new Map();
 
   constructor() {
     this.apiKey = process.env.RAPIDAPI_KEY || '';
@@ -132,9 +152,10 @@ export class RapidAPIYouTubeClient {
     try {
       console.log(`🔍 Getting available qualities for video: ${videoId}`);
       
+      // Try get-video-info endpoint first which includes formats
       const response = await this.makeRequestWithRetry({
         method: 'GET',
-        url: `https://${this.apiHost}/get_available_quality/${videoId}`, // Fixed endpoint
+        url: `https://${this.apiHost}/get-video-info/${videoId}`,
         headers: {
           'X-RapidAPI-Key': this.apiKey,
           'X-RapidAPI-Host': this.apiHost
@@ -142,26 +163,46 @@ export class RapidAPIYouTubeClient {
         timeout: 30000
       });
 
-      const qualities: VideoQuality[] = response.data.formats
-        ?.filter((f: any) => f.quality || f.qualityLabel)
-        ?.map((f: any) => ({
-          id: f.itag || f.format_id,
-          quality: f.qualityLabel || f.quality || f.format_note || 'Unknown',
-          type: f.mimeType?.includes('audio') || f.acodec !== 'none' ? 'audio' : 'video',
-          bitrate: f.abr || f.tbr || f.bitrate || 0,
-          size: f.filesize || f.filesize_approx || 'N/A',
-          mime: f.mimeType || f.ext || 'Unknown'
-        })) || [];
+      let qualities: VideoQuality[] = [];
+
+      // Check if formats exist in the response
+      if (response.data.formats) {
+        qualities = response.data.formats
+          .filter((f: any) => f.quality || f.qualityLabel || f.format_note)
+          .map((f: any) => ({
+            id: f.itag || f.format_id || f.quality,
+            quality: f.qualityLabel || f.quality || f.format_note || 'Unknown',
+            type: f.mimeType?.includes('audio') || f.acodec !== 'none' ? 'audio' : 'video',
+            bitrate: f.abr || f.tbr || f.bitrate || 0,
+            size: f.filesize || f.filesize_approx || 'N/A',
+            mime: f.mimeType || f.ext || 'Unknown'
+          }));
+      }
+
+      // If no formats found, log warning but return empty
+      if (qualities.length === 0) {
+        console.warn('⚠️ WARNING: API returned no formats for video:', videoId);
+        console.warn('⚠️ This video may not be downloadable or may require different handling');
+        // Still return empty array - let the caller decide what to do
+        // The V2 client can handle direct downloads without qualities
+      }
 
       console.log(`✅ Found ${qualities.length} quality options`);
       
-      // Cache the result
+      // Cache the result for 30 minutes
       this.qualityCache.set(videoId, qualities);
       
       return qualities;
     } catch (error: any) {
       console.error('Failed to get qualities:', error.response?.data || error.message);
-      throw new Error(`Failed to get video qualities: ${error.message}`);
+      
+      // Return empty array - let caller handle the error
+      // V2 client can work without qualities
+      console.warn('⚠️ Quality check failed - consider using direct download');
+      
+      // Cache empty result to avoid repeated failures
+      this.qualityCache.set(videoId, []);
+      return [];
     }
   }
 
@@ -221,7 +262,39 @@ export class RapidAPIYouTubeClient {
       const audioQualities = qualities.filter(q => q.type === 'audio');
       
       if (audioQualities.length === 0) {
-        throw new Error('No audio qualities available for this video');
+        console.warn('⚠️ No audio qualities found, attempting direct download...');
+        
+        // Fallback to direct download without quality parameter
+        await this.rateLimiter.waitIfNeeded();
+        
+        const directResponse = await this.makeRequestWithRetry({
+          method: 'GET',
+          url: `https://${this.apiHost}/download_audio/${videoId}`,
+          headers: {
+            'X-RapidAPI-Key': this.apiKey,
+            'X-RapidAPI-Host': this.apiHost
+          },
+          timeout: 30000
+        });
+        
+        const downloadUrl = directResponse.data?.url || 
+                           directResponse.data?.download_url || 
+                           directResponse.data?.file ||
+                           directResponse.data?.link;
+        
+        if (!downloadUrl) {
+          throw new Error('No audio download URL available');
+        }
+        
+        return {
+          id: '140',
+          quality: 'default',
+          bitrate: 128,
+          size: 'N/A',
+          mime: 'audio/mp4',
+          file: downloadUrl,
+          comment: 'Direct download (no quality selection)'
+        };
       }
 
       // Select best audio quality (prefer m4a over opus)
@@ -306,7 +379,44 @@ export class RapidAPIYouTubeClient {
       }
 
       if (!selectedQuality) {
-        throw new Error('No video qualities available');
+        console.warn('⚠️ No video qualities found, attempting direct download...');
+        
+        // Fallback to direct download with requested quality
+        await this.rateLimiter.waitIfNeeded();
+        
+        // Check if it's a short
+        const isShort = videoUrl.includes('/shorts/');
+        const endpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
+        
+        const directResponse = await this.makeRequestWithRetry({
+          method: 'GET',
+          url: `https://${this.apiHost}${endpoint}`,
+          params: { quality: quality.replace('p', '') }, // Remove 'p' from quality
+          headers: {
+            'X-RapidAPI-Key': this.apiKey,
+            'X-RapidAPI-Host': this.apiHost
+          },
+          timeout: 30000
+        });
+        
+        const downloadUrl = directResponse.data?.url || 
+                           directResponse.data?.download_url || 
+                           directResponse.data?.file ||
+                           directResponse.data?.link;
+        
+        if (!downloadUrl) {
+          throw new Error('No video download URL available');
+        }
+        
+        return {
+          id: quality.replace('p', ''),
+          quality: quality,
+          bitrate: 2500,
+          size: 'N/A',
+          mime: 'video/mp4',
+          file: downloadUrl,
+          comment: `Direct download at ${quality}`
+        };
       }
 
       console.log(`📹 Requesting video download for ${videoId} with quality: ${selectedQuality.quality} (ID: ${selectedQuality.id})`);

@@ -9,6 +9,7 @@ import { getVideoMetadata, determineProcessingStrategy, shouldProcessVideo } fro
 import { getFFmpegPath, getYtDlpPath, checkSystemTools } from './system-tools';
 import { getYtDlpCommand as getWorkingYtDlpCommand, getFFmpegCommand as getWorkingFFmpegCommand } from '../../src/lib/system-tools';
 import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
+import { getRapidAPIClientV2 } from '../../src/lib/rapidapi-youtube-v2';
 
 // Add RapidAPI integration
 const USE_RAPIDAPI = process.env.USE_RAPIDAPI === 'true';
@@ -341,8 +342,27 @@ async function processVideoTranscript(videoInfo: VideoInfo, sessionId?: string):
       if (USE_RAPIDAPI) {
         console.log(`🚀 Using RapidAPI for audio extraction...`);
         
-        // Download audio using RapidAPI
-        await rapidAPIClient.downloadAudio(videoInfo.url, audioPath);
+        // Download audio using RapidAPI V2 (simplified)
+        const rapidV2 = getRapidAPIClientV2();
+        const { url: downloadUrl } = await rapidV2.downloadAudio(videoInfo.url);
+        
+        // Download the file
+        console.log('📥 Downloading audio file...');
+        const response = await axios.get(downloadUrl, {
+          responseType: 'stream',
+          timeout: 120000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        
+        const writer = require('fs').createWriteStream(audioPath);
+        response.data.pipe(writer);
+        
+        await new Promise((resolve, reject) => {
+          writer.on('finish', resolve);
+          writer.on('error', reject);
+        });
         
         // RapidAPI might download in different formats, check actual file
         if (!require('fs').existsSync(audioPath)) {
