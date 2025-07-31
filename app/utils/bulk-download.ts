@@ -7,6 +7,7 @@ import os from 'os';
 import { getYtDlpCommand, getFFmpegCommand } from '../../src/lib/system-tools';
 import AdmZip from 'adm-zip';
 import { rapidAPIClient } from '../../src/lib/rapidapi-youtube';
+import { getRapidAPIClientV2 } from '../../src/lib/rapidapi-youtube-v2';
 import { globalQueue, youtubeRateLimiter } from './request-queue';
 
 // Check if RapidAPI is enabled
@@ -74,7 +75,9 @@ export async function downloadClip(
       onProgress?.(`🚀 Using RapidAPI for video download...`);
       
       // Download video using RapidAPI
-      await rapidAPIClient.downloadVideo(match.videoUrl, tempVideoPath, quality);
+      // Use V2 client for more reliable downloads
+      const v2Client = getRapidAPIClientV2();
+      await v2Client.downloadVideo(match.videoUrl, tempVideoPath, quality);
       
       onProgress?.(`✅ Video downloaded successfully via RapidAPI`);
     } else {
@@ -394,6 +397,9 @@ export async function createZipFile(
   downloadResults: DownloadResult[],
   outputPath: string
 ): Promise<string> {
+  console.log(`\n📦 Creating ZIP with ${downloadResults.length} results...`);
+  console.log(`  Successful downloads: ${downloadResults.filter(r => r.success).length}`);
+  
   const zip = new AdmZip();
   
   // Add successfully downloaded files to the ZIP
@@ -439,10 +445,18 @@ export async function createZipFile(
   
   // Write the ZIP file
   await new Promise<void>((resolve, reject) => {
-    zip.writeZip(outputPath, (error) => {
-      if (error) reject(error);
-      else resolve();
-    });
+    try {
+      zip.writeZip(outputPath, (error) => {
+        if (error) {
+          console.error('ZIP write error:', error);
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    } catch (err) {
+      reject(err);
+    }
   });
   
   const stats = await fs.stat(outputPath);

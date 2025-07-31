@@ -20,7 +20,7 @@ export class RapidAPIYouTubeClientV2 {
         'X-RapidAPI-Key': this.apiKey,
         'X-RapidAPI-Host': this.apiHost
       },
-      timeout: 30000
+      timeout: 60000  // Increased to 60 seconds
     });
   }
 
@@ -150,9 +150,9 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Download video directly
+   * Get video download URL directly
    */
-  async downloadVideo(videoUrl: string, quality: string = '720'): Promise<{ url: string }> {
+  async getVideoDownloadUrl(videoUrl: string, quality: string = '720'): Promise<{ url: string }> {
     const videoId = this.extractVideoId(videoUrl);
     if (!videoId) throw new Error('Invalid YouTube URL');
 
@@ -183,6 +183,84 @@ export class RapidAPIYouTubeClientV2 {
       console.error('Video download error:', error.response?.data || error.message);
       throw new Error(`Video download failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Download video and save to file
+   */
+  async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
+    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, quality || '720');
+    await this.waitAndDownloadFile(downloadInfo.url, outputPath);
+  }
+
+  /**
+   * Wait for file to be ready and download it
+   */
+  private async waitAndDownloadFile(downloadUrl: string, outputPath: string): Promise<void> {
+    console.log(`⏳ Waiting for file to be ready at: ${downloadUrl}`);
+    
+    // Ensure directory exists
+    const dir = require('path').dirname(outputPath);
+    await require('fs').promises.mkdir(dir, { recursive: true });
+    
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      
+      try {
+        // Try to download the file with increased timeout
+        const response = await require('axios').get(downloadUrl, {
+          responseType: 'stream',
+          timeout: 120000, // 2 minutes for download
+          validateStatus: (status: number) => status === 200
+        });
+
+        // Save to file
+        const stream = require('fs').createWriteStream(outputPath);
+        
+        return new Promise((resolve, reject) => {
+          response.data.pipe(stream);
+          
+          stream.on('finish', () => {
+            console.log(`✅ File downloaded successfully to: ${outputPath}`);
+            resolve();
+          });
+          
+          stream.on('error', (error: any) => {
+            console.error('Stream error:', error);
+            reject(new Error(`Failed to save file: ${error.message}`));
+          });
+          
+          response.data.on('error', (error: any) => {
+            console.error('Download error:', error);
+            reject(new Error(`Failed to download file: ${error.message}`));
+          });
+        });
+        
+      } catch (error: any) {
+        // If we get a 404, the file isn't ready yet
+        if (error.response?.status === 404) {
+          console.log(`⏳ File not ready yet (attempt ${attempts}/${maxAttempts}), waiting 5 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          continue;
+        }
+        
+        // For other errors, log and retry with backoff
+        console.error(`Download attempt ${attempts} failed:`, error.message);
+        
+        if (attempts >= maxAttempts) {
+          throw new Error(`Failed to download file after ${maxAttempts} attempts: ${error.message}`);
+        }
+        
+        const waitTime = Math.min(5000 * attempts, 30000); // Max 30 seconds
+        console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    
+    throw new Error(`Failed to download file after ${maxAttempts} attempts`);
   }
 }
 
