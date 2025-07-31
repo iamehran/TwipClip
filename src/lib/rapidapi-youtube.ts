@@ -89,7 +89,7 @@ export class RapidAPIYouTubeClient {
     this.apiKey = process.env.RAPIDAPI_KEY || '';
     this.apiHost = process.env.RAPIDAPI_HOST || 'youtube-video-fast-downloader-24-7.p.rapidapi.com';
     // Updated to 15 requests per minute for Pro plan
-    this.rateLimiter = new RateLimiter(13, 60000);
+    this.rateLimiter = new RateLimiter(28, 60000); // Ultra plan: 28 req/min
   }
 
   /**

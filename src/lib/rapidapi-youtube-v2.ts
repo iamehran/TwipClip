@@ -6,7 +6,7 @@ export class RapidAPIYouTubeClientV2 {
   private apiHost: string;
   private client: AxiosInstance;
   private lastRequestTime: number = 0;
-  private requestDelay: number = 2000; // 2 seconds between requests - optimized for 13 req/min
+  private requestDelay: number = 1500; // 1.5 seconds between requests - optimized for 28 req/min
   private requestCount: number = 0;
   private windowStart: number = Date.now();
 
@@ -42,7 +42,7 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Wait if needed to respect rate limits (13 requests per minute)
+   * Wait if needed to respect rate limits (28 requests per minute - Ultra plan)
    */
   private async waitIfNeeded(): Promise<void> {
     const now = Date.now();
@@ -54,9 +54,9 @@ export class RapidAPIYouTubeClientV2 {
     }
     
     // If we've hit the limit, wait until next window
-    if (this.requestCount >= 13) {
+    if (this.requestCount >= 28) {
       const waitTime = 60000 - (now - this.windowStart) + 1000; // +1s buffer
-      console.log(`⏳ Rate limit reached (13/13). Waiting ${Math.ceil(waitTime / 1000)}s for next window...`);
+      console.log(`⏳ Rate limit reached (28/28). Waiting ${Math.ceil(waitTime / 1000)}s for next window...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
       this.windowStart = Date.now();
       this.requestCount = 0;

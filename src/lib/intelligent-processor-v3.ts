@@ -162,9 +162,9 @@ export async function processVideosWithPerfectMatching(
           });
         }
         
-        // Add delay between videos for RapidAPI (except for the last one)
+        // Add minimal delay between videos for RapidAPI (except for the last one)
         if (i < videos.length - 1) {
-          const delay = 5000; // 5 seconds between videos
+          const delay = 2200; // 2.2 seconds between videos (safe for 28 req/min)
           console.log(`  ⏱️ Waiting ${delay/1000}s before next video...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }

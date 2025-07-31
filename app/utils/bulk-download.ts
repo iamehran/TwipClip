@@ -400,6 +400,7 @@ export async function createZipFile(
   console.log(`\n📦 Creating ZIP with ${downloadResults.length} results...`);
   console.log(`  Successful downloads: ${downloadResults.filter(r => r.success).length}`);
   
+  // Create a new ZIP with default compression (DEFLATE)
   const zip = new AdmZip();
   
   // Add successfully downloaded files to the ZIP
@@ -413,9 +414,18 @@ export async function createZipFile(
           const tweetNumber = result.tweetId.replace(/[^0-9]/g, '') || result.tweetId;
           const zipFilename = `Tweet ${tweetNumber}.mp4`;
           const fileContent = await fs.readFile(result.downloadPath);
+          
+          // Verify file content is valid
+          if (!fileContent || fileContent.length === 0) {
+            console.warn(`  Skipping empty file: ${result.downloadPath}`);
+            continue;
+          }
+          
           const comment = `${formatTime(result.startTime)} to ${formatTime(result.endTime)}`;
-          zip.addFile(zipFilename, fileContent, comment);
-          console.log(`  Added to ZIP: ${zipFilename} (original: ${path.basename(result.downloadPath)})`);
+          
+          // Add file without comment parameter to avoid potential issues
+          zip.addFile(zipFilename, fileContent);
+          console.log(`  Added to ZIP: ${zipFilename} (size: ${(fileContent.length / 1024 / 1024).toFixed(1)}MB)`);
         }
       } catch (error) {
         console.warn(`  Failed to add file to ZIP: ${result.downloadPath}`, error);
@@ -443,21 +453,13 @@ export async function createZipFile(
   
   zip.addFile('summary.json', Buffer.from(JSON.stringify(summary, null, 2)));
   
-  // Write the ZIP file
-  await new Promise<void>((resolve, reject) => {
-    try {
-      zip.writeZip(outputPath, (error) => {
-        if (error) {
-          console.error('ZIP write error:', error);
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    } catch (err) {
-      reject(err);
-    }
-  });
+  // Write the ZIP file synchronously for better compatibility
+  try {
+    zip.writeZip(outputPath);
+  } catch (error) {
+    console.error('ZIP write error:', error);
+    throw error;
+  }
   
   const stats = await fs.stat(outputPath);
   console.log(`📦 Created ZIP file: ${outputPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);

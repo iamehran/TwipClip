@@ -4,7 +4,7 @@
 
 export const RAPIDAPI_CONFIG = {
   // Rate limiting
-  MAX_REQUESTS_PER_MINUTE: 13, // Pro plan limit (using 13 instead of 15 to be safe)
+  MAX_REQUESTS_PER_MINUTE: 28, // Ultra plan limit (using 28 instead of 30 to be safe)
   
   // Default audio quality (itag)
   DEFAULT_AUDIO_QUALITY: 140, // Standard m4a 128k - works for 99% of videos
