@@ -54,6 +54,13 @@ export async function downloadClip(
   sessionId?: string,
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
+  console.log('🎬 downloadClip called with:', {
+    videoUrl: match.videoUrl,
+    startTime: match.startTime,
+    endTime: match.endTime,
+    outputDir
+  });
+  
   const ffmpegPath = await getFFmpegCommand();
   
   // Create safe filename
@@ -73,13 +80,23 @@ export async function downloadClip(
     
     if (USE_RAPIDAPI) {
       onProgress?.(`🚀 Using RapidAPI for video download...`);
+      console.log('Using RapidAPI to download video:', match.videoUrl);
       
-      // Download video using RapidAPI
-      // Use V2 client for more reliable downloads
-      const v2Client = getRapidAPIClientV2();
-      await v2Client.downloadVideo(match.videoUrl, tempVideoPath, quality);
-      
-      onProgress?.(`✅ Video downloaded successfully via RapidAPI`);
+      try {
+        // Download video using RapidAPI
+        // Use V2 client for more reliable downloads
+        const v2Client = getRapidAPIClientV2();
+        console.log('Calling RapidAPI downloadVideo...');
+        await v2Client.downloadVideo(match.videoUrl, tempVideoPath, quality);
+        
+        // Verify the file was created
+        const stats = await fs.stat(tempVideoPath);
+        console.log(`✅ Video downloaded: ${tempVideoPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+        onProgress?.(`✅ Video downloaded successfully via RapidAPI`);
+      } catch (rapidError: any) {
+        console.error('RapidAPI download failed:', rapidError);
+        throw new Error(`RapidAPI download failed: ${rapidError.message || rapidError}`);
+      }
     } else {
       // Original yt-dlp logic (kept as fallback)
       const ytDlpPath = await getYtDlpCommand();
@@ -173,6 +190,7 @@ export async function downloadClip(
     
     // Step 3: Extract the specific clip using FFmpeg with Typefully-optimized settings
     onProgress?.(`Extracting and optimizing clip (${formatTime(validStartTime)} - ${formatTime(validEndTime)})...`);
+    console.log(`📹 Extracting clip: ${validStartTime}s - ${validEndTime}s (duration: ${validDuration}s)`);
     
     // Optimized FFmpeg settings for Typefully
     // - CRF 23 for good quality/size balance (lower = better quality, higher = smaller size)
@@ -187,6 +205,8 @@ export async function downloadClip(
     extractCmd += ` -movflags +faststart`;
     extractCmd += ` -avoid_negative_ts make_zero`;
     extractCmd += ` "${outputPath}" -y`;
+    
+    console.log('FFmpeg extract command:', extractCmd);
     
     try {
       await execAsync(extractCmd, {
@@ -257,6 +277,14 @@ export async function downloadClip(
     
     const fileSizeMB = (stats.size / 1024 / 1024).toFixed(1);
     onProgress?.(`✅ Successfully extracted ${duration}s clip (${fileSizeMB}MB)`);
+    
+    // Clean up the temporary video file
+    try {
+      await fs.unlink(tempVideoPath);
+      console.log(`🗑️ Cleaned up temp video file: ${tempVideoPath}`);
+    } catch (cleanupError) {
+      console.warn('Failed to clean up temp file:', cleanupError);
+    }
     
     return {
       tweetId: match.tweetId,

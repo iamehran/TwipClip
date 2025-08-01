@@ -4,9 +4,20 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+// Test endpoint to verify download functionality
+export async function GET() {
+  return NextResponse.json({ 
+    status: 'Download endpoint is running',
+    timestamp: new Date().toISOString()
+  });
+}
+
 export async function POST(request) {
+  console.log('📥 Download-clip endpoint called');
+  
   try {
     const { videoUrl, startTime, endTime, tweet } = await request.json();
+    console.log('Download request:', { videoUrl, startTime, endTime });
 
     if (!videoUrl || startTime === undefined || endTime === undefined) {
       return NextResponse.json(
@@ -30,10 +41,16 @@ export async function POST(request) {
     await fs.promises.mkdir(outputDir, { recursive: true });
 
     // Download just this one clip
+    console.log('Calling downloadClip with match:', match);
     const result = await downloadClip(match, outputDir);
+    console.log('Download result:', { 
+      success: result.success, 
+      downloadPath: result.downloadPath,
+      error: result.error 
+    });
     
-    if (result.success && result.filePath) {
-      const filePath = result.filePath;
+    if (result.success && result.downloadPath) {
+      const filePath = result.downloadPath;
       
       // Read the file
       const fileBuffer = await fs.promises.readFile(filePath);
@@ -56,6 +73,11 @@ export async function POST(request) {
         },
       });
     } else {
+      console.error('Download failed:', { 
+        success: result?.success,
+        error: result?.error,
+        downloadPath: result?.downloadPath 
+      });
       return NextResponse.json(
         { 
           error: 'Failed to download clip',
@@ -66,9 +88,10 @@ export async function POST(request) {
     }
 
   } catch (error) {
-    console.error('Download error:', error);
+    console.error('Download endpoint error:', error);
+    console.error('Error stack:', error.stack);
     return NextResponse.json(
-      { error: error.message },
+      { error: error.message || 'Unknown error occurred' },
       { status: 500 }
     );
   }

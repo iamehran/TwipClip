@@ -211,9 +211,15 @@ export class RapidAPIYouTubeClientV2 {
       
       try {
         // Try to download the file with increased timeout
+        // Default to 5 minutes, configurable via environment variable
+        const downloadTimeout = parseInt(process.env.RAPIDAPI_DOWNLOAD_TIMEOUT || '300000');
+        
+        if (attempts === 1) {
+          console.log(`📥 Downloading with timeout: ${downloadTimeout / 1000}s`);
+        }
         const response = await require('axios').get(downloadUrl, {
           responseType: 'stream',
-          timeout: 120000, // 2 minutes for download
+          timeout: downloadTimeout,
           validateStatus: (status: number) => status === 200
         });
 
