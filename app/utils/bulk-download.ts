@@ -280,10 +280,15 @@ export async function downloadClip(
     
     // Clean up the temporary video file
     try {
+      // Check if file exists before trying to delete
+      await fs.access(tempVideoPath);
       await fs.unlink(tempVideoPath);
       console.log(`🗑️ Cleaned up temp video file: ${tempVideoPath}`);
-    } catch (cleanupError) {
-      console.warn('Failed to clean up temp file:', cleanupError);
+    } catch (cleanupError: any) {
+      // Only log if it's not a "file not found" error
+      if (cleanupError.code !== 'ENOENT') {
+        console.warn('Failed to clean up temp file:', cleanupError.message);
+      }
     }
     
     return {
