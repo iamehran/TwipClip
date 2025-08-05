@@ -74,7 +74,7 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Get video info (simple version)
+   * Get video info with formats
    */
   async getVideoInfo(videoUrl: string): Promise<any> {
     const videoId = this.extractVideoId(videoUrl);
@@ -84,6 +84,17 @@ export class RapidAPIYouTubeClientV2 {
 
     try {
       const response = await this.client.get(`/get-video-info/${videoId}`);
+      
+      // Log available formats if present
+      if (response.data?.formats) {
+        console.log(`📋 Available formats for ${videoId}:`);
+        response.data.formats.forEach((f: any) => {
+          if (f.itag && f.qualityLabel) {
+            console.log(`  - itag ${f.itag}: ${f.qualityLabel} (${f.mimeType})`);
+          }
+        });
+      }
+      
       return response.data;
     } catch (error: any) {
       console.error('Video info error:', error.response?.data || error.message);
@@ -160,36 +171,43 @@ export class RapidAPIYouTubeClientV2 {
     await this.waitIfNeeded();
 
     try {
+      // First, get video info to check available formats
+      console.log(`🔍 Checking available formats for ${videoId}...`);
+      const videoInfo = await this.getVideoInfo(videoUrl);
+      
+      // Check if we have format 22 (720p) available
+      let has720p = false;
+      if (videoInfo?.formats) {
+        const format22 = videoInfo.formats.find((f: any) => f.itag === 22 || f.itag === '22');
+        if (format22) {
+          has720p = true;
+          console.log(`✅ Found 720p format (itag 22): ${format22.qualityLabel}`);
+        } else {
+          console.warn(`⚠️ No 720p format (itag 22) found in available formats`);
+          // Log what formats ARE available
+          const availableQualities = videoInfo.formats
+            .filter((f: any) => f.qualityLabel && !f.mimeType?.includes('audio'))
+            .map((f: any) => `${f.qualityLabel} (itag ${f.itag})`)
+            .join(', ');
+          console.log(`📋 Available video qualities: ${availableQualities || 'none'}`);
+        }
+      }
+      
       // Check if it's a short
       const isShort = videoUrl.includes('/shorts/');
-      const endpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
       
-      // Map quality to itag (quality ID that RapidAPI expects)
-      // Based on https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
-      // 
       // We ONLY use format 22 (720p) - no fallbacks to lower quality
-      // Format 22: MP4, H.264 720p + AAC 192kbps audio
-      const qualityToItag: { [key: string]: string } = {
-        '720': '22',   // 720p H.264 + AAC 192kbps (legacy format with audio)
-        '720p': '22',  // 720p H.264 + AAC 192kbps
-        'default': '22' // Always default to 720p, no compromises
-      };
+      const itag = '22';
+      console.log(`🎯 Requesting itag ${itag} (720p) regardless of availability`);
       
-      // Get the itag for requested quality
-      const itag = qualityToItag[quality] || qualityToItag['default'];
-      console.log(`🎯 Using itag ${itag} for quality ${quality}`);
+      // Build endpoint with quality parameter in the URL path (not as separate params)
+      const baseEndpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
+      const endpoint = `${baseEndpoint}?quality=${itag}`;
       
-      // According to the gist, format 22 is:
-      // - Container: MP4
-      // - Video: H.264 (High Profile), 720p, 30fps max
-      // - Audio: AAC LC, 192 Kbps, Stereo
-      // - Still offered: "Mostly" (might fail on some videos)
+      console.log(`📡 Requesting endpoint: ${endpoint}`);
       
-      // RapidAPI expects 'quality' parameter to be the itag number
-      const params = { quality: itag };
-      console.log(`📡 Requesting ${endpoint} with params:`, params);
-      
-      const response = await this.client.get(endpoint, { params });
+      const response = await this.client.get(endpoint);
+      console.log(`📥 RapidAPI Response status: ${response.status}`);
       
       const downloadUrl = response.data?.url || 
                          response.data?.download_url || 
@@ -197,7 +215,15 @@ export class RapidAPIYouTubeClientV2 {
                          response.data?.link;
       
       if (downloadUrl) {
-        console.log(`✅ Got video download URL with itag ${itag}`);
+        console.log(`✅ Got video download URL`);
+        console.log(`🔗 Download URL: ${downloadUrl}`);
+        
+        // Warn if we didn't find 720p in formats but got a URL anyway
+        if (!has720p) {
+          console.warn(`⚠️ WARNING: 720p not found in formats but RapidAPI returned a URL anyway`);
+          console.warn(`⚠️ The downloaded video quality might be lower than requested`);
+        }
+        
         return { url: downloadUrl };
       }
 

@@ -86,12 +86,25 @@ export async function downloadClip(
         // Download video using RapidAPI
         // Use V2 client for more reliable downloads
         const v2Client = getRapidAPIClientV2();
-        console.log('Calling RapidAPI downloadVideo...');
+        console.log(`🎯 Calling RapidAPI downloadVideo with quality: ${quality}`);
         await v2Client.downloadVideo(match.videoUrl, tempVideoPath, quality);
         
         // Verify the file was created
         const stats = await fs.stat(tempVideoPath);
         console.log(`✅ Video downloaded: ${tempVideoPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+        
+        // Check actual video resolution
+        const probeCmd = `"${ffmpegPath}" -i "${tempVideoPath}" 2>&1`;
+        const { stdout: probeOutput } = await execAsync(probeCmd);
+        const resolutionMatch = probeOutput.match(/Stream.*Video.*\s(\d+)x(\d+)/);
+        if (resolutionMatch) {
+          const actualResolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
+          console.log(`📊 Actual downloaded video resolution: ${actualResolution} (requested: ${quality})`);
+          if (resolutionMatch[2] !== '720' && quality === '720p') {
+            console.error(`❌ WARNING: Downloaded video is ${resolutionMatch[2]}p, not 720p as requested!`);
+          }
+        }
+        
         onProgress?.(`✅ Video downloaded successfully via RapidAPI`);
       } catch (rapidError: any) {
         console.error('RapidAPI download failed:', rapidError);
