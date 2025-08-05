@@ -162,21 +162,32 @@ export async function downloadClip(
       }
     }
     
-    // Step 2: Get video duration first to validate seek times
+    // Step 2: Get video info including resolution and duration
     let videoDuration = 0;
+    let videoResolution = '';
     try {
       const probeCmd = `"${ffmpegPath}" -i "${tempVideoPath}" 2>&1`;
       const probeOutput = await execAsync(probeCmd, { maxBuffer: 10 * 1024 * 1024 }).catch(e => e);
+      
+      // Extract duration
       const durationMatch = probeOutput.stdout?.match(/Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/);
       if (durationMatch) {
         const hours = parseInt(durationMatch[1]);
         const minutes = parseInt(durationMatch[2]);
         const seconds = parseFloat(durationMatch[3]);
         videoDuration = hours * 3600 + minutes * 60 + seconds;
-        console.log(`Video duration: ${videoDuration}s, requested clip: ${match.startTime}s - ${match.endTime}s`);
       }
+      
+      // Extract resolution
+      const resolutionMatch = probeOutput.stdout?.match(/Stream.*Video.*\s(\d+)x(\d+)/);
+      if (resolutionMatch) {
+        videoResolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
+        console.log(`📊 Downloaded video resolution: ${videoResolution} (requested: 720p)`);
+      }
+      
+      console.log(`Video duration: ${videoDuration}s, requested clip: ${match.startTime}s - ${match.endTime}s`);
     } catch (e) {
-      console.warn('Could not determine video duration, proceeding anyway');
+      console.warn('Could not determine video info, proceeding anyway');
     }
     
     // Validate and adjust times if necessary

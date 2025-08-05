@@ -40,9 +40,9 @@ export async function POST(request) {
     const outputDir = path.join(os.tmpdir(), 'twipclip-single', Date.now().toString());
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    // Download just this one clip
+    // Download just this one clip with 720p quality
     console.log('Calling downloadClip with match:', match);
-    const result = await downloadClip(match, outputDir);
+    const result = await downloadClip(match, outputDir, '720p');
     console.log('Download result:', { 
       success: result.success, 
       downloadPath: result.downloadPath,

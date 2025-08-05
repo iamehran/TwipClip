@@ -164,9 +164,14 @@ export class RapidAPIYouTubeClientV2 {
       const isShort = videoUrl.includes('/shorts/');
       const endpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
       
-      const response = await this.client.get(endpoint, {
-        params: { quality }
-      });
+      // For better quality, also try with explicit format
+      const params: any = { quality };
+      // Some RapidAPI endpoints prefer 'quality_label' over 'quality'
+      if (quality === '720') {
+        params.quality_label = '720p';
+      }
+      
+      const response = await this.client.get(endpoint, { params });
       
       const downloadUrl = response.data?.url || 
                          response.data?.download_url || 
