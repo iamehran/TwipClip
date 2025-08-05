@@ -93,16 +93,25 @@ export async function downloadClip(
         const stats = await fs.stat(tempVideoPath);
         console.log(`✅ Video downloaded: ${tempVideoPath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
         
-        // Check actual video resolution
-        const probeCmd = `"${ffmpegPath}" -i "${tempVideoPath}" 2>&1`;
-        const { stdout: probeOutput } = await execAsync(probeCmd);
-        const resolutionMatch = probeOutput.match(/Stream.*Video.*\s(\d+)x(\d+)/);
-        if (resolutionMatch) {
-          const actualResolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
-          console.log(`📊 Actual downloaded video resolution: ${actualResolution} (requested: ${quality})`);
-          if (resolutionMatch[2] !== '720' && quality === '720p') {
-            console.error(`❌ WARNING: Downloaded video is ${resolutionMatch[2]}p, not 720p as requested!`);
+        // Check actual video resolution using FFmpeg
+        try {
+          const probeCmd = `"${ffmpegPath}" -i "${tempVideoPath}" -hide_banner -f null - 2>&1`;
+          const { stdout: probeOutput } = await execAsync(probeCmd).catch(err => ({ stdout: err.stdout || err.message }));
+          const resolutionMatch = probeOutput.match(/Stream.*Video.*\s(\d+)x(\d+)/);
+          if (resolutionMatch) {
+            const actualResolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
+            const actualHeight = parseInt(resolutionMatch[2]);
+            console.log(`📊 Downloaded video resolution: ${actualResolution}`);
+            
+            // Verify we got the expected quality
+            if (quality === '720p' && actualHeight >= 720) {
+              console.log(`✅ Successfully downloaded in ${actualHeight}p quality`);
+            } else if (quality === '720p' && actualHeight < 720) {
+              console.warn(`⚠️ Requested 720p but got ${actualHeight}p - this video might not have 720p available`);
+            }
           }
+        } catch (probeError) {
+          console.warn('Could not probe video resolution:', probeError);
         }
         
         onProgress?.(`✅ Video downloaded successfully via RapidAPI`);

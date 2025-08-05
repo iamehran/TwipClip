@@ -9,6 +9,7 @@ export class RapidAPIYouTubeClientV2 {
   private requestDelay: number = 1500; // 1.5 seconds between requests - optimized for 28 req/min
   private requestCount: number = 0;
   private windowStart: number = Date.now();
+  private qualityCache: Map<string, { qualities: any[], timestamp: number }> = new Map();
 
   constructor() {
     this.apiKey = process.env.RAPIDAPI_KEY || '';
@@ -161,7 +162,7 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Get video download URL directly
+   * Get video download URL with proper quality selection
    */
   async getVideoDownloadUrl(videoUrl: string, quality: string = '720'): Promise<{ url: string }> {
     const videoId = this.extractVideoId(videoUrl);
@@ -171,72 +172,84 @@ export class RapidAPIYouTubeClientV2 {
     await this.waitIfNeeded();
 
     try {
-      // First, get video info to check available formats
-      console.log(`🔍 Checking available formats for ${videoId}...`);
-      const videoInfo = await this.getVideoInfo(videoUrl);
+      // Step 1: Get available quality options (check cache first)
+      let availableQualities;
+      const cacheKey = videoId;
+      const cached = this.qualityCache.get(cacheKey);
+      const cacheMaxAge = 30 * 60 * 1000; // 30 minutes
       
-      // Check if we have format 22 (720p) available
-      let has720p = false;
-      if (videoInfo?.formats) {
-        const format22 = videoInfo.formats.find((f: any) => f.itag === 22 || f.itag === '22');
-        if (format22) {
-          has720p = true;
-          console.log(`✅ Found 720p format (itag 22): ${format22.qualityLabel}`);
-        } else {
-          console.warn(`⚠️ No 720p format (itag 22) found in available formats`);
-          // Log what formats ARE available
-          const availableQualities = videoInfo.formats
-            .filter((f: any) => f.qualityLabel && !f.mimeType?.includes('audio'))
-            .map((f: any) => `${f.qualityLabel} (itag ${f.itag})`)
-            .join(', ');
-          console.log(`📋 Available video qualities: ${availableQualities || 'none'}`);
-        }
+      if (cached && (Date.now() - cached.timestamp) < cacheMaxAge) {
+        console.log(`📦 Using cached quality options for ${videoId}`);
+        availableQualities = cached.qualities;
+      } else {
+        console.log(`🔍 Getting available quality options for ${videoId}...`);
+        const qualityResponse = await this.client.get(`/get_available_quality/${videoId}`);
+        availableQualities = qualityResponse.data;
+        
+        // Cache the result
+        this.qualityCache.set(cacheKey, { 
+          qualities: availableQualities, 
+          timestamp: Date.now() 
+        });
       }
       
-      // Check if it's a short
+      if (!Array.isArray(availableQualities) || availableQualities.length === 0) {
+        throw new Error('No quality options available for this video');
+      }
+      
+      console.log(`📋 Available qualities:`);
+      availableQualities.forEach((q: any) => {
+        if (q.type === 'video') {
+          console.log(`  - ID: ${q.id}, Quality: ${q.quality}, Size: ${q.size}, Type: ${q.type}`);
+        }
+      });
+      
+      // Step 2: Find 720p quality ID (not itag!)
+      const targetQuality = quality.replace('p', ''); // '720p' -> '720'
+      const qualityOption = availableQualities.find((q: any) => 
+        q.type === 'video' && 
+        q.quality === `${targetQuality}p`
+      );
+      
+      if (!qualityOption) {
+        // Log what's available if 720p not found
+        const availableVideoQualities = availableQualities
+          .filter((q: any) => q.type === 'video')
+          .map((q: any) => q.quality)
+          .join(', ');
+        
+        throw new Error(`720p quality not available. Available qualities: ${availableVideoQualities}`);
+      }
+      
+      console.log(`✅ Found 720p quality with ID: ${qualityOption.id}`);
+      
+      // Step 3: Download with the correct quality ID
       const isShort = videoUrl.includes('/shorts/');
+      const endpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
       
-      // We ONLY use format 22 (720p) - no fallbacks to lower quality
-      const itag = '22';
-      console.log(`🎯 Requesting itag ${itag} (720p) regardless of availability`);
+      console.log(`📡 Requesting ${endpoint}?quality=${qualityOption.id}`);
       
-      // Build endpoint with quality parameter in the URL path (not as separate params)
-      const baseEndpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
-      const endpoint = `${baseEndpoint}?quality=${itag}`;
+      const response = await this.client.get(`${endpoint}?quality=${qualityOption.id}`);
+      console.log(`📥 Download response:`, {
+        status: response.status,
+        quality: response.data?.quality,
+        size: response.data?.size
+      });
       
-      console.log(`📡 Requesting endpoint: ${endpoint}`);
-      
-      const response = await this.client.get(endpoint);
-      console.log(`📥 RapidAPI Response status: ${response.status}`);
-      
-      const downloadUrl = response.data?.url || 
+      const downloadUrl = response.data?.file || 
+                         response.data?.url || 
                          response.data?.download_url || 
-                         response.data?.file ||
                          response.data?.link;
       
       if (downloadUrl) {
-        console.log(`✅ Got video download URL`);
-        console.log(`🔗 Download URL: ${downloadUrl}`);
-        
-        // Warn if we didn't find 720p in formats but got a URL anyway
-        if (!has720p) {
-          console.warn(`⚠️ WARNING: 720p not found in formats but RapidAPI returned a URL anyway`);
-          console.warn(`⚠️ The downloaded video quality might be lower than requested`);
-        }
-        
+        console.log(`✅ Got video download URL for quality ${response.data?.quality || 'unknown'}`);
         return { url: downloadUrl };
       }
 
       throw new Error('No download URL in response');
     } catch (error: any) {
       console.error('Video download error:', error.response?.data || error.message);
-      
-      // No fallback to lower quality - if 720p isn't available, we fail with clear message
-      if (error.response?.status === 404 || error.response?.data?.message?.includes('not found')) {
-        throw new Error('720p quality not available for this video. The video might be older or have restricted quality options.');
-      }
-      
-      throw new Error(`Failed to download video in 720p: ${error.message}`);
+      throw new Error(`Failed to download video: ${error.message}`);
     }
   }
 
@@ -258,10 +271,10 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Wait for file to be ready and download it
+   * Wait for file to be ready and download it (optimized with HEAD checks)
    */
   private async waitAndDownloadFile(downloadUrl: string, outputPath: string): Promise<void> {
-    console.log(`⏳ Waiting for file to be ready at: ${downloadUrl}`);
+    console.log(`⏳ Checking file availability at: ${downloadUrl}`);
     
     // Ensure directory exists
     const dir = require('path').dirname(outputPath);
@@ -270,67 +283,91 @@ export class RapidAPIYouTubeClientV2 {
     let attempts = 0;
     const maxAttempts = 20;
     
+    // Phase 1: Use HEAD requests to check file availability (saves bandwidth)
     while (attempts < maxAttempts) {
       attempts++;
       
       try {
-        // Try to download the file with increased timeout
-        // Default to 5 minutes, configurable via environment variable
-        const downloadTimeout = parseInt(process.env.RAPIDAPI_DOWNLOAD_TIMEOUT || '300000');
-        
-        if (attempts === 1) {
-          console.log(`📥 Downloading with timeout: ${downloadTimeout / 1000}s`);
-        }
-        const response = await require('axios').get(downloadUrl, {
-          responseType: 'stream',
-          timeout: downloadTimeout,
+        // Use HEAD request to check if file exists without downloading
+        await axios.head(downloadUrl, {
+          timeout: 5000,
           validateStatus: (status: number) => status === 200
         });
-
-        // Save to file
-        const stream = require('fs').createWriteStream(outputPath);
         
-        return new Promise((resolve, reject) => {
-          response.data.pipe(stream);
-          
-          stream.on('finish', () => {
-            console.log(`✅ File downloaded successfully to: ${outputPath}`);
-            resolve();
-          });
-          
-          stream.on('error', (error: any) => {
-            console.error('Stream error:', error);
-            reject(new Error(`Failed to save file: ${error.message}`));
-          });
-          
-          response.data.on('error', (error: any) => {
-            console.error('Download error:', error);
-            reject(new Error(`Failed to download file: ${error.message}`));
-          });
-        });
+        console.log(`✅ File is ready after ${attempts} checks!`);
+        break;
         
       } catch (error: any) {
-        // If we get a 404, the file isn't ready yet
         if (error.response?.status === 404) {
-          console.log(`⏳ File not ready yet (attempt ${attempts}/${maxAttempts}), waiting 5 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // Smart wait strategy based on attempt number
+          let waitTime: number;
+          if (attempts <= 3) {
+            waitTime = 3000; // First 3 attempts: 3 seconds
+          } else if (attempts <= 6) {
+            waitTime = 5000; // Next 3 attempts: 5 seconds
+          } else {
+            waitTime = 10000; // Remaining: 10 seconds
+          }
+          
+          console.log(`⏳ File not ready (check ${attempts}/${maxAttempts}), waiting ${waitTime/1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
           continue;
         }
         
-        // For other errors, log and retry with backoff
-        console.error(`Download attempt ${attempts} failed:`, error.message);
-        
-        if (attempts >= maxAttempts) {
-          throw new Error(`Failed to download file after ${maxAttempts} attempts: ${error.message}`);
-        }
-        
-        const waitTime = Math.min(5000 * attempts, 30000); // Max 30 seconds
-        console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+        // For other errors, throw
+        throw new Error(`HEAD request failed: ${error.message}`);
       }
     }
     
-    throw new Error(`Failed to download file after ${maxAttempts} attempts`);
+    if (attempts >= maxAttempts) {
+      throw new Error(`File not ready after ${maxAttempts} checks`);
+    }
+    
+    // Phase 2: Download the file
+    console.log(`📥 Downloading file...`);
+    const downloadTimeout = parseInt(process.env.RAPIDAPI_DOWNLOAD_TIMEOUT || '300000');
+    
+    try {
+      const response = await axios.get(downloadUrl, {
+        responseType: 'stream',
+        timeout: downloadTimeout,
+        validateStatus: (status: number) => status === 200
+      });
+
+      // Save to file
+      const stream = require('fs').createWriteStream(outputPath);
+      
+      return new Promise((resolve, reject) => {
+        let downloadedSize = 0;
+        
+        response.data.on('data', (chunk: any) => {
+          downloadedSize += chunk.length;
+          // Log progress every 10MB
+          if (downloadedSize % (10 * 1024 * 1024) < chunk.length) {
+            console.log(`📊 Downloaded: ${(downloadedSize / 1024 / 1024).toFixed(1)}MB`);
+          }
+        });
+        
+        response.data.pipe(stream);
+        
+        stream.on('finish', () => {
+          console.log(`✅ File downloaded successfully: ${(downloadedSize / 1024 / 1024).toFixed(1)}MB`);
+          resolve();
+        });
+        
+        stream.on('error', (error: any) => {
+          console.error('Stream error:', error);
+          reject(new Error(`Failed to save file: ${error.message}`));
+        });
+        
+        response.data.on('error', (error: any) => {
+          console.error('Download error:', error);
+          reject(new Error(`Failed to download file: ${error.message}`));
+        });
+      });
+    } catch (error: any) {
+      throw new Error(`Failed to download file: ${error.message}`);
+    }
   }
 }
 
