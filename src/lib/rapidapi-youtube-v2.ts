@@ -189,7 +189,10 @@ export class RapidAPIYouTubeClientV2 {
    * Download video and save to file
    */
   async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
-    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, quality || '720');
+    // Normalize quality parameter - RapidAPI expects numbers only (720, not 720p)
+    const normalizedQuality = quality ? quality.replace(/[^0-9]/g, '') : '720';
+    console.log(`📹 Downloading video with quality: ${normalizedQuality} (from ${quality || 'default'})`);
+    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, normalizedQuality);
     await this.waitAndDownloadFile(downloadInfo.url, outputPath);
   }
 

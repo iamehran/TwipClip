@@ -28,6 +28,9 @@ export default function VideoResult({ clip }: VideoResultProps) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showTrimControls, setShowTrimControls] = useState(false);
+  const [adjustedStartTime, setAdjustedStartTime] = useState(clip.startTime);
+  const [adjustedEndTime, setAdjustedEndTime] = useState(clip.endTime);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -56,8 +59,8 @@ export default function VideoResult({ clip }: VideoResultProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoUrl: clip.videoId,
-          startTime: clip.startTime,
-          endTime: clip.endTime,
+          startTime: adjustedStartTime,
+          endTime: adjustedEndTime,
           tweet: clip.matchedTweet
         })
       });
@@ -96,7 +99,7 @@ export default function VideoResult({ clip }: VideoResultProps) {
   };
 
   const copyTimestamp = () => {
-    const timestamp = `${formatTime(clip.startTime)} - ${formatTime(clip.endTime)}`;
+    const timestamp = `${formatTime(adjustedStartTime)} - ${formatTime(adjustedEndTime)}`;
     navigator.clipboard.writeText(timestamp);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -192,7 +195,10 @@ export default function VideoResult({ clip }: VideoResultProps) {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400">
-                {formatTime(clip.startTime)} - {formatTime(clip.endTime)}
+                {formatTime(adjustedStartTime)} - {formatTime(adjustedEndTime)}
+                {(adjustedStartTime !== clip.startTime || adjustedEndTime !== clip.endTime) && 
+                  <span className="text-yellow-500 ml-1">(edited)</span>
+                }
               </span>
               <button
                 onClick={copyTimestamp}
@@ -213,6 +219,14 @@ export default function VideoResult({ clip }: VideoResultProps) {
                 {showPreview ? 'Hide' : 'Preview'}
               </button>
 
+              {/* Trim Toggle */}
+              <button
+                onClick={() => setShowTrimControls(!showTrimControls)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-700/50 hover:bg-gray-600/50 text-white transition-all flex-1 sm:flex-initial"
+              >
+                {showTrimControls ? 'Hide Trim' : '✂️ Trim'}
+              </button>
+
               {/* Download Button */}
               <button
                 onClick={handleDownload}
@@ -227,6 +241,56 @@ export default function VideoResult({ clip }: VideoResultProps) {
               </button>
             </div>
           </div>
+
+          {/* Trim Controls */}
+          {showTrimControls && (
+            <div className="mt-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
+              <p className="text-xs text-gray-400 mb-2">Adjust clip start and end times:</p>
+              <div className="flex gap-3 items-center">
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 block mb-1">Start Time</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max={adjustedEndTime - 0.1}
+                    value={adjustedStartTime}
+                    onChange={(e) => setAdjustedStartTime(parseFloat(e.target.value) || 0)}
+                    className="w-full px-2 py-1 text-xs bg-gray-900/50 border border-gray-700 rounded text-white"
+                  />
+                  <span className="text-xs text-gray-500 mt-1 block">{formatTime(adjustedStartTime)}</span>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 block mb-1">End Time</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={adjustedStartTime + 0.1}
+                    value={adjustedEndTime}
+                    onChange={(e) => setAdjustedEndTime(parseFloat(e.target.value) || clip.endTime)}
+                    className="w-full px-2 py-1 text-xs bg-gray-900/50 border border-gray-700 rounded text-white"
+                  />
+                  <span className="text-xs text-gray-500 mt-1 block">{formatTime(adjustedEndTime)}</span>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  Duration: {formatTime(adjustedEndTime - adjustedStartTime)}
+                </span>
+                {(adjustedStartTime !== clip.startTime || adjustedEndTime !== clip.endTime) && (
+                  <button
+                    onClick={() => {
+                      setAdjustedStartTime(clip.startTime);
+                      setAdjustedEndTime(clip.endTime);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Reset to original
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {downloadError && (
