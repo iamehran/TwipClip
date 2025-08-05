@@ -26,20 +26,51 @@ export class RapidAPIYouTubeClientV2 {
   }
 
   /**
-   * Extract video ID from YouTube URL
+   * Extract video ID from YouTube URL using proper URL parsing
    */
   private extractVideoId(url: string): string | null {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/,
-      /youtube\.com\/shorts\/([^&\n?#]+)/
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match) return match[1];
+    try {
+      const cleanUrl = url.trim();
+      
+      // Handle youtu.be short URLs
+      if (cleanUrl.includes('youtu.be/')) {
+        const match = cleanUrl.match(/youtu\.be\/([^?#&]+)/);
+        if (match) return match[1];
+      }
+      
+      // Handle youtube.com URLs
+      if (cleanUrl.includes('youtube.com')) {
+        const urlObj = new URL(cleanUrl);
+        
+        // Check for video ID in query parameters (most common)
+        const videoId = urlObj.searchParams.get('v');
+        if (videoId) return videoId;
+        
+        // Check for shorts
+        if (urlObj.pathname.includes('/shorts/')) {
+          const match = urlObj.pathname.match(/\/shorts\/([^/?#]+)/);
+          if (match) return match[1];
+        }
+        
+        // Check for embed URLs
+        if (urlObj.pathname.includes('/embed/')) {
+          const match = urlObj.pathname.match(/\/embed\/([^/?#]+)/);
+          if (match) return match[1];
+        }
+        
+        // Check for /v/ URLs (older format)
+        if (urlObj.pathname.includes('/v/')) {
+          const match = urlObj.pathname.match(/\/v\/([^/?#]+)/);
+          if (match) return match[1];
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      // If URL parsing fails, return null
+      console.error('Error parsing YouTube URL:', error);
+      return null;
     }
-
-    return null;
   }
 
   /**
