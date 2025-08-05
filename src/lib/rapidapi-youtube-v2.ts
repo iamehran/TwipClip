@@ -164,12 +164,30 @@ export class RapidAPIYouTubeClientV2 {
       const isShort = videoUrl.includes('/shorts/');
       const endpoint = isShort ? `/download_short/${videoId}` : `/download_video/${videoId}`;
       
-      // For better quality, also try with explicit format
-      const params: any = { quality };
-      // Some RapidAPI endpoints prefer 'quality_label' over 'quality'
-      if (quality === '720') {
-        params.quality_label = '720p';
-      }
+      // Map quality to itag (quality ID that RapidAPI expects)
+      // Based on https://gist.github.com/AgentOak/34d47c65b1d28829bb17c24c04a0096f
+      // 
+      // We ONLY use format 22 (720p) - no fallbacks to lower quality
+      // Format 22: MP4, H.264 720p + AAC 192kbps audio
+      const qualityToItag: { [key: string]: string } = {
+        '720': '22',   // 720p H.264 + AAC 192kbps (legacy format with audio)
+        '720p': '22',  // 720p H.264 + AAC 192kbps
+        'default': '22' // Always default to 720p, no compromises
+      };
+      
+      // Get the itag for requested quality
+      const itag = qualityToItag[quality] || qualityToItag['default'];
+      console.log(`🎯 Using itag ${itag} for quality ${quality}`);
+      
+      // According to the gist, format 22 is:
+      // - Container: MP4
+      // - Video: H.264 (High Profile), 720p, 30fps max
+      // - Audio: AAC LC, 192 Kbps, Stereo
+      // - Still offered: "Mostly" (might fail on some videos)
+      
+      // RapidAPI expects 'quality' parameter to be the itag number
+      const params = { quality: itag };
+      console.log(`📡 Requesting ${endpoint} with params:`, params);
       
       const response = await this.client.get(endpoint, { params });
       
@@ -179,14 +197,20 @@ export class RapidAPIYouTubeClientV2 {
                          response.data?.link;
       
       if (downloadUrl) {
-        console.log(`✅ Got video download URL`);
+        console.log(`✅ Got video download URL with itag ${itag}`);
         return { url: downloadUrl };
       }
 
       throw new Error('No download URL in response');
     } catch (error: any) {
       console.error('Video download error:', error.response?.data || error.message);
-      throw new Error(`Video download failed: ${error.message}`);
+      
+      // No fallback to lower quality - if 720p isn't available, we fail with clear message
+      if (error.response?.status === 404 || error.response?.data?.message?.includes('not found')) {
+        throw new Error('720p quality not available for this video. The video might be older or have restricted quality options.');
+      }
+      
+      throw new Error(`Failed to download video in 720p: ${error.message}`);
     }
   }
 
@@ -196,7 +220,13 @@ export class RapidAPIYouTubeClientV2 {
   async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
     // Normalize quality parameter - RapidAPI expects numbers only (720, not 720p)
     const normalizedQuality = quality ? quality.replace(/[^0-9]/g, '') : '720';
-    console.log(`📹 Downloading video with quality: ${normalizedQuality} (from ${quality || 'default'})`);
+    
+    // We only support 720p - no lower quality fallbacks
+    if (normalizedQuality !== '720') {
+      console.warn(`⚠️ Requested quality ${quality} normalized to ${normalizedQuality}, but we only support 720p`);
+    }
+    
+    console.log(`📹 Downloading video in 720p HD (itag 22)`);
     const downloadInfo = await this.getVideoDownloadUrl(videoUrl, normalizedQuality);
     await this.waitAndDownloadFile(downloadInfo.url, outputPath);
   }

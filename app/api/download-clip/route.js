@@ -16,8 +16,8 @@ export async function POST(request) {
   console.log('📥 Download-clip endpoint called');
   
   try {
-    const { videoUrl, startTime, endTime, tweet } = await request.json();
-    console.log('Download request:', { videoUrl, startTime, endTime });
+    const { videoUrl, startTime, endTime, tweet, quality } = await request.json();
+    console.log('Download request:', { videoUrl, startTime, endTime, quality });
 
     if (!videoUrl || startTime === undefined || endTime === undefined) {
       return NextResponse.json(
@@ -40,9 +40,10 @@ export async function POST(request) {
     const outputDir = path.join(os.tmpdir(), 'twipclip-single', Date.now().toString());
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    // Download just this one clip with 720p quality
-    console.log('Calling downloadClip with match:', match);
-    const result = await downloadClip(match, outputDir, '720p');
+    // Download with specified quality or default to 720p
+    const downloadQuality = quality || '720p';
+    console.log('Calling downloadClip with match:', match, 'quality:', downloadQuality);
+    const result = await downloadClip(match, outputDir, downloadQuality);
     console.log('Download result:', { 
       success: result.success, 
       downloadPath: result.downloadPath,
