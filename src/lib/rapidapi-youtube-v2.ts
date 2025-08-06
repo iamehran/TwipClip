@@ -44,7 +44,7 @@ export class RapidAPIYouTubeClientV2 {
         
         // Check for video ID in query parameters (most common)
         const videoId = urlObj.searchParams.get('v');
-        if (videoId) return videoId;
+        if (videoId && videoId.trim().length > 0) return videoId;
         
         // Check for shorts
         if (urlObj.pathname.includes('/shorts/')) {
@@ -235,24 +235,65 @@ export class RapidAPIYouTubeClientV2 {
         }
       });
       
-      // Step 2: Find 720p quality ID (not itag!)
+      // Step 2: Find best quality (720p or below)
       const targetQuality = quality.replace('p', ''); // '720p' -> '720'
-      const qualityOption = availableQualities.find((q: any) => 
-        q.type === 'video' && 
+      let targetQualityNum = parseInt(targetQuality);
+      
+      // Cap at 720p for social media optimization
+      if (targetQualityNum > 720) {
+        console.log(`📉 Capping quality from ${targetQualityNum}p to 720p for social media optimization`);
+        targetQualityNum = 720;
+      }
+      
+      // Filter only video qualities
+      const videoQualities = availableQualities.filter((q: any) => q.type === 'video');
+      
+      // First, try to find exact match (720p)
+      let qualityOption = videoQualities.find((q: any) => 
         q.quality === `${targetQuality}p`
       );
       
+      // If 720p not found, find the highest quality <= 720p
       if (!qualityOption) {
-        // Log what's available if 720p not found
-        const availableVideoQualities = availableQualities
-          .filter((q: any) => q.type === 'video')
+        console.log(`⚠️ ${targetQuality}p not available, looking for best alternative...`);
+        
+        // Parse quality numbers and sort by quality (descending)
+        const sortedQualities = videoQualities
+          .map((q: any) => ({
+            ...q,
+            qualityNum: parseInt(q.quality.replace('p', ''))
+          }))
+          .filter((q: any) => !isNaN(q.qualityNum) && q.qualityNum <= targetQualityNum)
+          .sort((a: any, b: any) => b.qualityNum - a.qualityNum);
+        
+        // Get the highest quality that's <= 720p
+        qualityOption = sortedQualities[0];
+        
+        // If no quality <= 720p found, just get the highest available
+        if (!qualityOption && videoQualities.length > 0) {
+          console.log(`⚠️ No quality <= ${targetQuality}p found, using highest available...`);
+          const allSorted = videoQualities
+            .map((q: any) => ({
+              ...q,
+              qualityNum: parseInt(q.quality.replace('p', ''))
+            }))
+            .filter((q: any) => !isNaN(q.qualityNum))
+            .sort((a: any, b: any) => b.qualityNum - a.qualityNum);
+          
+          qualityOption = allSorted[0];
+        }
+      }
+      
+      if (!qualityOption) {
+        // Log what's available if no suitable quality found
+        const availableVideoQualities = videoQualities
           .map((q: any) => q.quality)
           .join(', ');
         
-        throw new Error(`720p quality not available. Available qualities: ${availableVideoQualities}`);
+        throw new Error(`No suitable video quality found. Available qualities: ${availableVideoQualities}`);
       }
       
-      console.log(`✅ Found 720p quality with ID: ${qualityOption.id}`);
+      console.log(`✅ Using quality: ${qualityOption.quality} (ID: ${qualityOption.id})`);
       
       // Step 3: Download with the correct quality ID
       const isShort = videoUrl.includes('/shorts/');
@@ -289,14 +330,16 @@ export class RapidAPIYouTubeClientV2 {
    */
   async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
     // Normalize quality parameter - RapidAPI expects numbers only (720, not 720p)
-    const normalizedQuality = quality ? quality.replace(/[^0-9]/g, '') : '720';
+    let normalizedQuality = quality ? quality.replace(/[^0-9]/g, '') : '720';
     
-    // We only support 720p - no lower quality fallbacks
-    if (normalizedQuality !== '720') {
-      console.warn(`⚠️ Requested quality ${quality} normalized to ${normalizedQuality}, but we only support 720p`);
+    // Validate quality is a valid number
+    if (!normalizedQuality || isNaN(parseInt(normalizedQuality))) {
+      console.warn(`⚠️ Invalid quality "${quality}" provided, defaulting to 720p`);
+      normalizedQuality = '720';
     }
     
-    console.log(`📹 Downloading video in 720p HD (itag 22)`);
+    // We prefer 720p but will fall back to lower qualities if needed
+    console.log(`📹 Downloading video (target quality: ${normalizedQuality}p)`);
     const downloadInfo = await this.getVideoDownloadUrl(videoUrl, normalizedQuality);
     await this.waitAndDownloadFile(downloadInfo.url, outputPath);
   }

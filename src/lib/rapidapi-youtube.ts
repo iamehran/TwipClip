@@ -111,7 +111,7 @@ export class RapidAPIYouTubeClient {
         
         // Check for video ID in query parameters (most common)
         const videoId = urlObj.searchParams.get('v');
-        if (videoId) return videoId;
+        if (videoId && videoId.trim().length > 0) return videoId;
         
         // Check for shorts
         if (urlObj.pathname.includes('/shorts/')) {
