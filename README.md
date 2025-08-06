@@ -20,7 +20,7 @@ TwipClip analyzes your thread content and searches through multiple YouTube vide
 - **Precise Clip Extraction**: Downloads only the relevant portions of videos
 - **Bulk Download with Smart Optimization**: 
   - Download all matched clips as a ZIP file
-  - Automatic optimization to 720p quality
+  - Automatic optimization to 1080p quality (with 720p fallback)
   - File size limited to 512MB per video (perfect for social media)
   - Duration limited to 10 minutes per video
   - H.264 codec for maximum compatibility

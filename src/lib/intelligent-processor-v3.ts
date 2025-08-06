@@ -78,7 +78,7 @@ export async function processVideosWithPerfectMatching(
     downloadClips = false,
     createZip = false,
     outputDir = path.join(process.cwd(), 'temp', 'downloads'),
-    quality = '720p',
+    quality = '1080p',
     modelSettings,
   } = options;
 

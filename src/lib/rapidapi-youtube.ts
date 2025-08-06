@@ -380,7 +380,7 @@ export class RapidAPIYouTubeClient {
   /**
    * Get video download URL
    */
-  async getVideoDownloadUrl(videoUrl: string, quality: string = '720p'): Promise<DownloadResponse> {
+  async getVideoDownloadUrl(videoUrl: string, quality: string = '1080p'): Promise<DownloadResponse> {
     if (!this.apiKey) {
       throw new Error('RAPIDAPI_KEY environment variable is not set');
     }
@@ -566,7 +566,7 @@ export class RapidAPIYouTubeClient {
    * Download video from YouTube
    */
   async downloadVideo(videoUrl: string, outputPath: string, quality?: string): Promise<void> {
-    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, quality || '720p');
+    const downloadInfo = await this.getVideoDownloadUrl(videoUrl, quality || '1080p');
     await this.waitAndDownloadFile(downloadInfo.file, outputPath, 'video', downloadInfo.id.toString());
   }
 }

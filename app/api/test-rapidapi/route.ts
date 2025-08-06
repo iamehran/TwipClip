@@ -36,7 +36,7 @@ export async function GET() {
         audioQualities: audioQualities.length,
         videoQualities: videoQualities.length,
         bestAudioQuality: audioQualities[0],
-        bestVideoQuality: videoQualities.find(q => q.quality === '720p') || videoQualities[0],
+        bestVideoQuality: videoQualities.find(q => q.quality === '1080p') || videoQualities.find(q => q.quality === '720p') || videoQualities[0],
         audioDownloadUrl: audioInfo.file.substring(0, 50) + '...',
         videoDownloadUrl: videoInfo.file.substring(0, 50) + '...'
       }

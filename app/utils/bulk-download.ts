@@ -50,7 +50,7 @@ export interface BulkDownloadOptions {
 export async function downloadClip(
   match: PerfectMatch,
   outputDir: string,
-  quality: string = '720p',
+  quality: string = '1080p',
   sessionId?: string,
   onProgress?: (status: string) => void
 ): Promise<DownloadResult> {
@@ -104,7 +104,13 @@ export async function downloadClip(
             console.log(`📊 Downloaded video resolution: ${actualResolution}`);
             
             // Verify we got the expected quality
-            if (quality === '720p' && actualHeight >= 720) {
+            if (quality === '1080p' && actualHeight >= 1080) {
+              console.log(`✅ Successfully downloaded in ${actualHeight}p quality`);
+            } else if (quality === '1080p' && actualHeight >= 720 && actualHeight < 1080) {
+              console.log(`✅ Downloaded in ${actualHeight}p quality (1080p not available)`);
+            } else if (quality === '1080p' && actualHeight < 720) {
+              console.warn(`⚠️ Requested 1080p but got ${actualHeight}p - neither 1080p nor 720p available`);
+            } else if (quality === '720p' && actualHeight >= 720) {
               console.log(`✅ Successfully downloaded in ${actualHeight}p quality`);
             } else if (quality === '720p' && actualHeight < 720) {
               console.warn(`⚠️ Requested 720p but got ${actualHeight}p - this video might not have 720p available`);
@@ -134,10 +140,10 @@ export async function downloadClip(
     downloadCmd += ` --add-header "Accept-Language: en-US,en;q=0.9"`;
     downloadCmd += ` --add-header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"`;
     
-    // Optimized format selection for social media
-    // Force 720p for consistent quality and reasonable file sizes
+    // Optimized format selection
+    // Try 1080p first, then fallback to 720p or best available
     downloadCmd += ` "${match.videoUrl}" -o "${tempVideoPath}"`;
-    downloadCmd += ` -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"`;
+    downloadCmd += ` -f "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]"`;
     downloadCmd += ` --merge-output-format mp4`;
     downloadCmd += ` --no-warnings --quiet`;
     
@@ -147,7 +153,7 @@ export async function downloadClip(
     // Add no-check-certificate to handle SSL issues
     downloadCmd += ` --no-check-certificate`;
     
-    onProgress?.(`Downloading video (720p optimized)...`);
+    onProgress?.(`Downloading video (up to 1080p)...`);
     
     let downloadAttempts = 0;
     const maxAttempts = 3;
@@ -204,7 +210,7 @@ export async function downloadClip(
       const resolutionMatch = probeOutput.stdout?.match(/Stream.*Video.*\s(\d+)x(\d+)/);
       if (resolutionMatch) {
         videoResolution = `${resolutionMatch[1]}x${resolutionMatch[2]}`;
-        console.log(`📊 Downloaded video resolution: ${videoResolution} (requested: 720p)`);
+        console.log(`📊 Downloaded video resolution: ${videoResolution} (requested: ${quality})`);
       }
       
       console.log(`Video duration: ${videoDuration}s, requested clip: ${match.startTime}s - ${match.endTime}s`);
@@ -232,7 +238,7 @@ export async function downloadClip(
     // - Fast start for web playback
     let extractCmd = `"${ffmpegPath}" -accurate_seek -i "${tempVideoPath}" -ss ${validStartTime} -t ${validDuration}`;
     extractCmd += ` -c:v libx264 -preset medium -crf 23`;
-    extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
+    extractCmd += ` -vf "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
     extractCmd += ` -pix_fmt yuv420p`;
     extractCmd += ` -c:a aac -b:a 128k -ar 44100`;
     extractCmd += ` -movflags +faststart`;
@@ -251,7 +257,7 @@ export async function downloadClip(
       onProgress?.(`Retrying with alternative extraction method...`);
       extractCmd = `"${ffmpegPath}" -ss ${validStartTime} -accurate_seek -i "${tempVideoPath}" -t ${validDuration}`;
       extractCmd += ` -c:v libx264 -preset medium -crf 23`;
-      extractCmd += ` -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
+      extractCmd += ` -vf "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2"`;
       extractCmd += ` -pix_fmt yuv420p`;
       extractCmd += ` -c:a aac -b:a 128k -ar 44100`;
       extractCmd += ` -movflags +faststart`;
@@ -382,7 +388,7 @@ export async function downloadAllClips(
   const {
     outputDir = path.join(os.tmpdir(), 'twipclip-downloads', `${Date.now()}-${Math.random().toString(36).substring(7)}`),
     maxConcurrent = 3,
-    quality = '720p',
+    quality = '1080p',
     sessionId,
     onProgress,
     onClipComplete

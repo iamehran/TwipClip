@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RapidAPI Integration**: Complete replacement of yt-dlp with RapidAPI "YouTube Video FAST Downloader 24/7"
   - 100% success rate for video/audio downloads (no more bot detection)
   - Pro plan subscription for reliable service
-  - Automatic quality selection (720p video, best audio)
+  - Automatic quality selection (1080p preferred, 720p fallback, best audio)
   - Built-in retry mechanism for asynchronous file availability
   - Direct download URLs without authentication requirements
 - **Updated AI Models**: Switched to latest Claude models
@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Social Media-Optimized Bulk Downloads**: Enhanced bulk download feature optimized for social media platforms
-  - Automatic video optimization to 720p quality
+  - Automatic video optimization to 1080p quality (with 720p fallback)
   - File size limiting to 512MB
   - Duration limiting to 10 minutes per video
   - H.264 codec for maximum compatibility
@@ -193,7 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.2] - 2024-01-09
 
 ### Added
-- Bulk download functionality with quality selection (720p/1080p)
+- Bulk download functionality with quality selection (1080p preferred with fallback)
 - Real-world example threads for quick testing
 - Enhanced video quality settings (CRF 18 for better quality)
 - Audio bitrate increased to 192k for better sound
@@ -260,7 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Features
 - Thread processing with tweet separation using `---`
 - Multiple video URL support
-- Quality selection (720p/1080p)
+- Quality selection (1080p preferred with automatic fallback)
 - Automatic transcript fetching with fallback options
 - Parallel video processing for improved performance
 - Temporary file cleanup

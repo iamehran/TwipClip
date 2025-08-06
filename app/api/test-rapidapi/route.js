@@ -96,7 +96,7 @@ export async function GET(request) {
         const videoResponse = await axios({
           method: 'GET',
           url: `https://${apiHost}${endpoint}`,
-          params: { quality: '720' },
+                      params: { quality: '1080' },
           headers: {
             'X-RapidAPI-Key': apiKey,
             'X-RapidAPI-Host': apiHost

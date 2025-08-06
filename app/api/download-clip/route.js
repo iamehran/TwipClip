@@ -40,8 +40,8 @@ export async function POST(request) {
     const outputDir = path.join(os.tmpdir(), 'twipclip-single', Date.now().toString());
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    // Download with specified quality or default to 720p
-    const downloadQuality = quality || '720p';
+    // Download with specified quality or default to 1080p
+    const downloadQuality = quality || '1080p';
     console.log('Calling downloadClip with match:', match, 'quality:', downloadQuality);
     const result = await downloadClip(match, outputDir, downloadQuality);
     console.log('Download result:', { 

@@ -32,7 +32,7 @@ export async function POST(request) {
     // Download all clips with optimized settings
     const results = await downloadAllClips(fixedMatches, {
       maxConcurrent: 2, // Limit concurrent downloads to avoid overwhelming the system
-      quality: '720p', // Force 720p for compatibility
+      quality: '1080p', // Default to 1080p, will fallback to 720p if not available
       onProgress: (progress) => {
         console.log(`Progress: ${progress.completed}/${progress.total} (${progress.percentage.toFixed(1)}%)`);
       },
@@ -115,7 +115,7 @@ export async function POST(request) {
       details: error.message,
       troubleshooting: {
         'Authentication': 'Ensure you are logged into YouTube in your browser',
-        'Video Quality': 'Videos are optimized for 720p to balance quality and file size',
+        'Video Quality': 'Videos are downloaded in 1080p when available, otherwise 720p or best quality below',
         'File Limits': 'Videos larger than 512MB or longer than 10 minutes are excluded for Typefully compatibility',
         'Network': 'Check your internet connection and try again'
       }
