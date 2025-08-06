@@ -54,6 +54,10 @@ export default function VideoResult({ clip }: VideoResultProps) {
     setDownloadError(null);
 
     try {
+      // Create an AbortController with a longer timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
       const response = await fetch('/api/download-clip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,8 +66,11 @@ export default function VideoResult({ clip }: VideoResultProps) {
           startTime: adjustedStartTime,
           endTime: adjustedEndTime,
           tweet: clip.matchedTweet
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const data = await response.json();
@@ -92,7 +99,17 @@ export default function VideoResult({ clip }: VideoResultProps) {
       document.body.removeChild(a);
       
     } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : 'Download failed');
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          setDownloadError('Download timed out. The video might be too large or the server is busy. Please try again.');
+        } else if (error.message.includes('Failed to fetch')) {
+          setDownloadError('Network error. Please check your connection and try again.');
+        } else {
+          setDownloadError(error.message);
+        }
+      } else {
+        setDownloadError('Download failed');
+      }
     } finally {
       setDownloading(false);
     }
@@ -237,7 +254,15 @@ export default function VideoResult({ clip }: VideoResultProps) {
                     : 'bg-[#b8a887] hover:bg-[#a09775] text-[#0e1e2d]'
                 }`}
               >
-                {downloading ? 'Downloading...' : 'Download Clip'}
+                {downloading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </span>
+                ) : 'Download Clip'}
               </button>
             </div>
           </div>

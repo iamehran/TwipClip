@@ -214,7 +214,9 @@ export class RapidAPIYouTubeClientV2 {
         availableQualities = cached.qualities;
       } else {
         console.log(`🔍 Getting available quality options for ${videoId}...`);
+        const startTime = Date.now();
         const qualityResponse = await this.client.get(`/get_available_quality/${videoId}`);
+        console.log(`⏱️ Quality check took ${Date.now() - startTime}ms`);
         availableQualities = qualityResponse.data;
         
         // Cache the result
@@ -321,7 +323,19 @@ export class RapidAPIYouTubeClientV2 {
       throw new Error('No download URL in response');
     } catch (error: any) {
       console.error('Video download error:', error.response?.data || error.message);
-      throw new Error(`Failed to download video: ${error.message}`);
+      
+      // Provide more specific error messages
+      if (error.response?.status === 429) {
+        throw new Error('Rate limit exceeded. Please try again in a few minutes.');
+      } else if (error.response?.status === 404) {
+        throw new Error('Video not found or has been removed.');
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        throw new Error('Request timed out. The video might be too large or the server is busy.');
+      } else if (error.response?.data?.message) {
+        throw new Error(`RapidAPI error: ${error.response.data.message}`);
+      } else {
+        throw new Error(`Failed to download video: ${error.message}`);
+      }
     }
   }
 
